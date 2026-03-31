@@ -9,30 +9,29 @@ async function createDatabase() {
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
 
-    CREATE TABLE IF NOT EXISTS chats (
+    CREATE TABLE IF NOT EXISTS chat_cache (
       uuid TEXT PRIMARY KEY NOT NULL,
-      display_title TEXT,
-      avatar TEXT,
-      last_message TEXT,
-      last_message_at TEXT,
-      unread_count INTEGER DEFAULT 0,
-      updated_at TEXT
+      sort_ts INTEGER NOT NULL DEFAULT 0,
+      payload_json TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS messages (
+    CREATE INDEX IF NOT EXISTS idx_chat_cache_sort_ts
+      ON chat_cache(sort_ts DESC);
+
+    CREATE TABLE IF NOT EXISTS message_cache (
       uuid TEXT PRIMARY KEY NOT NULL,
-      client_uuid TEXT,
       chat_uuid TEXT NOT NULL,
-      sender_uuid TEXT,
-      body TEXT,
-      media_url TEXT,
-      status TEXT DEFAULT 'sent',
-      created_at TEXT,
-      updated_at TEXT
+      client_uuid TEXT,
+      created_ts INTEGER NOT NULL DEFAULT 0,
+      local_status TEXT DEFAULT 'sent',
+      payload_json TEXT NOT NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_messages_chat_uuid ON messages(chat_uuid);
-    CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+    CREATE INDEX IF NOT EXISTS idx_message_cache_chat_uuid_created_ts
+      ON message_cache(chat_uuid, created_ts DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_message_cache_chat_uuid_client_uuid
+      ON message_cache(chat_uuid, client_uuid);
   `);
 
   return db;

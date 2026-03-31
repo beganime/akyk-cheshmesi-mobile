@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { ENV } from '@/src/config/env';
-import { getAccessToken } from '@/src/lib/storage/secure.native';
+import { getAccessToken } from '@/src/lib/storage/secure';
 
 export const apiClient = axios.create({
   baseURL: ENV.API_BASE_URL,
@@ -13,8 +13,10 @@ export const apiClient = axios.create({
 
 apiClient.interceptors.request.use(async (config) => {
   const token = await getAccessToken();
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
   return config;
 });

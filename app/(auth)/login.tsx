@@ -3,31 +3,50 @@ import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-nativ
 import { router } from 'expo-router';
 import { GlassCard } from '@/src/components/GlassCard';
 import { useTheme } from '@/src/theme/ThemeProvider';
-import { apiClient } from '@/src/lib/api/client';
 import { useAuthStore } from '@/src/state/auth';
+import { loginRequest } from '@/src/lib/api/auth';
 
 export default function LoginScreen() {
   const { theme } = useTheme();
-  const setTokens = useAuthStore((s) => s.setTokens);
+  const setSession = useAuthStore((s) => s.setSession);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const onLogin = async () => {
     try {
-      setLoading(true);
-      const response = await apiClient.post('/auth/login/', { email, password });
-      const access = response.data?.access ?? response.data?.access_token ?? '';
-      const refresh = response.data?.refresh ?? response.data?.refresh_token ?? '';
+      if (!email.trim() || !password.trim()) {
+        Alert.alert('Ошибка', 'Введите email и пароль');
+        return;
+      }
 
-      if (!access) {
+      setLoading(true);
+
+      const data = await loginRequest(email, password);
+
+      const accessToken = data?.tokens?.access;
+      const refreshToken = data?.tokens?.refresh;
+      const user = data?.user ?? null;
+
+      if (!accessToken) {
         throw new Error('Backend did not return access token');
       }
 
-      await setTokens(access, refresh);
+      await setSession({
+        accessToken,
+        refreshToken,
+        user,
+      });
+
       router.replace('/(app)/chats');
     } catch (error: any) {
-      Alert.alert('Login error', error?.message ?? 'Could not sign in');
+      const backendMessage =
+        error?.response?.data?.detail ||
+        error?.message ||
+        'Не удалось войти';
+
+      Alert.alert('Login error', backendMessage);
     } finally {
       setLoading(false);
     }
@@ -44,7 +63,14 @@ export default function LoginScreen() {
           onChangeText={setEmail}
           placeholder="Email"
           placeholderTextColor={theme.colors.muted}
-          style={[styles.input, { color: theme.colors.text, borderColor: theme.colors.border }]}
+          style={[
+            styles.input,
+            {
+              color: theme.colors.text,
+              borderColor: theme.colors.border,
+              backgroundColor: theme.colors.inputBackground,
+            },
+          ]}
           autoCapitalize="none"
           keyboardType="email-address"
         />
@@ -54,11 +80,22 @@ export default function LoginScreen() {
           onChangeText={setPassword}
           placeholder="Password"
           placeholderTextColor={theme.colors.muted}
-          style={[styles.input, { color: theme.colors.text, borderColor: theme.colors.border }]}
+          style={[
+            styles.input,
+            {
+              color: theme.colors.text,
+              borderColor: theme.colors.border,
+              backgroundColor: theme.colors.inputBackground,
+            },
+          ]}
           secureTextEntry
         />
 
-        <Pressable onPress={onLogin} style={[styles.button, { backgroundColor: theme.colors.primary }]} disabled={loading}>
+        <Pressable
+          onPress={onLogin}
+          style={[styles.button, { backgroundColor: theme.colors.primary }]}
+          disabled={loading}
+        >
           <Text style={styles.buttonText}>{loading ? 'Загрузка...' : 'Войти'}</Text>
         </Pressable>
       </GlassCard>
@@ -67,9 +104,21 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
-  title: { fontSize: 28, fontWeight: '700', marginBottom: 8 },
-  subtitle: { fontSize: 16, marginBottom: 24 },
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    marginBottom: 24,
+  },
   input: {
     height: 52,
     borderWidth: 1,
@@ -84,5 +133,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 4,
   },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });
