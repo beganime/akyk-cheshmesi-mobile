@@ -15,17 +15,7 @@ import { SearchInput } from '@/src/components/SearchInput';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { fetchChats, createDirectChat } from '@/src/lib/api/chats';
 import { searchUsers, UserShort } from '@/src/lib/api/contacts';
-
-type ChatListItem = {
-  uuid: string;
-  chat_type: 'direct' | 'group';
-  title?: string | null;
-  description?: string | null;
-  avatar?: string | null;
-  display_title?: string | null;
-  last_message?: string | null;
-  unread_count?: number | string | null;
-};
+import type { ChatLastMessage, ChatListItem } from '@/src/types/chat';
 
 function chatTitle(item: ChatListItem) {
   return item.display_title || item.title || 'Без названия';
@@ -39,6 +29,46 @@ function personName(item: UserShort) {
     item.email ||
     'Без имени'
   );
+}
+
+function lastMessageText(lastMessage: ChatLastMessage) {
+  if (!lastMessage) return 'Пока без сообщений';
+
+  if (typeof lastMessage === 'string') {
+    return lastMessage || 'Пока без сообщений';
+  }
+
+  if (typeof lastMessage === 'object') {
+    if (lastMessage.preview) return lastMessage.preview;
+    if (lastMessage.text) return lastMessage.text;
+
+    switch (lastMessage.message_type) {
+      case 'image':
+        return '📷 Фото';
+      case 'video':
+        return '🎬 Видео';
+      case 'audio':
+        return '🎤 Аудио';
+      case 'file':
+        return '📎 Файл';
+      case 'sticker':
+        return '🟡 Стикер';
+      case 'system':
+        return 'Системное сообщение';
+      default:
+        return 'Пока без сообщений';
+    }
+  }
+
+  return 'Пока без сообщений';
+}
+
+function searchableLastMessage(lastMessage: ChatLastMessage) {
+  if (!lastMessage) return '';
+
+  if (typeof lastMessage === 'string') return lastMessage.toLowerCase();
+
+  return `${lastMessage.preview ?? ''} ${lastMessage.text ?? ''} ${lastMessage.message_type ?? ''}`.toLowerCase();
 }
 
 export default function ChatsScreen() {
@@ -100,7 +130,7 @@ export default function ChatsScreen() {
 
     return data.filter((item) => {
       const title = chatTitle(item).toLowerCase();
-      const lastMessage = String(item.last_message ?? '').toLowerCase();
+      const lastMessage = searchableLastMessage(item.last_message);
       return title.includes(q) || lastMessage.includes(q);
     });
   }, [data, search]);
@@ -242,7 +272,7 @@ export default function ChatsScreen() {
                     </View>
 
                     <Text style={[styles.subtitle, { color: theme.colors.muted }]} numberOfLines={1}>
-                      {item.last_message || 'Пока без сообщений'}
+                      {lastMessageText(item.last_message)}
                     </Text>
                   </View>
                 </View>

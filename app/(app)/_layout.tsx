@@ -16,6 +16,7 @@ export default function AppLayout() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="settings" />
       <Stack.Screen name="chat/[chatUuid]" />
+      <Stack.Screen name="chat-user/[userUuid]" />
     </Stack>
   );
 }

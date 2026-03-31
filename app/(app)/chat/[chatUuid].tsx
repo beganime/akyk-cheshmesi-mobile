@@ -3,19 +3,29 @@ import {
   ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
   Pressable,
+  Share,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { GlassCard } from '@/src/components/GlassCard';
-import { fetchChatDetail } from '@/src/lib/api/chats';
+import {
+  fetchChatDetail,
+  setChatArchived,
+  setChatMuted,
+  setChatPinned,
+} from '@/src/lib/api/chats';
+import { createComplaint, ComplaintReason } from '@/src/lib/api/complaints';
 import { fetchChatMessages, markChatRead, sendChatMessage } from '@/src/lib/api/messages';
 import { generateUUIDv4 } from '@/src/lib/utils/uuid';
 import type { ChatListItem } from '@/src/types/chat';
@@ -41,23 +51,39 @@ function formatTime(dateString?: string | null) {
   });
 }
 
-function statusLabel(message: MessageItem) {
-  if (!message.is_own_message) return '';
+function MessageStatusIcon({
+  message,
+  color,
+}: {
+  message: MessageItem;
+  color: string;
+}) {
+  if (!message.is_own_message) return null;
 
-  if (message.local_status === 'pending') return 'Отправка...';
-  if (message.local_status === 'failed') return 'Ошибка';
+  if (message.local_status === 'failed') {
+    return <Ionicons name="alert-circle" size={14} color="#FFD6D6" />;
+  }
 
-  if (message.delivery_status === 'read') return 'Прочитано';
-  if (message.delivery_status === 'delivered') return 'Доставлено';
+  if (message.delivery_status === 'read') {
+    return <Ionicons name="ellipse" size={10} color={color} />;
+  }
 
-  return 'Отправлено';
+  if (message.local_status === 'pending') {
+    return <Ionicons name="checkmark" size={14} color={color} />;
+  }
+
+  return <Ionicons name="checkmark-done" size={14} color={color} />;
 }
+
+const reportReasons: ComplaintReason[] = ['spam', 'abuse', 'fraud', 'harassment', 'other'];
 
 export default function ChatScreen() {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { chatUuid } = useLocalSearchParams<{ chatUuid: string }>();
 
   const listRef = useRef<FlatList<MessageItem>>(null);
+  const isNearBottomRef = useRef(true);
 
   const [chat, setChat] = useState<ChatListItem | null>(null);
   const [messages, setMessages] = useState<MessageItem[]>([]);
@@ -69,11 +95,35 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
 
   const [draft, setDraft] = useState('');
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
+  const [reportType, setReportType] = useState<'user' | 'chat'>('chat');
+  const [reportReason, setReportReason] = useState<ComplaintReason>('other');
+  const [reportDescription, setReportDescription] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
 
   const latestIncomingMessage = useMemo(() => {
     const reversed = [...messages].reverse();
     return reversed.find((message) => !message.is_own_message && !message.is_deleted);
   }, [messages]);
+
+  const scrollToBottom = (animated = true) => {
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated });
+    });
+  };
+
+  const refreshChat = async () => {
+    try {
+      if (!chatUuid) return;
+      const data = await fetchChatDetail(chatUuid);
+      setChat(data);
+    } catch (error) {
+      console.error('refreshChat error:', error);
+    }
+  };
 
   const loadChat = async () => {
     try {
@@ -138,6 +188,128 @@ export default function ChatScreen() {
     void syncReadState();
   }, [latestIncomingMessage?.uuid]);
 
+  useEffect(() => {
+    if (isNearBottomRef.current) {
+      scrollToBottom(false);
+    }
+  }, [messages.length]);
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - (layoutMeasurement.height + contentOffset.y);
+    const nearBottom = distanceFromBottom < 120;
+
+    isNearBottomRef.current = nearBottom;
+    setShowScrollToBottom(!nearBottom);
+  };
+
+  const openPeerProfile = () => {
+    if (!chat?.peer_user?.uuid) return;
+
+    router.push({
+      pathname: '/(app)/chat-user/[userUuid]',
+      params: {
+        userUuid: chat.peer_user.uuid,
+        fullName: chat.peer_user.full_name || '',
+        username: chat.peer_user.username || '',
+        bio: chat.peer_user.bio || '',
+      },
+    });
+  };
+
+  const handleShareProfile = async () => {
+    if (!chat?.peer_user) return;
+
+    try {
+      await Share.share({
+        message: `${chat.peer_user.full_name || chat.peer_user.username || 'Пользователь'}${
+          chat.peer_user.username ? ` (@${chat.peer_user.username})` : ''
+        }`,
+      });
+    } catch (error) {
+      console.error('handleShareProfile error:', error);
+    }
+  };
+
+  const handleToggleMute = async () => {
+    if (!chatUuid || !chat) return;
+
+    try {
+      setActionLoading(true);
+      await setChatMuted(chatUuid, !Boolean(chat.is_muted));
+      await refreshChat();
+      setSettingsVisible(false);
+    } catch (error) {
+      console.error('handleToggleMute error:', error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleTogglePin = async () => {
+    if (!chatUuid || !chat) return;
+
+    try {
+      setActionLoading(true);
+      await setChatPinned(chatUuid, !Boolean(chat.is_pinned));
+      await refreshChat();
+      setSettingsVisible(false);
+    } catch (error) {
+      console.error('handleTogglePin error:', error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleToggleArchive = async () => {
+    if (!chatUuid || !chat) return;
+
+    try {
+      setActionLoading(true);
+      await setChatArchived(chatUuid, !Boolean(chat.is_archived));
+      await refreshChat();
+      setSettingsVisible(false);
+      router.back();
+    } catch (error) {
+      console.error('handleToggleArchive error:', error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const submitComplaint = async () => {
+    if (!chatUuid) return;
+
+    try {
+      setActionLoading(true);
+
+      if (reportType === 'user' && chat?.peer_user?.uuid) {
+        await createComplaint({
+          complaint_type: 'user',
+          reason: reportReason,
+          description: reportDescription.trim(),
+          reported_user_uuid: chat.peer_user.uuid,
+        });
+      } else {
+        await createComplaint({
+          complaint_type: 'chat',
+          reason: reportReason,
+          description: reportDescription.trim(),
+          chat_uuid: chatUuid,
+        });
+      }
+
+      setReportVisible(false);
+      setSettingsVisible(false);
+      setReportDescription('');
+      setReportReason('other');
+    } catch (error) {
+      console.error('submitComplaint error:', error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleSend = async () => {
     const text = draft.trim();
 
@@ -155,19 +327,13 @@ export default function ChatScreen() {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       local_status: 'pending',
-      sender: chat?.peer_user
-        ? undefined
-        : undefined,
     };
 
     setDraft('');
     setSending(true);
 
     setMessages((current) => [...current, optimisticMessage]);
-
-    setTimeout(() => {
-      listRef.current?.scrollToEnd({ animated: true });
-    }, 50);
+    scrollToBottom();
 
     try {
       const savedMessage = await sendChatMessage(chatUuid, {
@@ -251,6 +417,7 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }: { item: MessageItem }) => {
     const isOwn = Boolean(item.is_own_message);
+    const metaColor = isOwn ? 'rgba(255,255,255,0.84)' : theme.colors.muted;
 
     return (
       <View
@@ -278,7 +445,7 @@ export default function ChatScreen() {
               style={[
                 styles.replyBox,
                 {
-                  borderColor: isOwn ? 'rgba(255,255,255,0.25)' : theme.colors.border,
+                  borderColor: isOwn ? 'rgba(255,255,255,0.24)' : theme.colors.border,
                 },
               ]}
             >
@@ -312,27 +479,14 @@ export default function ChatScreen() {
               style={[
                 styles.metaText,
                 {
-                  color: isOwn ? 'rgba(255,255,255,0.82)' : theme.colors.muted,
+                  color: metaColor,
                 },
               ]}
             >
               {formatTime(item.created_at)}
             </Text>
 
-            {isOwn ? (
-              <Text
-                style={[
-                  styles.metaText,
-                  {
-                    color: item.local_status === 'failed'
-                      ? '#FFD6D6'
-                      : 'rgba(255,255,255,0.82)',
-                  },
-                ]}
-              >
-                {statusLabel(item)}
-              </Text>
-            ) : null}
+            {isOwn ? <MessageStatusIcon message={item} color={metaColor} /> : null}
           </View>
         </Pressable>
       </View>
@@ -353,7 +507,8 @@ export default function ChatScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}
+        keyboardVerticalOffset={insets.top}
       >
         <View style={styles.header}>
           <Pressable
@@ -363,16 +518,25 @@ export default function ChatScreen() {
             <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
           </Pressable>
 
-          <View style={styles.headerCenter}>
+          <Pressable
+            onPress={openPeerProfile}
+            disabled={!chat?.peer_user?.uuid}
+            style={styles.headerCenter}
+          >
             <Text style={[styles.headerTitle, { color: theme.colors.text }]} numberOfLines={1}>
               {formatChatTitle(chat)}
             </Text>
             <Text style={[styles.headerSub, { color: theme.colors.muted }]}>
-              Переписка
+              {chat?.is_muted ? 'Без звука' : chat?.is_pinned ? 'Закреплён' : 'Переписка'}
             </Text>
-          </View>
+          </Pressable>
 
-          <View style={{ width: 44 }} />
+          <Pressable
+            onPress={() => setSettingsVisible(true)}
+            style={[styles.headerButton, { borderColor: theme.colors.border }]}
+          >
+            <Ionicons name="ellipsis-horizontal" size={18} color={theme.colors.text} />
+          </Pressable>
         </View>
 
         <FlatList
@@ -380,8 +544,10 @@ export default function ChatScreen() {
           data={messages}
           keyExtractor={(item) => item.uuid}
           renderItem={renderMessage}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.listContent}
-          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
           ListHeaderComponent={
             nextUrl ? (
               <Pressable
@@ -418,12 +584,28 @@ export default function ChatScreen() {
           }
         />
 
+        {showScrollToBottom ? (
+          <Pressable
+            onPress={() => scrollToBottom()}
+            style={[
+              styles.scrollToBottomButton,
+              {
+                backgroundColor: theme.colors.primary,
+                bottom: Math.max(insets.bottom, 12) + 74,
+              },
+            ]}
+          >
+            <Ionicons name="chevron-down" size={20} color="#FFFFFF" />
+          </Pressable>
+        ) : null}
+
         <View
           style={[
             styles.composerWrap,
             {
               backgroundColor: theme.colors.background,
               borderTopColor: theme.colors.border,
+              paddingBottom: Math.max(insets.bottom, 10),
             },
           ]}
         >
@@ -449,6 +631,7 @@ export default function ChatScreen() {
               ]}
               multiline
               maxLength={4000}
+              textAlignVertical="top"
             />
 
             <Pressable
@@ -472,6 +655,178 @@ export default function ChatScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={settingsVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSettingsVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setSettingsVisible(false)} />
+
+          <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <GlassCard>
+              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
+                Настройки чата
+              </Text>
+
+              {chat?.peer_user?.uuid ? (
+                <Pressable
+                  onPress={() => {
+                    setSettingsVisible(false);
+                    openPeerProfile();
+                  }}
+                  style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+                >
+                  <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                    Профиль собеседника
+                  </Text>
+                </Pressable>
+              ) : null}
+
+              <Pressable
+                onPress={() => void handleShareProfile()}
+                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+              >
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                  Поделиться профилем
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => void handleToggleMute()}
+                disabled={actionLoading}
+                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+              >
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                  {chat?.is_muted ? 'Включить звук' : 'Без звука'}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => void handleTogglePin()}
+                disabled={actionLoading}
+                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+              >
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                  {chat?.is_pinned ? 'Убрать из закрепа' : 'Закрепить чат'}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => void handleToggleArchive()}
+                disabled={actionLoading}
+                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+              >
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                  {chat?.is_archived ? 'Разархивировать' : 'Архивировать чат'}
+                </Text>
+              </Pressable>
+
+              {chat?.peer_user?.uuid ? (
+                <Pressable
+                  onPress={() => {
+                    setReportType('user');
+                    setReportVisible(true);
+                  }}
+                  style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+                >
+                  <Text style={[styles.sheetDangerText, { color: theme.colors.danger }]}>
+                    Пожаловаться на пользователя
+                  </Text>
+                </Pressable>
+              ) : null}
+
+              <Pressable
+                onPress={() => {
+                  setReportType('chat');
+                  setReportVisible(true);
+                }}
+                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+              >
+                <Text style={[styles.sheetDangerText, { color: theme.colors.danger }]}>
+                  Пожаловаться на чат
+                </Text>
+              </Pressable>
+            </GlassCard>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={reportVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReportVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setReportVisible(false)} />
+
+          <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <GlassCard>
+              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
+                {reportType === 'user' ? 'Жалоба на пользователя' : 'Жалоба на чат'}
+              </Text>
+
+              <View style={styles.reasonWrap}>
+                {reportReasons.map((reason) => {
+                  const active = reportReason === reason;
+
+                  return (
+                    <Pressable
+                      key={reason}
+                      onPress={() => setReportReason(reason)}
+                      style={[
+                        styles.reasonChip,
+                        {
+                          borderColor: theme.colors.border,
+                          backgroundColor: active ? theme.colors.primary : 'transparent',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          color: active ? '#FFFFFF' : theme.colors.text,
+                          fontWeight: '600',
+                        }}
+                      >
+                        {reason}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <TextInput
+                value={reportDescription}
+                onChangeText={setReportDescription}
+                placeholder="Описание (необязательно)"
+                placeholderTextColor={theme.colors.muted}
+                multiline
+                style={[
+                  styles.reportInput,
+                  {
+                    color: theme.colors.text,
+                    borderColor: theme.colors.border,
+                    backgroundColor: theme.colors.inputBackground,
+                  },
+                ]}
+              />
+
+              <Pressable
+                onPress={() => void submitComplaint()}
+                disabled={actionLoading}
+                style={[styles.primaryButton, { backgroundColor: theme.colors.primary }]}
+              >
+                <Text style={styles.primaryButtonText}>
+                  {actionLoading ? 'Отправка...' : 'Отправить жалобу'}
+                </Text>
+              </Pressable>
+            </GlassCard>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -516,7 +871,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 24,
-    gap: 8,
   },
   loadEarlierButton: {
     minHeight: 42,
@@ -549,10 +903,15 @@ const styles = StyleSheet.create({
   },
   bubble: {
     maxWidth: '82%',
-    borderRadius: 22,
+    borderRadius: 24,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
   },
   replyBox: {
     borderLeftWidth: 3,
@@ -570,17 +929,32 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 10,
+    alignItems: 'center',
+    gap: 8,
     marginTop: 6,
+    minHeight: 14,
   },
   metaText: {
     fontSize: 11,
     fontWeight: '500',
   },
+  scrollToBottomButton: {
+    position: 'absolute',
+    right: 18,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
   composerWrap: {
     paddingHorizontal: 12,
     paddingTop: 8,
-    paddingBottom: 12,
     borderTopWidth: 1,
   },
   composer: {
@@ -607,5 +981,69 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.26)',
+    justifyContent: 'flex-end',
+  },
+  sheetWrap: {
+    paddingHorizontal: 12,
+  },
+  sheetTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  sheetItem: {
+    minHeight: 52,
+    borderWidth: 1,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    paddingHorizontal: 14,
+  },
+  sheetItemText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  sheetDangerText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  reasonWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  reasonChip: {
+    minHeight: 38,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportInput: {
+    minHeight: 96,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 12,
+    textAlignVertical: 'top',
+  },
+  primaryButton: {
+    minHeight: 50,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

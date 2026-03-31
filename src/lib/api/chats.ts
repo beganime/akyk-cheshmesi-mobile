@@ -21,3 +21,27 @@ export async function createDirectChat(peerUuid: string) {
 
   return response.data;
 }
+
+export async function setChatMuted(chatUuid: string, isMuted: boolean) {
+  const response = await apiClient.post(`/chats/${chatUuid}/mute/`, {
+    is_muted: isMuted,
+  });
+
+  return response.data;
+}
+
+export async function setChatPinned(chatUuid: string, isPinned: boolean) {
+  const response = await apiClient.post(`/chats/${chatUuid}/pin/`, {
+    is_pinned: isPinned,
+  });
+
+  return response.data;
+}
+
+export async function setChatArchived(chatUuid: string, isArchived: boolean) {
+  const response = await apiClient.post(`/chats/${chatUuid}/archive/`, {
+    is_archived: isArchived,
+  });
+
+  return response.data;
+}
