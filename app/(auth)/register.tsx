@@ -16,52 +16,40 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 import { GlassCard } from '@/src/components/GlassCard';
-import { loginRequest } from '@/src/lib/api/auth';
-import { useAuthStore } from '@/src/state/auth';
+import { registerRequest } from '@/src/lib/api/auth';
 import { useTheme } from '@/src/theme/ThemeProvider';
 
 function getErrorMessage(error: any, fallback: string) {
   return error?.response?.data?.detail || error?.message || fallback;
 }
 
-export default function LoginScreen() {
+export default function RegisterScreen() {
   const { theme } = useTheme();
-  const setSession = useAuthStore((s) => s.setSession);
 
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const onLogin = async () => {
+  const onRegister = async () => {
     const normalizedEmail = email.trim().toLowerCase();
 
-    if (!normalizedEmail || !password.trim()) {
-      Alert.alert('Ошибка', 'Введите email и пароль');
+    if (!normalizedEmail) {
+      Alert.alert('Ошибка', 'Введите email');
       return;
     }
 
     try {
       setLoading(true);
 
-      const data = await loginRequest(normalizedEmail, password);
+      const data = await registerRequest(normalizedEmail);
 
-      const accessToken = data?.tokens?.access;
-      const refreshToken = data?.tokens?.refresh;
-      const user = data?.user ?? null;
-
-      if (!accessToken) {
-        throw new Error('Backend did not return access token');
-      }
-
-      await setSession({
-        accessToken,
-        refreshToken,
-        user,
+      router.push({
+        pathname: '/(auth)/verify-email',
+        params: {
+          email: data?.email ?? normalizedEmail,
+        },
       });
-
-      router.replace('/(app)/(tabs)/chats');
     } catch (error: any) {
-      Alert.alert('Ошибка входа', getErrorMessage(error, 'Не удалось войти'));
+      Alert.alert('Ошибка регистрации', getErrorMessage(error, 'Не удалось отправить код'));
     } finally {
       setLoading(false);
     }
@@ -80,19 +68,19 @@ export default function LoginScreen() {
         >
           <View style={styles.hero}>
             <View style={[styles.logoCircle, { backgroundColor: theme.colors.primary }]}>
-              <Ionicons name="sparkles" size={28} color="#FFFFFF" />
+              <Ionicons name="person-add" size={28} color="#FFFFFF" />
             </View>
 
-            <Text style={styles.brandTitle}>Akyl Cheshmesi</Text>
+            <Text style={styles.brandTitle}>Регистрация</Text>
             <Text style={styles.brandSubtitle}>
-              Быстрый, безопасный и красивый мессенджер
+              Создай аккаунт и получи код подтверждения на почту
             </Text>
           </View>
 
           <GlassCard>
-            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Вход</Text>
+            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Шаг 1 из 3</Text>
             <Text style={[styles.cardSubtitle, { color: theme.colors.muted }]}>
-              Войди в аккаунт и продолжи с того места, где остановился.
+              Укажи email. Мы отправим на него 6-значный код подтверждения.
             </Text>
 
             <View
@@ -116,37 +104,12 @@ export default function LoginScreen() {
                 autoCorrect={false}
                 autoComplete="email"
                 textContentType="emailAddress"
-                returnKeyType="next"
-              />
-            </View>
-
-            <View
-              style={[
-                styles.inputWrap,
-                {
-                  backgroundColor: theme.colors.inputBackground,
-                  borderColor: theme.colors.border,
-                },
-              ]}
-            >
-              <Ionicons name="lock-closed-outline" size={18} color={theme.colors.muted} />
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Пароль"
-                placeholderTextColor={theme.colors.muted}
-                style={[styles.input, { color: theme.colors.text }]}
-                secureTextEntry
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="password"
-                textContentType="password"
                 returnKeyType="done"
-                onSubmitEditing={() => void onLogin()}
+                onSubmitEditing={() => void onRegister()}
               />
             </View>
 
-            <Pressable onPress={() => void onLogin()} disabled={loading}>
+            <Pressable onPress={() => void onRegister()} disabled={loading}>
               <LinearGradient
                 colors={['#4F6BFF', '#6E7BFF']}
                 start={{ x: 0, y: 0 }}
@@ -157,7 +120,7 @@ export default function LoginScreen() {
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <>
-                    <Text style={styles.buttonText}>Войти</Text>
+                    <Text style={styles.buttonText}>Отправить код</Text>
                     <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
                   </>
                 )}
@@ -166,38 +129,13 @@ export default function LoginScreen() {
 
             <Pressable
               style={styles.secondaryAction}
-              onPress={() => router.push('/(auth)/register')}
+              onPress={() => router.replace('/(auth)/login')}
               disabled={loading}
             >
               <Text style={[styles.secondaryActionText, { color: theme.colors.primary }]}>
-                Нет аккаунта? Зарегистрироваться
+                Уже есть аккаунт? Войти
               </Text>
             </Pressable>
-
-            <View style={styles.featuresRow}>
-              <View style={styles.featureItem}>
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={16}
-                  color={theme.colors.primary}
-                />
-                <Text style={[styles.featureText, { color: theme.colors.muted }]}>
-                  Защищённо
-                </Text>
-              </View>
-
-              <View style={styles.featureItem}>
-                <Ionicons name="flash-outline" size={16} color={theme.colors.primary} />
-                <Text style={[styles.featureText, { color: theme.colors.muted }]}>Быстро</Text>
-              </View>
-
-              <View style={styles.featureItem}>
-                <Ionicons name="sync-outline" size={16} color={theme.colors.primary} />
-                <Text style={[styles.featureText, { color: theme.colors.muted }]}>
-                  Синхронно
-                </Text>
-              </View>
-            </View>
           </GlassCard>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -291,23 +229,5 @@ const styles = StyleSheet.create({
   secondaryActionText: {
     fontSize: 14,
     fontWeight: '700',
-  },
-  featuresRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 18,
-    gap: 10,
-  },
-  featureItem: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  featureText: {
-    fontSize: 12,
-    fontWeight: '600',
   },
 });

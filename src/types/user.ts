@@ -11,13 +11,36 @@ export type UserProfile = {
   registration_completed: boolean;
 };
 
+export type AuthTokens = {
+  refresh: string;
+  access: string;
+};
+
 export type LoginResponse = {
   detail: string;
-  tokens: {
-    refresh: string;
-    access: string;
-  };
+  tokens: AuthTokens;
   user: UserProfile;
+};
+
+export type RegisterResponse = {
+  detail: string;
+  email: string;
+  expires_in_seconds: number;
+};
+
+export type VerifyEmailResponse = {
+  detail: string;
+  verification_token: string;
+};
+
+export type SetPasswordRequestPayload = {
+  verificationToken: string;
+  username: string;
+  password: string;
+  passwordConfirm: string;
+  firstName?: string;
+  lastName?: string;
+  dateOfBirth?: string;
 };
 
 export type UserShort = {

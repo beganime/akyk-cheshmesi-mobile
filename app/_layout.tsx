@@ -1,24 +1,44 @@
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
 import { ThemeProvider } from '@/src/theme/ThemeProvider';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
 import { initializeDatabase } from '@/src/lib/db';
-import { useAuthStore } from '@/src/state/auth';
 import { realtimeClient } from '@/src/lib/realtime/socket';
-import { subscribeSessionExpired } from '@/src/lib/auth/session';
+import {
+  subscribeSessionExpired,
+  subscribeSessionTokensChanged,
+} from '@/src/lib/auth/session';
+import { useAuthStore } from '@/src/state/auth';
 
 const queryClient = new QueryClient();
 
 export default function RootLayout() {
   const bootstrap = useAuthStore((s) => s.bootstrap);
   const logout = useAuthStore((s) => s.logout);
+  const setTokens = useAuthStore((s) => s.setTokens);
   const accessToken = useAuthStore((s) => s.accessToken);
   const hydrated = useAuthStore((s) => s.hydrated);
 
   const [appReady, setAppReady] = useState(false);
+
+  useEffect(() => {
+    const unsubscribeExpired = subscribeSessionExpired(() => {
+      void logout();
+    });
+
+    const unsubscribeTokens = subscribeSessionTokensChanged(({ accessToken, refreshToken }) => {
+      void setTokens({ accessToken, refreshToken });
+    });
+
+    return () => {
+      unsubscribeTokens();
+      unsubscribeExpired();
+    };
+  }, [logout, setTokens]);
 
   useEffect(() => {
     let mounted = true;
@@ -44,15 +64,9 @@ export default function RootLayout() {
   }, [bootstrap]);
 
   useEffect(() => {
-    const unsubscribe = subscribeSessionExpired(() => {
-      void logout();
-    });
-
-    return unsubscribe;
-  }, [logout]);
-
-  useEffect(() => {
-    if (!appReady || !hydrated) return;
+    if (!appReady || !hydrated) {
+      return;
+    }
 
     if (accessToken) {
       realtimeClient.connect(accessToken);

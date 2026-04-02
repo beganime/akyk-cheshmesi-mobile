@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,59 +11,100 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 import { GlassCard } from '@/src/components/GlassCard';
-import { loginRequest } from '@/src/lib/api/auth';
-import { useAuthStore } from '@/src/state/auth';
+import { registerRequest, verifyEmailRequest } from '@/src/lib/api/auth';
 import { useTheme } from '@/src/theme/ThemeProvider';
 
 function getErrorMessage(error: any, fallback: string) {
   return error?.response?.data?.detail || error?.message || fallback;
 }
 
-export default function LoginScreen() {
+function getFirstParam(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0] ?? '';
+  }
+
+  return value ?? '';
+}
+
+export default function VerifyEmailScreen() {
   const { theme } = useTheme();
-  const setSession = useAuthStore((s) => s.setSession);
+  const params = useLocalSearchParams<{ email?: string | string[] }>();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const initialEmail = useMemo(
+    () => getFirstParam(params.email).trim().toLowerCase(),
+    [params.email],
+  );
+
+  const [email, setEmail] = useState(initialEmail);
+  const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
 
-  const onLogin = async () => {
+  const onVerify = async () => {
     const normalizedEmail = email.trim().toLowerCase();
+    const normalizedCode = code.replace(/\D/g, '').slice(0, 6);
 
-    if (!normalizedEmail || !password.trim()) {
-      Alert.alert('Ошибка', 'Введите email и пароль');
+    if (!normalizedEmail) {
+      Alert.alert('Ошибка', 'Введите email');
+      return;
+    }
+
+    if (normalizedCode.length !== 6) {
+      Alert.alert('Ошибка', 'Введите 6-значный код');
       return;
     }
 
     try {
       setLoading(true);
 
-      const data = await loginRequest(normalizedEmail, password);
+      const data = await verifyEmailRequest(normalizedEmail, normalizedCode);
+      const verificationToken = data?.verification_token;
 
-      const accessToken = data?.tokens?.access;
-      const refreshToken = data?.tokens?.refresh;
-      const user = data?.user ?? null;
-
-      if (!accessToken) {
-        throw new Error('Backend did not return access token');
+      if (!verificationToken) {
+        throw new Error('Backend did not return verification token');
       }
 
-      await setSession({
-        accessToken,
-        refreshToken,
-        user,
+      router.push({
+        pathname: '/(auth)/set-password',
+        params: {
+          email: normalizedEmail,
+          verificationToken,
+        },
       });
-
-      router.replace('/(app)/(tabs)/chats');
     } catch (error: any) {
-      Alert.alert('Ошибка входа', getErrorMessage(error, 'Не удалось войти'));
+      Alert.alert(
+        'Ошибка подтверждения',
+        getErrorMessage(error, 'Не удалось подтвердить email'),
+      );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const onResend = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      Alert.alert('Ошибка', 'Введите email');
+      return;
+    }
+
+    try {
+      setResending(true);
+      await registerRequest(normalizedEmail);
+      Alert.alert('Готово', 'Новый код отправлен на почту');
+    } catch (error: any) {
+      Alert.alert(
+        'Ошибка повторной отправки',
+        getErrorMessage(error, 'Не удалось отправить код повторно'),
+      );
+    } finally {
+      setResending(false);
     }
   };
 
@@ -80,19 +121,20 @@ export default function LoginScreen() {
         >
           <View style={styles.hero}>
             <View style={[styles.logoCircle, { backgroundColor: theme.colors.primary }]}>
-              <Ionicons name="sparkles" size={28} color="#FFFFFF" />
+              <Ionicons name="mail-open-outline" size={28} color="#FFFFFF" />
             </View>
 
-            <Text style={styles.brandTitle}>Akyl Cheshmesi</Text>
+            <Text style={styles.brandTitle}>Подтверждение email</Text>
             <Text style={styles.brandSubtitle}>
-              Быстрый, безопасный и красивый мессенджер
+              Введи код из письма, чтобы перейти к созданию аккаунта
             </Text>
           </View>
 
           <GlassCard>
-            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Вход</Text>
+            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Шаг 2 из 3</Text>
             <Text style={[styles.cardSubtitle, { color: theme.colors.muted }]}>
-              Войди в аккаунт и продолжи с того места, где остановился.
+              На эту почту приходит проверочный код. Если письма нет — проверь спам и отправь
+              код ещё раз.
             </Text>
 
             <View
@@ -116,7 +158,6 @@ export default function LoginScreen() {
                 autoCorrect={false}
                 autoComplete="email"
                 textContentType="emailAddress"
-                returnKeyType="next"
               />
             </View>
 
@@ -129,24 +170,25 @@ export default function LoginScreen() {
                 },
               ]}
             >
-              <Ionicons name="lock-closed-outline" size={18} color={theme.colors.muted} />
+              <Ionicons name="key-outline" size={18} color={theme.colors.muted} />
               <TextInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Пароль"
+                value={code}
+                onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="6-значный код"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.input, { color: theme.colors.text }]}
-                secureTextEntry
+                keyboardType="number-pad"
                 autoCapitalize="none"
                 autoCorrect={false}
-                autoComplete="password"
-                textContentType="password"
+                autoComplete="one-time-code"
+                textContentType="oneTimeCode"
+                maxLength={6}
                 returnKeyType="done"
-                onSubmitEditing={() => void onLogin()}
+                onSubmitEditing={() => void onVerify()}
               />
             </View>
 
-            <Pressable onPress={() => void onLogin()} disabled={loading}>
+            <Pressable onPress={() => void onVerify()} disabled={loading}>
               <LinearGradient
                 colors={['#4F6BFF', '#6E7BFF']}
                 start={{ x: 0, y: 0 }}
@@ -157,47 +199,22 @@ export default function LoginScreen() {
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <>
-                    <Text style={styles.buttonText}>Войти</Text>
+                    <Text style={styles.buttonText}>Подтвердить</Text>
                     <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
                   </>
                 )}
               </LinearGradient>
             </Pressable>
 
-            <Pressable
-              style={styles.secondaryAction}
-              onPress={() => router.push('/(auth)/register')}
-              disabled={loading}
-            >
-              <Text style={[styles.secondaryActionText, { color: theme.colors.primary }]}>
-                Нет аккаунта? Зарегистрироваться
-              </Text>
+            <Pressable style={styles.secondaryAction} onPress={() => void onResend()} disabled={resending}>
+              {resending ? (
+                <ActivityIndicator color={theme.colors.primary} />
+              ) : (
+                <Text style={[styles.secondaryActionText, { color: theme.colors.primary }]}>
+                  Отправить код повторно
+                </Text>
+              )}
             </Pressable>
-
-            <View style={styles.featuresRow}>
-              <View style={styles.featureItem}>
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={16}
-                  color={theme.colors.primary}
-                />
-                <Text style={[styles.featureText, { color: theme.colors.muted }]}>
-                  Защищённо
-                </Text>
-              </View>
-
-              <View style={styles.featureItem}>
-                <Ionicons name="flash-outline" size={16} color={theme.colors.primary} />
-                <Text style={[styles.featureText, { color: theme.colors.muted }]}>Быстро</Text>
-              </View>
-
-              <View style={styles.featureItem}>
-                <Ionicons name="sync-outline" size={16} color={theme.colors.primary} />
-                <Text style={[styles.featureText, { color: theme.colors.muted }]}>
-                  Синхронно
-                </Text>
-              </View>
-            </View>
           </GlassCard>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -287,27 +304,11 @@ const styles = StyleSheet.create({
   secondaryAction: {
     alignSelf: 'center',
     marginTop: 14,
+    minHeight: 24,
+    justifyContent: 'center',
   },
   secondaryActionText: {
     fontSize: 14,
     fontWeight: '700',
-  },
-  featuresRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 18,
-    gap: 10,
-  },
-  featureItem: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  featureText: {
-    fontSize: 12,
-    fontWeight: '600',
   },
 });

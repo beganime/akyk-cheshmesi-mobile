@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
-import { useTheme } from '@/src/theme/ThemeProvider';
+
 import { FloatingTabBar } from '@/src/components/FloatingTabBar';
+import { useTheme } from '@/src/theme/ThemeProvider';
 
 export default function TabsLayout() {
   const { theme } = useTheme();
@@ -17,7 +18,8 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="chats" options={{ title: 'Чаты' }} />
       <Tabs.Screen name="contacts" options={{ title: 'Контакты' }} />
-      <Tabs.Screen name="announcements" options={{ title: 'Объявления' }} />
+      <Tabs.Screen name="ai" options={{ title: 'ИИ' }} />
+      <Tabs.Screen name="announcements" options={{ title: 'Новости' }} />
       <Tabs.Screen name="profile" options={{ title: 'Профиль' }} />
     </Tabs>
   );
