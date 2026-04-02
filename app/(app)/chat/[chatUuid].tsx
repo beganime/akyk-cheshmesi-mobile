@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -14,8 +14,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
+import { Image as ExpoImage } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { GlassCard } from '@/src/components/GlassCard';
@@ -26,10 +30,14 @@ import {
   setChatPinned,
 } from '@/src/lib/api/chats';
 import { createComplaint, ComplaintReason } from '@/src/lib/api/complaints';
+import { uploadPickedImage } from '@/src/lib/api/media';
 import { fetchChatMessages, markChatRead, sendChatMessage } from '@/src/lib/api/messages';
+import { fetchStickerPackDetail, fetchStickerPacks } from '@/src/lib/api/stickers';
 import { generateUUIDv4 } from '@/src/lib/utils/uuid';
+import { mergeMessages } from '@/src/lib/utils/messageSync';
 import type { ChatListItem } from '@/src/types/chat';
 import type { MessageItem } from '@/src/types/message';
+import type { StickerItem, StickerPackDetail, StickerPackListItem } from '@/src/types/sticker';
 
 function formatChatTitle(chat: ChatListItem | null) {
   return chat?.display_title || chat?.title || 'Чат';
@@ -49,6 +57,35 @@ function formatTime(dateString?: string | null) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function getMessagePreviewText(message: MessageItem) {
+  if (message.text?.trim()) return message.text;
+
+  if (message.message_type === 'sticker') return 'Стикер';
+  if (message.message_type === 'image') return 'Фото';
+  if (message.message_type === 'video') return 'Видео';
+  if (message.message_type === 'audio') return 'Аудио';
+  if (message.message_type === 'file') return 'Файл';
+
+  return 'Сообщение';
+}
+
+function getFirstImageUrl(message: MessageItem) {
+  const imageAttachment = message.attachments?.find((item) => item.media_kind === 'image' && item.file_url);
+  return imageAttachment?.file_url || null;
+}
+
+function getStickerImage(message: MessageItem) {
+  const meta = message.metadata as Record<string, unknown> | null | undefined;
+  const image = meta?.sticker_image;
+  return typeof image === 'string' ? image : null;
+}
+
+function getStickerEmoji(message: MessageItem) {
+  const meta = message.metadata as Record<string, unknown> | null | undefined;
+  const emoji = meta?.sticker_emoji;
+  return typeof emoji === 'string' ? emoji : '';
 }
 
 function MessageStatusIcon({
@@ -76,6 +113,7 @@ function MessageStatusIcon({
 }
 
 const reportReasons: ComplaintReason[] = ['spam', 'abuse', 'fraud', 'harassment', 'other'];
+const quickEmojis = ['👍', '❤️', '😂', '🔥', '🙏', '👏', '😎', '😅', '😮', '🥹', '🎉', '✅'];
 
 export default function ChatScreen() {
   const { theme } = useTheme();
@@ -95,14 +133,26 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
 
   const [draft, setDraft] = useState('');
+  const [replyTo, setReplyTo] = useState<MessageItem | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
+  const [emojiVisible, setEmojiVisible] = useState(false);
+  const [stickersVisible, setStickersVisible] = useState(false);
+
+  const [actionMenuVisible, setActionMenuVisible] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState<MessageItem | null>(null);
+
   const [reportType, setReportType] = useState<'user' | 'chat'>('chat');
   const [reportReason, setReportReason] = useState<ComplaintReason>('other');
   const [reportDescription, setReportDescription] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+
+  const [stickerPacks, setStickerPacks] = useState<StickerPackListItem[]>([]);
+  const [selectedPackSlug, setSelectedPackSlug] = useState<string | null>(null);
+  const [selectedPack, setSelectedPack] = useState<StickerPackDetail | null>(null);
+  const [loadingStickers, setLoadingStickers] = useState(false);
 
   const latestIncomingMessage = useMemo(() => {
     const reversed = [...messages].reverse();
@@ -115,7 +165,7 @@ export default function ChatScreen() {
     });
   };
 
-  const refreshChat = async () => {
+  const refreshChat = useCallback(async () => {
     try {
       if (!chatUuid) return;
       const data = await fetchChatDetail(chatUuid);
@@ -123,7 +173,21 @@ export default function ChatScreen() {
     } catch (error) {
       console.error('refreshChat error:', error);
     }
-  };
+  }, [chatUuid]);
+
+  const refreshMessagesSilent = useCallback(async () => {
+    try {
+      if (!chatUuid) return;
+
+      const response = await fetchChatMessages(chatUuid);
+      const serverMessages = normalizeMessagesForUi(response.results ?? []);
+
+      setMessages((current) => mergeMessages(serverMessages, current));
+      setNextUrl(response.next ?? null);
+    } catch (error) {
+      console.error('refreshMessagesSilent error:', error);
+    }
+  }, [chatUuid]);
 
   const loadChat = async () => {
     try {
@@ -152,6 +216,42 @@ export default function ChatScreen() {
     }
   };
 
+  const loadStickerPack = async (slug: string) => {
+    try {
+      setLoadingStickers(true);
+      const data = await fetchStickerPackDetail(slug);
+      setSelectedPack(data);
+    } catch (error) {
+      console.error('loadStickerPack error:', error);
+    } finally {
+      setLoadingStickers(false);
+    }
+  };
+
+  const openStickerPicker = async () => {
+    try {
+      setStickersVisible(true);
+
+      if (!stickerPacks.length) {
+        setLoadingStickers(true);
+        const packs = await fetchStickerPacks();
+        setStickerPacks(packs);
+
+        if (packs[0]?.slug) {
+          setSelectedPackSlug(packs[0].slug);
+          await loadStickerPack(packs[0].slug);
+        } else {
+          setLoadingStickers(false);
+        }
+      } else if (selectedPackSlug) {
+        await loadStickerPack(selectedPackSlug);
+      }
+    } catch (error) {
+      console.error('openStickerPicker error:', error);
+      setLoadingStickers(false);
+    }
+  };
+
   const loadEarlierMessages = async () => {
     try {
       if (!chatUuid || !nextUrl || loadingEarlier) return;
@@ -161,7 +261,7 @@ export default function ChatScreen() {
       const response = await fetchChatMessages(chatUuid, nextUrl);
       const olderMessages = normalizeMessagesForUi(response.results ?? []);
 
-      setMessages((current) => [...olderMessages, ...current]);
+      setMessages((current) => mergeMessages([...olderMessages, ...current], current));
       setNextUrl(response.next ?? null);
     } catch (error) {
       console.error('loadEarlierMessages error:', error);
@@ -183,6 +283,20 @@ export default function ChatScreen() {
     void loadChat();
     void loadInitialMessages();
   }, [chatUuid]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshChat();
+      void refreshMessagesSilent();
+
+      const interval = setInterval(() => {
+        void refreshChat();
+        void refreshMessagesSilent();
+      }, 2500);
+
+      return () => clearInterval(interval);
+    }, [refreshChat, refreshMessagesSilent])
+  );
 
   useEffect(() => {
     void syncReadState();
@@ -310,6 +424,175 @@ export default function ChatScreen() {
     }
   };
 
+  const handleQuickReply = (message: MessageItem) => {
+    setReplyTo(message);
+    setActionMenuVisible(false);
+    setSelectedMessage(null);
+  };
+
+  const handleOpenActionMenu = (message: MessageItem) => {
+    setSelectedMessage(message);
+    setActionMenuVisible(true);
+  };
+
+  const handleCopyMessage = async () => {
+    if (!selectedMessage) return;
+
+    try {
+      await Clipboard.setStringAsync(getMessagePreviewText(selectedMessage));
+      setActionMenuVisible(false);
+      setSelectedMessage(null);
+    } catch (error) {
+      console.error('handleCopyMessage error:', error);
+    }
+  };
+
+  const handleShareMessage = async () => {
+    if (!selectedMessage) return;
+
+    try {
+      await Share.share({
+        message: getMessagePreviewText(selectedMessage),
+      });
+      setActionMenuVisible(false);
+      setSelectedMessage(null);
+    } catch (error) {
+      console.error('handleShareMessage error:', error);
+    }
+  };
+
+  const handleInsertEmoji = (emoji: string) => {
+    setDraft((current) => `${current}${emoji}`);
+    setEmojiVisible(false);
+  };
+
+  const handlePickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.85,
+        allowsEditing: false,
+      });
+
+      if (result.canceled || !result.assets?.[0] || !chatUuid) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const uploaded = await uploadPickedImage(asset);
+      const clientUuid = generateUUIDv4();
+
+      const optimisticMessage: MessageItem = {
+        uuid: `local-${clientUuid}`,
+        client_uuid: clientUuid,
+        message_type: 'image',
+        text: '',
+        is_own_message: true,
+        delivery_status: 'sent',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        local_status: 'pending',
+        attachments: uploaded.file_url
+          ? [
+              {
+                uuid: uploaded.uuid,
+                file_url: uploaded.file_url,
+                content_type: uploaded.content_type,
+                original_name: uploaded.original_name,
+                media_kind: uploaded.media_kind,
+              },
+            ]
+          : [],
+      };
+
+      setMessages((current) => [...current, optimisticMessage]);
+      scrollToBottom();
+
+      const savedMessage = await sendChatMessage(chatUuid, {
+        client_uuid: clientUuid,
+        message_type: 'image',
+        text: '',
+        attachment_uuids: [uploaded.uuid],
+        ...(replyTo?.uuid ? { reply_to_uuid: replyTo.uuid } : {}),
+      });
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.client_uuid === clientUuid
+            ? {
+                ...savedMessage,
+                local_status: 'sent',
+              }
+            : message
+        )
+      );
+
+      setReplyTo(null);
+    } catch (error) {
+      console.error('handlePickImage error:', error);
+    }
+  };
+
+  const handleSendSticker = async (sticker: StickerItem) => {
+    try {
+      if (!chatUuid) return;
+
+      const clientUuid = generateUUIDv4();
+
+      const optimisticMessage: MessageItem = {
+        uuid: `local-${clientUuid}`,
+        client_uuid: clientUuid,
+        message_type: 'sticker',
+        text: sticker.emoji || sticker.title || '',
+        is_own_message: true,
+        delivery_status: 'sent',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        local_status: 'pending',
+        metadata: {
+          sticker_uuid: sticker.uuid,
+          sticker_title: sticker.title,
+          sticker_code: sticker.code,
+          sticker_image: sticker.image,
+          sticker_emoji: sticker.emoji,
+        },
+      };
+
+      setMessages((current) => [...current, optimisticMessage]);
+      setStickersVisible(false);
+      scrollToBottom();
+
+      const savedMessage = await sendChatMessage(chatUuid, {
+        client_uuid: clientUuid,
+        message_type: 'sticker',
+        text: sticker.emoji || sticker.title || '',
+        metadata: {
+          sticker_uuid: sticker.uuid,
+          sticker_title: sticker.title,
+          sticker_code: sticker.code,
+          sticker_image: sticker.image,
+          sticker_emoji: sticker.emoji,
+        },
+        ...(replyTo?.uuid ? { reply_to_uuid: replyTo.uuid } : {}),
+      });
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.client_uuid === clientUuid
+            ? {
+                ...savedMessage,
+                local_status: 'sent',
+              }
+            : message
+        )
+      );
+
+      setReplyTo(null);
+    } catch (error) {
+      console.error('handleSendSticker error:', error);
+    }
+  };
+
   const handleSend = async () => {
     const text = draft.trim();
 
@@ -322,6 +605,15 @@ export default function ChatScreen() {
       client_uuid: clientUuid,
       message_type: 'text',
       text,
+      reply_to: replyTo
+        ? {
+            uuid: replyTo.uuid,
+            text: getMessagePreviewText(replyTo),
+            message_type: replyTo.message_type,
+            sender: replyTo.sender,
+            created_at: replyTo.created_at,
+          }
+        : null,
       is_own_message: true,
       delivery_status: 'sent',
       created_at: new Date().toISOString(),
@@ -339,6 +631,8 @@ export default function ChatScreen() {
       const savedMessage = await sendChatMessage(chatUuid, {
         text,
         client_uuid: clientUuid,
+        message_type: 'text',
+        ...(replyTo?.uuid ? { reply_to_uuid: replyTo.uuid } : {}),
       });
 
       setMessages((current) =>
@@ -351,6 +645,8 @@ export default function ChatScreen() {
             : message
         )
       );
+
+      setReplyTo(null);
     } catch (error) {
       console.error('handleSend error:', error);
 
@@ -370,7 +666,7 @@ export default function ChatScreen() {
   };
 
   const retryMessage = async (message: MessageItem) => {
-    if (!chatUuid || !message.client_uuid || !message.text) return;
+    if (!chatUuid || !message.client_uuid) return;
 
     setMessages((current) =>
       current.map((item) =>
@@ -385,8 +681,14 @@ export default function ChatScreen() {
 
     try {
       const savedMessage = await sendChatMessage(chatUuid, {
-        text: message.text,
+        text: message.text || '',
         client_uuid: message.client_uuid,
+        message_type: (message.message_type as any) || 'text',
+        ...(message.reply_to?.uuid ? { reply_to_uuid: message.reply_to.uuid } : {}),
+        ...(message.attachments?.length
+          ? { attachment_uuids: message.attachments.map((item) => item.uuid) }
+          : {}),
+        ...(message.metadata ? { metadata: message.metadata as Record<string, unknown> } : {}),
       });
 
       setMessages((current) =>
@@ -418,6 +720,9 @@ export default function ChatScreen() {
   const renderMessage = ({ item }: { item: MessageItem }) => {
     const isOwn = Boolean(item.is_own_message);
     const metaColor = isOwn ? 'rgba(255,255,255,0.84)' : theme.colors.muted;
+    const imageUrl = getFirstImageUrl(item);
+    const stickerImage = getStickerImage(item);
+    const stickerEmoji = getStickerEmoji(item);
 
     return (
       <View
@@ -429,8 +734,12 @@ export default function ChatScreen() {
         ]}
       >
         <Pressable
-          disabled={item.local_status !== 'failed'}
-          onPress={() => void retryMessage(item)}
+          onLongPress={() => handleOpenActionMenu(item)}
+          onPress={() => {
+            if (item.local_status === 'failed') {
+              void retryMessage(item);
+            }
+          }}
           style={[
             styles.bubble,
             {
@@ -463,16 +772,59 @@ export default function ChatScreen() {
             </View>
           )}
 
-          <Text
-            style={[
-              styles.messageText,
-              {
-                color: isOwn ? '#FFFFFF' : theme.colors.text,
-              },
-            ]}
-          >
-            {item.is_deleted ? 'Сообщение удалено' : item.text || ''}
-          </Text>
+          {stickerImage ? (
+            <View style={styles.stickerWrap}>
+              <ExpoImage
+                source={{ uri: stickerImage }}
+                style={styles.stickerImage}
+                contentFit="contain"
+              />
+              {!!stickerEmoji && (
+                <Text
+                  style={[
+                    styles.stickerEmoji,
+                    {
+                      color: isOwn ? '#FFFFFF' : theme.colors.text,
+                    },
+                  ]}
+                >
+                  {stickerEmoji}
+                </Text>
+              )}
+            </View>
+          ) : imageUrl ? (
+            <View style={styles.imageMessageWrap}>
+              <ExpoImage
+                source={{ uri: imageUrl }}
+                style={styles.imageMessage}
+                contentFit="cover"
+              />
+              {!!item.text?.trim() && (
+                <Text
+                  style={[
+                    styles.messageText,
+                    {
+                      color: isOwn ? '#FFFFFF' : theme.colors.text,
+                      marginTop: 8,
+                    },
+                  ]}
+                >
+                  {item.text}
+                </Text>
+              )}
+            </View>
+          ) : (
+            <Text
+              style={[
+                styles.messageText,
+                {
+                  color: isOwn ? '#FFFFFF' : theme.colors.text,
+                },
+              ]}
+            >
+              {item.is_deleted ? 'Сообщение удалено' : item.text || ''}
+            </Text>
+          )}
 
           <View style={styles.metaRow}>
             <Text
@@ -520,8 +872,8 @@ export default function ChatScreen() {
 
           <Pressable
             onPress={openPeerProfile}
-            disabled={!chat?.peer_user?.uuid}
             style={styles.headerCenter}
+            hitSlop={12}
           >
             <Text style={[styles.headerTitle, { color: theme.colors.text }]} numberOfLines={1}>
               {formatChatTitle(chat)}
@@ -591,7 +943,7 @@ export default function ChatScreen() {
               styles.scrollToBottomButton,
               {
                 backgroundColor: theme.colors.primary,
-                bottom: Math.max(insets.bottom, 12) + 74,
+                bottom: Math.max(insets.bottom, 12) + 118,
               },
             ]}
           >
@@ -609,6 +961,54 @@ export default function ChatScreen() {
             },
           ]}
         >
+          {replyTo ? (
+            <View
+              style={[
+                styles.replyComposer,
+                {
+                  borderColor: theme.colors.border,
+                  backgroundColor: theme.colors.card,
+                },
+              ]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.replyComposerTitle, { color: theme.colors.text }]}>
+                  Ответ
+                </Text>
+                <Text style={[styles.replyComposerText, { color: theme.colors.muted }]} numberOfLines={1}>
+                  {getMessagePreviewText(replyTo)}
+                </Text>
+              </View>
+
+              <Pressable onPress={() => setReplyTo(null)} style={styles.replyCloseBtn}>
+                <Ionicons name="close" size={18} color={theme.colors.text} />
+              </Pressable>
+            </View>
+          ) : null}
+
+          <View style={styles.toolbarRow}>
+            <Pressable
+              onPress={() => setEmojiVisible(true)}
+              style={[styles.toolButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+            >
+              <Ionicons name="happy-outline" size={18} color={theme.colors.text} />
+            </Pressable>
+
+            <Pressable
+              onPress={() => void handlePickImage()}
+              style={[styles.toolButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+            >
+              <Ionicons name="image-outline" size={18} color={theme.colors.text} />
+            </Pressable>
+
+            <Pressable
+              onPress={() => void openStickerPicker()}
+              style={[styles.toolButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+            >
+              <Ionicons name="sparkles-outline" size={18} color={theme.colors.text} />
+            </Pressable>
+          </View>
+
           <View
             style={[
               styles.composer,
@@ -655,6 +1055,57 @@ export default function ChatScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={actionMenuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActionMenuVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setActionMenuVisible(false)} />
+          <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <GlassCard>
+              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
+                Действия с сообщением
+              </Text>
+
+              <Pressable
+                onPress={() => selectedMessage && handleQuickReply(selectedMessage)}
+                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+              >
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>Ответить</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => void handleCopyMessage()}
+                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+              >
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>Копировать</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => void handleShareMessage()}
+                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+              >
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>Поделиться</Text>
+              </Pressable>
+
+              <View style={[styles.sheetItem, styles.sheetDisabled, { borderColor: theme.colors.border }]}>
+                <Text style={[styles.sheetItemText, { color: theme.colors.muted }]}>Изменить — скоро</Text>
+              </View>
+
+              <View style={[styles.sheetItem, styles.sheetDisabled, { borderColor: theme.colors.border }]}>
+                <Text style={[styles.sheetItemText, { color: theme.colors.muted }]}>Удалить для себя — скоро</Text>
+              </View>
+
+              <View style={[styles.sheetItem, styles.sheetDisabled, { borderColor: theme.colors.border }]}>
+                <Text style={[styles.sheetItemText, { color: theme.colors.muted }]}>Удалить на сервере — скоро</Text>
+              </View>
+            </GlassCard>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={settingsVisible}
@@ -827,6 +1278,117 @@ export default function ChatScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={emojiVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEmojiVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setEmojiVisible(false)} />
+          <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <GlassCard>
+              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>Эмодзи</Text>
+
+              <View style={styles.emojiGrid}>
+                {quickEmojis.map((emoji) => (
+                  <Pressable
+                    key={emoji}
+                    onPress={() => handleInsertEmoji(emoji)}
+                    style={[styles.emojiButton, { borderColor: theme.colors.border }]}
+                  >
+                    <Text style={styles.emojiText}>{emoji}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </GlassCard>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={stickersVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setStickersVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setStickersVisible(false)} />
+          <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <GlassCard>
+              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>Стикеры</Text>
+
+              <FlatList
+                horizontal
+                data={stickerPacks}
+                keyExtractor={(item) => item.uuid}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.packList}
+                renderItem={({ item }) => {
+                  const active = item.slug === selectedPackSlug;
+
+                  return (
+                    <Pressable
+                      onPress={async () => {
+                        setSelectedPackSlug(item.slug);
+                        await loadStickerPack(item.slug);
+                      }}
+                      style={[
+                        styles.packChip,
+                        {
+                          borderColor: theme.colors.border,
+                          backgroundColor: active ? theme.colors.primary : 'transparent',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          color: active ? '#FFFFFF' : theme.colors.text,
+                          fontWeight: '600',
+                        }}
+                      >
+                        {item.title}
+                      </Text>
+                    </Pressable>
+                  );
+                }}
+              />
+
+              {loadingStickers ? (
+                <View style={styles.centered}>
+                  <ActivityIndicator color={theme.colors.primary} />
+                </View>
+              ) : (
+                <FlatList
+                  data={selectedPack?.stickers ?? []}
+                  keyExtractor={(item) => item.uuid}
+                  numColumns={4}
+                  contentContainerStyle={styles.stickerGrid}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      onPress={() => void handleSendSticker(item)}
+                      style={[styles.stickerCell, { borderColor: theme.colors.border }]}
+                    >
+                      <ExpoImage
+                        source={{ uri: item.image }}
+                        style={styles.stickerCellImage}
+                        contentFit="contain"
+                      />
+                      {!!item.emoji && <Text style={styles.stickerCellEmoji}>{item.emoji}</Text>}
+                    </Pressable>
+                  )}
+                  ListEmptyComponent={
+                    <Text style={[styles.emptyText, { color: theme.colors.muted }]}>
+                      Стикеры не найдены
+                    </Text>
+                  }
+                />
+              )}
+            </GlassCard>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -938,6 +1500,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
   },
+  stickerWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stickerImage: {
+    width: 120,
+    height: 120,
+  },
+  stickerEmoji: {
+    fontSize: 18,
+    marginTop: 6,
+  },
+  imageMessageWrap: {
+    overflow: 'hidden',
+    borderRadius: 18,
+  },
+  imageMessage: {
+    width: 220,
+    height: 220,
+    borderRadius: 18,
+  },
   scrollToBottomButton: {
     position: 'absolute',
     right: 18,
@@ -956,6 +1539,45 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
     borderTopWidth: 1,
+  },
+  replyComposer: {
+    minHeight: 56,
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  replyComposerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  replyComposerText: {
+    fontSize: 13,
+  },
+  replyCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toolbarRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 8,
+  },
+  toolButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   composer: {
     minHeight: 58,
@@ -1004,6 +1626,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     paddingHorizontal: 14,
   },
+  sheetDisabled: {
+    opacity: 0.55,
+  },
   sheetItemText: {
     fontSize: 15,
     fontWeight: '600',
@@ -1045,5 +1670,56 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
+  },
+  emojiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  emojiButton: {
+    width: '22%',
+    aspectRatio: 1,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emojiText: {
+    fontSize: 28,
+  },
+  packList: {
+    gap: 8,
+    paddingBottom: 12,
+  },
+  packChip: {
+    minHeight: 38,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  stickerGrid: {
+    paddingTop: 4,
+    gap: 10,
+  },
+  stickerCell: {
+    width: '23%',
+    aspectRatio: 1,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: '1%',
+    overflow: 'hidden',
+  },
+  stickerCellImage: {
+    width: '72%',
+    height: '72%',
+  },
+  stickerCellEmoji: {
+    fontSize: 12,
+    marginTop: 4,
   },
 });

@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { GlassCard } from '@/src/components/GlassCard';
 import { useTheme } from '@/src/theme/ThemeProvider';
+import { useAuthStore } from '@/src/state/auth';
 
 const themeModes = [
   'lightOrange',
@@ -21,13 +22,19 @@ const themeLabels: Record<(typeof themeModes)[number], string> = {
 
 export default function SettingsScreen() {
   const { theme, themeName, setThemeName } = useTheme();
+  const logout = useAuthStore((s) => s.logout);
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/(auth)/login');
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={styles.header}>
         <Pressable
           onPress={() => router.back()}
-          style={[styles.backButton, { borderColor: theme.colors.border }]}
+          style={[styles.headerButton, { borderColor: theme.colors.border }]}
         >
           <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
         </Pressable>
@@ -39,7 +46,31 @@ export default function SettingsScreen() {
 
       <View style={styles.content}>
         <GlassCard>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Тема</Text>
+          <Text style={[styles.groupTitle, { color: theme.colors.text }]}>Аккаунт</Text>
+
+          <Pressable
+            onPress={() => router.push('/(app)/profile-edit')}
+            style={[styles.rowItem, { borderColor: theme.colors.border }]}
+          >
+            <Text style={[styles.rowText, { color: theme.colors.text }]}>
+              Редактировать профиль
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => {}}
+            style={[styles.rowItem, { borderColor: theme.colors.border }]}
+          >
+            <Text style={[styles.rowText, { color: theme.colors.text }]}>
+              Приватность и безопасность
+            </Text>
+            <Text style={[styles.soonText, { color: theme.colors.muted }]}>Скоро</Text>
+          </Pressable>
+        </GlassCard>
+
+        <GlassCard>
+          <Text style={[styles.groupTitle, { color: theme.colors.text }]}>Оформление</Text>
 
           {themeModes.map((mode) => {
             const isActive = themeName === mode;
@@ -49,7 +80,7 @@ export default function SettingsScreen() {
                 key={mode}
                 onPress={() => setThemeName(mode)}
                 style={[
-                  styles.option,
+                  styles.themeItem,
                   {
                     borderColor: theme.colors.border,
                     backgroundColor: isActive ? theme.colors.primary : 'transparent',
@@ -58,7 +89,7 @@ export default function SettingsScreen() {
               >
                 <Text
                   style={{
-                    color: isActive ? '#fff' : theme.colors.text,
+                    color: isActive ? '#FFFFFF' : theme.colors.text,
                     fontWeight: '600',
                   }}
                 >
@@ -68,6 +99,37 @@ export default function SettingsScreen() {
             );
           })}
         </GlassCard>
+
+        <GlassCard>
+          <Text style={[styles.groupTitle, { color: theme.colors.text }]}>Приложение</Text>
+
+          <Pressable
+            onPress={() => {}}
+            style={[styles.rowItem, { borderColor: theme.colors.border }]}
+          >
+            <Text style={[styles.rowText, { color: theme.colors.text }]}>
+              Уведомления
+            </Text>
+            <Text style={[styles.soonText, { color: theme.colors.muted }]}>Скоро</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {}}
+            style={[styles.rowItem, { borderColor: theme.colors.border }]}
+          >
+            <Text style={[styles.rowText, { color: theme.colors.text }]}>
+              Медиа и кэш
+            </Text>
+            <Text style={[styles.soonText, { color: theme.colors.muted }]}>Скоро</Text>
+          </Pressable>
+        </GlassCard>
+
+        <Pressable
+          onPress={() => void handleLogout()}
+          style={[styles.logoutButton, { backgroundColor: theme.colors.primary }]}
+        >
+          <Text style={styles.logoutText}>Выйти</Text>
+        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -83,7 +145,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  backButton: {
+  headerButton: {
     width: 44,
     height: 44,
     borderRadius: 16,
@@ -98,18 +160,47 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 120,
+    gap: 12,
   },
-  sectionTitle: {
-    fontSize: 18,
+  groupTitle: {
+    fontSize: 17,
     fontWeight: '700',
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  option: {
+  rowItem: {
+    minHeight: 52,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  rowText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  soonText: {
+    fontSize: 13,
+  },
+  themeItem: {
     minHeight: 48,
     borderRadius: 16,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
+  },
+  logoutButton: {
+    minHeight: 52,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

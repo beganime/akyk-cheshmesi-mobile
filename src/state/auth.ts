@@ -1,5 +1,10 @@
 import { create } from 'zustand';
-import { clearTokens, getAccessToken, saveTokens } from '@/src/lib/storage/secure';
+import {
+  clearTokens,
+  getAccessToken,
+  getRefreshToken,
+  saveTokens,
+} from '@/src/lib/storage/secure';
 import { fetchMe } from '@/src/lib/api/auth';
 import type { UserProfile } from '@/src/types/user';
 
@@ -26,7 +31,10 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   bootstrap: async () => {
     try {
-      const accessToken = await getAccessToken();
+      const [accessToken, refreshToken] = await Promise.all([
+        getAccessToken(),
+        getRefreshToken(),
+      ]);
 
       if (!accessToken) {
         set({
@@ -40,6 +48,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       set({
         accessToken,
+        refreshToken,
         hydrated: false,
       });
 
@@ -48,6 +57,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
         set({
           accessToken,
+          refreshToken,
           user,
           hydrated: true,
         });

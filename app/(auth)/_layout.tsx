@@ -1,8 +1,8 @@
-import { Redirect } from 'expo-router';
+import { Redirect, Stack } from 'expo-router';
+import { ActivityIndicator, View } from 'react-native';
 import { useAuthStore } from '@/src/state/auth';
-import { View, ActivityIndicator } from 'react-native';
 
-export default function IndexScreen() {
+export default function AuthLayout() {
   const { hydrated, accessToken } = useAuthStore();
 
   if (!hydrated) {
@@ -20,5 +20,9 @@ export default function IndexScreen() {
     );
   }
 
-  return <Redirect href={accessToken ? '/(app)/(tabs)/chats' : '/(auth)/login'} />;
+  if (accessToken) {
+    return <Redirect href="/(app)/(tabs)/chats" />;
+  }
+
+  return <Stack screenOptions={{ headerShown: false }} />;
 }

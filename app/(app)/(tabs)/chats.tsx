@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -10,11 +10,17 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { GlassCard } from '@/src/components/GlassCard';
 import { SearchInput } from '@/src/components/SearchInput';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { fetchChats, createDirectChat } from '@/src/lib/api/chats';
 import { searchUsers, UserShort } from '@/src/lib/api/contacts';
+import {
+  loadCachedChats,
+  saveCachedChats,
+} from '@/src/lib/db/cache';
+import { realtimeClient } from '@/src/lib/realtime/socket';
 import type { ChatLastMessage, ChatListItem } from '@/src/types/chat';
 
 function chatTitle(item: ChatListItem) {
@@ -71,6 +77,22 @@ function searchableLastMessage(lastMessage: ChatLastMessage) {
   return `${lastMessage.preview ?? ''} ${lastMessage.text ?? ''} ${lastMessage.message_type ?? ''}`.toLowerCase();
 }
 
+function sortChats(items: ChatListItem[]) {
+  return [...items].sort((a, b) => {
+    const aPinned = Boolean(a.is_pinned);
+    const bPinned = Boolean(b.is_pinned);
+
+    if (aPinned !== bPinned) {
+      return aPinned ? -1 : 1;
+    }
+
+    const aTime = new Date(a.last_message_at || a.updated_at || a.created_at || 0).getTime();
+    const bTime = new Date(b.last_message_at || b.updated_at || b.created_at || 0).getTime();
+
+    return bTime - aTime;
+  });
+}
+
 export default function ChatsScreen() {
   const { theme } = useTheme();
 
@@ -82,22 +104,54 @@ export default function ChatsScreen() {
   const [searchingPeople, setSearchingPeople] = useState(false);
   const [creatingFor, setCreatingFor] = useState<string | null>(null);
 
-  const loadChats = async () => {
+  const loadChats = useCallback(async (silent = false) => {
     try {
-      setRefreshing(true);
+      if (!silent) setRefreshing(true);
       const response = await fetchChats(1, 30);
-      setData(response.results ?? []);
+      const sorted = sortChats(response.results ?? []);
+      setData(sorted);
+      await saveCachedChats(sorted);
     } catch (error) {
       console.error('loadChats error:', error);
     } finally {
-      setRefreshing(false);
+      if (!silent) setRefreshing(false);
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    void loadChats();
-  }, []);
+    const hydrate = async () => {
+      const cached = await loadCachedChats();
+
+      if (cached.length) {
+        setData(sortChats(cached));
+        setLoading(false);
+      }
+    };
+
+    void hydrate();
+    void loadChats(true);
+  }, [loadChats]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadChats(true);
+
+      const interval = setInterval(() => {
+        void loadChats(true);
+      }, 3000);
+
+      const unsubscribe = realtimeClient.subscribe((event) => {
+        if (event.type === 'connected' || event.type === 'ws_open') return;
+        void loadChats(true);
+      });
+
+      return () => {
+        clearInterval(interval);
+        unsubscribe();
+      };
+    }, [loadChats])
+  );
 
   useEffect(() => {
     const q = search.trim();
@@ -141,7 +195,7 @@ export default function ChatsScreen() {
       const createdChat = await createDirectChat(user.uuid);
 
       setSearch('');
-      await loadChats();
+      await loadChats(true);
 
       if (createdChat?.uuid) {
         router.push({
@@ -180,7 +234,7 @@ export default function ChatsScreen() {
       <FlatList
         data={filteredChats}
         keyExtractor={(item) => item.uuid}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadChats} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadChats()} />}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <>

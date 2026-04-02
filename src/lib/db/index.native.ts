@@ -28,7 +28,7 @@ async function createDatabase() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_message_cache_chat_uuid_created_ts
-      ON message_cache(chat_uuid, created_ts DESC);
+      ON message_cache(chat_uuid, created_ts ASC);
 
     CREATE INDEX IF NOT EXISTS idx_message_cache_chat_uuid_client_uuid
       ON message_cache(chat_uuid, client_uuid);

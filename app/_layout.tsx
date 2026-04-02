@@ -7,11 +7,17 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { initializeDatabase } from '@/src/lib/db';
 import { useAuthStore } from '@/src/state/auth';
+import { realtimeClient } from '@/src/lib/realtime/socket';
+import { subscribeSessionExpired } from '@/src/lib/auth/session';
 
 const queryClient = new QueryClient();
 
 export default function RootLayout() {
   const bootstrap = useAuthStore((s) => s.bootstrap);
+  const logout = useAuthStore((s) => s.logout);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const hydrated = useAuthStore((s) => s.hydrated);
+
   const [appReady, setAppReady] = useState(false);
 
   useEffect(() => {
@@ -36,6 +42,28 @@ export default function RootLayout() {
       mounted = false;
     };
   }, [bootstrap]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeSessionExpired(() => {
+      void logout();
+    });
+
+    return unsubscribe;
+  }, [logout]);
+
+  useEffect(() => {
+    if (!appReady || !hydrated) return;
+
+    if (accessToken) {
+      realtimeClient.connect(accessToken);
+
+      return () => {
+        realtimeClient.disconnect();
+      };
+    }
+
+    realtimeClient.disconnect();
+  }, [appReady, hydrated, accessToken]);
 
   if (!appReady) {
     return (
