@@ -13,6 +13,7 @@ import {
   subscribeSessionTokensChanged,
 } from '@/src/lib/auth/session';
 import { useAuthStore } from '@/src/state/auth';
+import { registerNativePushToken, unregisterCurrentPushToken } from '@/src/lib/push/register';
 
 const queryClient = new QueryClient();
 
@@ -27,6 +28,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     const unsubscribeExpired = subscribeSessionExpired(() => {
+      void unregisterCurrentPushToken();
       void logout();
     });
 
@@ -70,6 +72,7 @@ export default function RootLayout() {
 
     if (accessToken) {
       realtimeClient.connect(accessToken);
+      void registerNativePushToken();
 
       return () => {
         realtimeClient.disconnect();
@@ -77,6 +80,7 @@ export default function RootLayout() {
     }
 
     realtimeClient.disconnect();
+    void unregisterCurrentPushToken();
   }, [appReady, hydrated, accessToken]);
 
   if (!appReady) {

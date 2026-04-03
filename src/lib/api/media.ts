@@ -1,26 +1,69 @@
 import { Platform } from 'react-native';
+
 import { apiClient } from '@/src/lib/api/client';
 import type { MediaPresignResponse, UploadedMedia } from '@/src/types/media';
 
-type PickedImageAsset = {
+export type PickedMediaAsset = {
   uri: string;
   fileName?: string | null;
   mimeType?: string | null;
   fileSize?: number | null;
   width?: number;
   height?: number;
+  durationMillis?: number | null;
   file?: File;
 };
 
-function buildSafeFilename(asset: PickedImageAsset) {
-  return asset.fileName || `photo-${Date.now()}.jpg`;
+function getExtensionFromName(name?: string | null) {
+  if (!name) return '';
+  const index = name.lastIndexOf('.');
+  if (index === -1) return '';
+  return name.slice(index).toLowerCase();
 }
 
-function buildContentType(asset: PickedImageAsset) {
-  return asset.mimeType || 'image/jpeg';
+function inferMimeType(asset: PickedMediaAsset) {
+  if (asset.mimeType?.trim()) {
+    return asset.mimeType;
+  }
+
+  const source = `${asset.fileName || ''} ${asset.uri}`.toLowerCase();
+
+  if (source.includes('.m4a')) return 'audio/m4a';
+  if (source.includes('.aac')) return 'audio/aac';
+  if (source.includes('.mp3')) return 'audio/mpeg';
+  if (source.includes('.webm')) return 'audio/webm';
+  if (source.includes('.mp4')) return 'video/mp4';
+  if (source.includes('.mov')) return 'video/quicktime';
+  if (source.includes('.jpg') || source.includes('.jpeg')) return 'image/jpeg';
+  if (source.includes('.png')) return 'image/png';
+  if (source.includes('.heic')) return 'image/heic';
+
+  return 'application/octet-stream';
 }
 
-async function assetToBlob(asset: PickedImageAsset): Promise<Blob> {
+function buildSafeFilename(asset: PickedMediaAsset) {
+  if (asset.fileName?.trim()) {
+    return asset.fileName;
+  }
+
+  const mime = inferMimeType(asset);
+
+  if (mime.startsWith('audio/')) {
+    return `voice-${Date.now()}${getExtensionFromName(asset.fileName) || '.m4a'}`;
+  }
+
+  if (mime.startsWith('video/')) {
+    return `video-${Date.now()}${getExtensionFromName(asset.fileName) || '.mp4'}`;
+  }
+
+  if (mime.startsWith('image/')) {
+    return `photo-${Date.now()}${getExtensionFromName(asset.fileName) || '.jpg'}`;
+  }
+
+  return `file-${Date.now()}${getExtensionFromName(asset.fileName) || ''}`;
+}
+
+async function assetToBlob(asset: PickedMediaAsset): Promise<Blob> {
   if (Platform.OS === 'web' && asset.file) {
     return asset.file;
   }
@@ -29,7 +72,7 @@ async function assetToBlob(asset: PickedImageAsset): Promise<Blob> {
   return await response.blob();
 }
 
-async function uploadLocal(asset: PickedImageAsset): Promise<UploadedMedia> {
+async function uploadLocal(asset: PickedMediaAsset): Promise<UploadedMedia> {
   const formData = new FormData();
 
   if (Platform.OS === 'web' && asset.file) {
@@ -40,8 +83,8 @@ async function uploadLocal(asset: PickedImageAsset): Promise<UploadedMedia> {
       {
         uri: asset.uri,
         name: buildSafeFilename(asset),
-        type: buildContentType(asset),
-      } as any
+        type: inferMimeType(asset),
+      } as any,
     );
   }
 
@@ -56,12 +99,12 @@ async function uploadLocal(asset: PickedImageAsset): Promise<UploadedMedia> {
   return response.data;
 }
 
-async function uploadViaPresign(asset: PickedImageAsset): Promise<UploadedMedia> {
+async function uploadViaPresign(asset: PickedMediaAsset): Promise<UploadedMedia> {
   const blob = await assetToBlob(asset);
 
   const presignResponse = await apiClient.post<MediaPresignResponse>('/media/presign/', {
     filename: buildSafeFilename(asset),
-    content_type: buildContentType(asset),
+    content_type: inferMimeType(asset),
     size: asset.fileSize || blob.size,
   });
 
@@ -84,7 +127,7 @@ async function uploadViaPresign(asset: PickedImageAsset): Promise<UploadedMedia>
   return completeResponse.data;
 }
 
-export async function uploadPickedImage(asset: PickedImageAsset): Promise<UploadedMedia> {
+export async function uploadPickedMedia(asset: PickedMediaAsset): Promise<UploadedMedia> {
   try {
     return await uploadLocal(asset);
   } catch (error: any) {
@@ -96,4 +139,8 @@ export async function uploadPickedImage(asset: PickedImageAsset): Promise<Upload
 
     throw error;
   }
+}
+
+export async function uploadPickedImage(asset: PickedMediaAsset): Promise<UploadedMedia> {
+  return uploadPickedMedia(asset);
 }

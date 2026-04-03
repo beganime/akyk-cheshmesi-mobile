@@ -10,22 +10,36 @@ type SendMessagePayload = {
   metadata?: Record<string, unknown>;
 };
 
+type UpdateMessagePayload = {
+  text?: string;
+  metadata?: Record<string, unknown>;
+};
+
+type DeleteMessagePayload = {
+  delete_for: 'me' | 'everyone';
+};
+
+type DeleteMessageResponse = {
+  detail: string;
+  delete_for: 'me' | 'everyone';
+  message_uuid?: string;
+  message?: MessageItem;
+};
+
 export async function fetchChatMessages(
   chatUuid: string,
-  nextUrl?: string | null
+  nextUrl?: string | null,
 ): Promise<CursorPaginatedMessagesResponse> {
   const url = nextUrl || `/chats/${chatUuid}/messages/`;
-
-  const response = await apiClient.get<CursorPaginatedMessagesResponse>(url);
-
+  const response = await apiClient.get(url);
   return response.data;
 }
 
 export async function sendChatMessage(
   chatUuid: string,
-  payload: SendMessagePayload
+  payload: SendMessagePayload,
 ): Promise<MessageItem> {
-  const response = await apiClient.post<MessageItem>(`/chats/${chatUuid}/messages/`, {
+  const response = await apiClient.post(`/chats/${chatUuid}/messages/`, {
     message_type: payload.message_type ?? 'text',
     text: payload.text ?? '',
     client_uuid: payload.client_uuid,
@@ -33,6 +47,37 @@ export async function sendChatMessage(
     ...(payload.attachment_uuids?.length ? { attachment_uuids: payload.attachment_uuids } : {}),
     ...(payload.metadata ? { metadata: payload.metadata } : {}),
   });
+
+  return response.data;
+}
+
+export async function editChatMessage(
+  chatUuid: string,
+  messageUuid: string,
+  payload: UpdateMessagePayload,
+): Promise<MessageItem> {
+  const response = await apiClient.patch(
+    `/chats/${chatUuid}/messages/${messageUuid}/`,
+    {
+      ...(typeof payload.text === 'string' ? { text: payload.text } : {}),
+      ...(payload.metadata ? { metadata: payload.metadata } : {}),
+    },
+  );
+
+  return response.data;
+}
+
+export async function deleteChatMessage(
+  chatUuid: string,
+  messageUuid: string,
+  payload: DeleteMessagePayload,
+): Promise<DeleteMessageResponse> {
+  const response = await apiClient.delete(
+    `/chats/${chatUuid}/messages/${messageUuid}/`,
+    {
+      data: payload,
+    },
+  );
 
   return response.data;
 }

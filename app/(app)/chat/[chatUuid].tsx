@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -12,6 +14,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  UIManager,
   View,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
@@ -21,8 +24,15 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { GlassCard } from '@/src/components/GlassCard';
+import {
+  ChatCaptureModal,
+  type CaptureMode,
+} from '@/src/components/ChatCaptureModal';
+import { MessageAudioBubble } from '@/src/components/MessageAudioBubble';
+import { MessageVideoBubble } from '@/src/components/MessageVideoBubble';
 import {
   fetchChatDetail,
   setChatArchived,
@@ -30,17 +40,70 @@ import {
   setChatPinned,
 } from '@/src/lib/api/chats';
 import { createComplaint, ComplaintReason } from '@/src/lib/api/complaints';
-import { uploadPickedImage } from '@/src/lib/api/media';
+import {
+  uploadPickedImage,
+  uploadPickedMedia,
+  type PickedMediaAsset,
+} from '@/src/lib/api/media';
 import { fetchChatMessages, markChatRead, sendChatMessage } from '@/src/lib/api/messages';
 import { fetchStickerPackDetail, fetchStickerPacks } from '@/src/lib/api/stickers';
-import { generateUUIDv4 } from '@/src/lib/utils/uuid';
+import {
+  loadCachedChatDetail,
+  loadCachedChatMessages,
+  saveCachedChatDetail,
+  saveCachedChatMessages,
+} from '@/src/lib/db/cache';
+import {
+  HiddenMessageMap,
+  hideMessageLocally,
+  isMessageHidden,
+  loadHiddenMessageMap,
+} from '@/src/lib/local/messageVisibility';
 import { mergeMessages } from '@/src/lib/utils/messageSync';
+import { generateUUIDv4 } from '@/src/lib/utils/uuid';
 import type { ChatListItem } from '@/src/types/chat';
-import type { MessageItem } from '@/src/types/message';
-import type { StickerItem, StickerPackDetail, StickerPackListItem } from '@/src/types/sticker';
+import type { MessageAttachment, MessageItem } from '@/src/types/message';
+import type {
+  StickerItem,
+  StickerPackDetail,
+  StickerPackListItem,
+} from '@/src/types/sticker';
+
+type ComposerPanelTab = 'stickers' | 'emoji';
+
+const reportReasons: ComplaintReason[] = ['spam', 'abuse', 'fraud', 'harassment', 'other'];
+
+const emojiGroups = [
+  {
+    title: 'Часто используемые',
+    items: ['👍', '❤️', '😂', '🔥', '🙏', '👏', '😎', '😅', '😮', '🥹', '🎉', '✅'],
+  },
+  {
+    title: 'Эмоции',
+    items: ['😀', '😁', '😄', '😊', '🙂', '😉', '😍', '🤗', '🤔', '😴', '🥲', '😭'],
+  },
+  {
+    title: 'Реакции',
+    items: ['💯', '💪', '👌', '🤝', '👏', '🙌', '🤍', '💙', '💜', '💥', '✨', '⚡'],
+  },
+];
+
+function animateLayout() {
+  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+}
 
 function formatChatTitle(chat: ChatListItem | null) {
-  return chat?.display_title || chat?.title || 'Чат';
+  return chat?.display_title || chat?.title || chat?.peer_user?.full_name || 'Чат';
+}
+
+function formatChatSub(chat: ChatListItem | null) {
+  if (!chat) return 'Переписка';
+
+  if (chat.is_muted) return 'Без звука';
+  if (chat.is_pinned) return 'Закреплён';
+  if (chat.is_archived) return 'В архиве';
+
+  return chat.chat_type === 'group' ? 'Групповой чат' : 'В сети';
 }
 
 function normalizeMessagesForUi(items: MessageItem[]) {
@@ -52,7 +115,13 @@ function normalizeMessagesForUi(items: MessageItem[]) {
 
 function formatTime(dateString?: string | null) {
   if (!dateString) return '';
+
   const date = new Date(dateString);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
   return date.toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
@@ -60,32 +129,74 @@ function formatTime(dateString?: string | null) {
 }
 
 function getMessagePreviewText(message: MessageItem) {
+  if (message.is_deleted) return 'Сообщение удалено';
   if (message.text?.trim()) return message.text;
 
   if (message.message_type === 'sticker') return 'Стикер';
   if (message.message_type === 'image') return 'Фото';
   if (message.message_type === 'video') return 'Видео';
-  if (message.message_type === 'audio') return 'Аудио';
+  if (message.message_type === 'audio') return 'Голосовое сообщение';
   if (message.message_type === 'file') return 'Файл';
 
   return 'Сообщение';
 }
 
+function getAttachmentByPredicate(
+  message: MessageItem,
+  predicate: (attachment: MessageAttachment) => boolean,
+) {
+  return message.attachments?.find(predicate) || null;
+}
+
 function getFirstImageUrl(message: MessageItem) {
-  const imageAttachment = message.attachments?.find((item) => item.media_kind === 'image' && item.file_url);
-  return imageAttachment?.file_url || null;
+  const attachment = getAttachmentByPredicate(
+    message,
+    (item) =>
+      item.media_kind === 'image' ||
+      item.content_type?.startsWith('image/') === true,
+  );
+
+  return attachment?.file_url || null;
+}
+
+function getFirstAudioUrl(message: MessageItem) {
+  const attachment = getAttachmentByPredicate(
+    message,
+    (item) =>
+      item.media_kind === 'audio' ||
+      item.content_type?.startsWith('audio/') === true,
+  );
+
+  return attachment?.file_url || null;
+}
+
+function getFirstVideoUrl(message: MessageItem) {
+  const attachment = getAttachmentByPredicate(
+    message,
+    (item) =>
+      item.media_kind === 'video' ||
+      item.content_type?.startsWith('video/') === true,
+  );
+
+  return attachment?.file_url || null;
 }
 
 function getStickerImage(message: MessageItem) {
   const meta = message.metadata as Record<string, unknown> | null | undefined;
   const image = meta?.sticker_image;
+
   return typeof image === 'string' ? image : null;
 }
 
 function getStickerEmoji(message: MessageItem) {
   const meta = message.metadata as Record<string, unknown> | null | undefined;
   const emoji = meta?.sticker_emoji;
+
   return typeof emoji === 'string' ? emoji : '';
+}
+
+function getMessageLocalKey(message: MessageItem) {
+  return message.client_uuid || message.uuid;
 }
 
 function MessageStatusIcon({
@@ -98,22 +209,19 @@ function MessageStatusIcon({
   if (!message.is_own_message) return null;
 
   if (message.local_status === 'failed') {
-    return <Ionicons name="alert-circle" size={14} color="#FFD6D6" />;
+    return <Ionicons name="alert-circle" size={14} color="#FFD7D7" />;
   }
 
   if (message.delivery_status === 'read') {
-    return <Ionicons name="ellipse" size={10} color={color} />;
+    return <Ionicons name="checkmark-done" size={14} color={color} />;
   }
 
   if (message.local_status === 'pending') {
-    return <Ionicons name="checkmark" size={14} color={color} />;
+    return <Ionicons name="time-outline" size={14} color={color} />;
   }
 
-  return <Ionicons name="checkmark-done" size={14} color={color} />;
+  return <Ionicons name="checkmark" size={14} color={color} />;
 }
-
-const reportReasons: ComplaintReason[] = ['spam', 'abuse', 'fraud', 'harassment', 'other'];
-const quickEmojis = ['👍', '❤️', '😂', '🔥', '🙏', '👏', '😎', '😅', '😮', '🥹', '🎉', '✅'];
 
 export default function ChatScreen() {
   const { theme } = useTheme();
@@ -125,24 +233,31 @@ export default function ChatScreen() {
 
   const [chat, setChat] = useState<ChatListItem | null>(null);
   const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [hiddenMessageMap, setHiddenMessageMap] = useState<HiddenMessageMap>({});
   const [nextUrl, setNextUrl] = useState<string | null>(null);
 
   const [loadingChat, setLoadingChat] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [loadingStickers, setLoadingStickers] = useState(false);
   const [sending, setSending] = useState(false);
 
   const [draft, setDraft] = useState('');
   const [replyTo, setReplyTo] = useState<MessageItem | null>(null);
+
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
-  const [emojiVisible, setEmojiVisible] = useState(false);
-  const [stickersVisible, setStickersVisible] = useState(false);
 
   const [actionMenuVisible, setActionMenuVisible] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<MessageItem | null>(null);
+
+  const [composerPanelVisible, setComposerPanelVisible] = useState(false);
+  const [composerPanelTab, setComposerPanelTab] = useState<ComposerPanelTab>('stickers');
+
+  const [captureVisible, setCaptureVisible] = useState(false);
+  const [captureMode, setCaptureMode] = useState<CaptureMode>('audio');
 
   const [reportType, setReportType] = useState<'user' | 'chat'>('chat');
   const [reportReason, setReportReason] = useState<ComplaintReason>('other');
@@ -152,12 +267,27 @@ export default function ChatScreen() {
   const [stickerPacks, setStickerPacks] = useState<StickerPackListItem[]>([]);
   const [selectedPackSlug, setSelectedPackSlug] = useState<string | null>(null);
   const [selectedPack, setSelectedPack] = useState<StickerPackDetail | null>(null);
-  const [loadingStickers, setLoadingStickers] = useState(false);
 
   const latestIncomingMessage = useMemo(() => {
     const reversed = [...messages].reverse();
     return reversed.find((message) => !message.is_own_message && !message.is_deleted);
   }, [messages]);
+
+  const visibleMessages = useMemo(() => {
+    return messages.filter((message) => {
+      return !isMessageHidden(hiddenMessageMap, getMessageLocalKey(message));
+    });
+  }, [messages, hiddenMessageMap]);
+
+  const composerActionIcon = useMemo(() => {
+    if (draft.trim().length > 0) {
+      return 'arrow-up';
+    }
+
+    return captureMode === 'audio' ? 'mic-outline' : 'videocam-outline';
+  }, [draft, captureMode]);
+
+  const canSend = draft.trim().length > 0;
 
   const scrollToBottom = (animated = true) => {
     requestAnimationFrame(() => {
@@ -165,11 +295,39 @@ export default function ChatScreen() {
     });
   };
 
+  const hydrateFromCache = useCallback(async () => {
+    if (!chatUuid) return;
+
+    try {
+      const [cachedChat, cachedMessages, hiddenMap] = await Promise.all([
+        loadCachedChatDetail(chatUuid),
+        loadCachedChatMessages(chatUuid),
+        loadHiddenMessageMap(chatUuid),
+      ]);
+
+      if (cachedChat) {
+        setChat(cachedChat);
+        setLoadingChat(false);
+      }
+
+      if (cachedMessages.length) {
+        setMessages(cachedMessages);
+        setLoadingMessages(false);
+      }
+
+      setHiddenMessageMap(hiddenMap);
+    } catch (error) {
+      console.error('hydrateFromCache error:', error);
+    }
+  }, [chatUuid]);
+
   const refreshChat = useCallback(async () => {
     try {
       if (!chatUuid) return;
+
       const data = await fetchChatDetail(chatUuid);
       setChat(data);
+      await saveCachedChatDetail(chatUuid, data);
     } catch (error) {
       console.error('refreshChat error:', error);
     }
@@ -182,39 +340,49 @@ export default function ChatScreen() {
       const response = await fetchChatMessages(chatUuid);
       const serverMessages = normalizeMessagesForUi(response.results ?? []);
 
-      setMessages((current) => mergeMessages(serverMessages, current));
+      setMessages((current) => {
+        const merged = mergeMessages(serverMessages, current);
+        void saveCachedChatMessages(chatUuid, merged);
+        return merged;
+      });
+
       setNextUrl(response.next ?? null);
     } catch (error) {
       console.error('refreshMessagesSilent error:', error);
     }
   }, [chatUuid]);
 
-  const loadChat = async () => {
+  const loadChat = useCallback(async () => {
     try {
       if (!chatUuid) return;
+
       const data = await fetchChatDetail(chatUuid);
       setChat(data);
+      await saveCachedChatDetail(chatUuid, data);
     } catch (error) {
       console.error('loadChat error:', error);
     } finally {
       setLoadingChat(false);
     }
-  };
+  }, [chatUuid]);
 
-  const loadInitialMessages = async () => {
+  const loadInitialMessages = useCallback(async () => {
     try {
       if (!chatUuid) return;
 
       const response = await fetchChatMessages(chatUuid);
+      const normalized = normalizeMessagesForUi(response.results ?? []);
 
-      setMessages(normalizeMessagesForUi(response.results ?? []));
+      setMessages(normalized);
       setNextUrl(response.next ?? null);
+
+      await saveCachedChatMessages(chatUuid, normalized);
     } catch (error) {
       console.error('loadInitialMessages error:', error);
     } finally {
       setLoadingMessages(false);
     }
-  };
+  }, [chatUuid]);
 
   const loadStickerPack = async (slug: string) => {
     try {
@@ -228,11 +396,13 @@ export default function ChatScreen() {
     }
   };
 
-  const openStickerPicker = async () => {
+  const openComposerPanel = async (tab: ComposerPanelTab) => {
     try {
-      setStickersVisible(true);
+      animateLayout();
+      setComposerPanelTab(tab);
+      setComposerPanelVisible(true);
 
-      if (!stickerPacks.length) {
+      if (tab === 'stickers' && !stickerPacks.length) {
         setLoadingStickers(true);
         const packs = await fetchStickerPacks();
         setStickerPacks(packs);
@@ -243,13 +413,18 @@ export default function ChatScreen() {
         } else {
           setLoadingStickers(false);
         }
-      } else if (selectedPackSlug) {
+      } else if (tab === 'stickers' && selectedPackSlug) {
         await loadStickerPack(selectedPackSlug);
       }
     } catch (error) {
-      console.error('openStickerPicker error:', error);
+      console.error('openComposerPanel error:', error);
       setLoadingStickers(false);
     }
+  };
+
+  const closeComposerPanel = () => {
+    animateLayout();
+    setComposerPanelVisible(false);
   };
 
   const loadEarlierMessages = async () => {
@@ -261,7 +436,12 @@ export default function ChatScreen() {
       const response = await fetchChatMessages(chatUuid, nextUrl);
       const olderMessages = normalizeMessagesForUi(response.results ?? []);
 
-      setMessages((current) => mergeMessages([...olderMessages, ...current], current));
+      setMessages((current) => {
+        const merged = mergeMessages([...olderMessages, ...current], current);
+        void saveCachedChatMessages(chatUuid, merged);
+        return merged;
+      });
+
       setNextUrl(response.next ?? null);
     } catch (error) {
       console.error('loadEarlierMessages error:', error);
@@ -280,9 +460,16 @@ export default function ChatScreen() {
   };
 
   useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void hydrateFromCache();
     void loadChat();
     void loadInitialMessages();
-  }, [chatUuid]);
+  }, [hydrateFromCache, loadChat, loadInitialMessages]);
 
   useFocusEffect(
     useCallback(() => {
@@ -295,7 +482,7 @@ export default function ChatScreen() {
       }, 2500);
 
       return () => clearInterval(interval);
-    }, [refreshChat, refreshMessagesSilent])
+    }, [refreshChat, refreshMessagesSilent]),
   );
 
   useEffect(() => {
@@ -306,7 +493,7 @@ export default function ChatScreen() {
     if (isNearBottomRef.current) {
       scrollToBottom(false);
     }
-  }, [messages.length]);
+  }, [visibleMessages.length]);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
@@ -425,6 +612,7 @@ export default function ChatScreen() {
   };
 
   const handleQuickReply = (message: MessageItem) => {
+    animateLayout();
     setReplyTo(message);
     setActionMenuVisible(false);
     setSelectedMessage(null);
@@ -454,6 +642,7 @@ export default function ChatScreen() {
       await Share.share({
         message: getMessagePreviewText(selectedMessage),
       });
+
       setActionMenuVisible(false);
       setSelectedMessage(null);
     } catch (error) {
@@ -461,16 +650,138 @@ export default function ChatScreen() {
     }
   };
 
+  const handleHideMessageForMe = async () => {
+    if (!chatUuid || !selectedMessage) return;
+
+    const key = getMessageLocalKey(selectedMessage);
+
+    if (!key) return;
+
+    try {
+      const nextMap = await hideMessageLocally(chatUuid, key);
+      setHiddenMessageMap(nextMap);
+      setActionMenuVisible(false);
+      setSelectedMessage(null);
+      animateLayout();
+    } catch (error) {
+      console.error('handleHideMessageForMe error:', error);
+    }
+  };
+
   const handleInsertEmoji = (emoji: string) => {
+    animateLayout();
     setDraft((current) => `${current}${emoji}`);
-    setEmojiVisible(false);
+  };
+
+  const buildReplyPayload = (message: MessageItem | null) => {
+    if (!message) {
+      return null;
+    }
+
+    return {
+      uuid: message.uuid,
+      text: getMessagePreviewText(message),
+      message_type: message.message_type,
+      sender: message.sender,
+      created_at: message.created_at,
+    };
+  };
+
+  const sendMediaMessage = async (
+    mediaType: 'audio' | 'video',
+    asset: PickedMediaAsset,
+  ) => {
+    if (!chatUuid) return;
+
+    const clientUuid = generateUUIDv4();
+    const optimisticReply = buildReplyPayload(replyTo);
+
+    const optimisticMessage: MessageItem = {
+      uuid: `local-${clientUuid}`,
+      client_uuid: clientUuid,
+      message_type: mediaType,
+      text: '',
+      reply_to: optimisticReply,
+      is_own_message: true,
+      delivery_status: 'sent',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      local_status: 'pending',
+      attachments: [
+        {
+          uuid: `local-attachment-${clientUuid}`,
+          file_url: asset.uri,
+          content_type: asset.mimeType || (mediaType === 'audio' ? 'audio/m4a' : 'video/mp4'),
+          original_name: asset.fileName || undefined,
+          media_kind: mediaType,
+        },
+      ],
+    };
+
+    animateLayout();
+    setMessages((current) => {
+      const next = [...current, optimisticMessage];
+      void saveCachedChatMessages(chatUuid, next);
+      return next;
+    });
+
+    setReplyTo(null);
+    scrollToBottom();
+
+    try {
+      const uploaded = await uploadPickedMedia(asset);
+
+      const savedMessage = await sendChatMessage(chatUuid, {
+        client_uuid: clientUuid,
+        message_type: mediaType,
+        text: '',
+        attachment_uuids: [uploaded.uuid],
+        ...(optimisticReply?.uuid ? { reply_to_uuid: optimisticReply.uuid } : {}),
+      });
+
+      setMessages((current) => {
+        const next = current.map((message) =>
+          message.client_uuid === clientUuid
+            ? {
+                ...savedMessage,
+                local_status: 'sent',
+              }
+            : message,
+        );
+
+        void saveCachedChatMessages(chatUuid, next);
+        return next;
+      });
+    } catch (error) {
+      console.error('sendMediaMessage error:', error);
+
+      setMessages((current) => {
+        const next = current.map((message) =>
+          message.client_uuid === clientUuid
+            ? {
+                ...message,
+                local_status: 'failed',
+              }
+            : message,
+        );
+
+        void saveCachedChatMessages(chatUuid, next);
+        return next;
+      });
+
+      Alert.alert('Ошибка', mediaType === 'audio' ? 'Не удалось отправить голосовое сообщение' : 'Не удалось отправить видео-сообщение');
+    }
+  };
+
+  const handleCapturedMedia = async (asset: PickedMediaAsset) => {
+    await sendMediaMessage(captureMode, asset);
   };
 
   const handlePickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.85,
+        quality: 0.88,
         allowsEditing: false,
       });
 
@@ -481,6 +792,7 @@ export default function ChatScreen() {
       const asset = result.assets[0];
       const uploaded = await uploadPickedImage(asset);
       const clientUuid = generateUUIDv4();
+      const optimisticReply = buildReplyPayload(replyTo);
 
       const optimisticMessage: MessageItem = {
         uuid: `local-${clientUuid}`,
@@ -492,20 +804,28 @@ export default function ChatScreen() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         local_status: 'pending',
-        attachments: uploaded.file_url
+        reply_to: optimisticReply,
+        attachments: asset.uri
           ? [
               {
-                uuid: uploaded.uuid,
-                file_url: uploaded.file_url,
-                content_type: uploaded.content_type,
-                original_name: uploaded.original_name,
-                media_kind: uploaded.media_kind,
+                uuid: `local-attachment-${clientUuid}`,
+                file_url: asset.uri,
+                content_type: asset.mimeType || 'image/jpeg',
+                original_name: asset.fileName || undefined,
+                media_kind: 'image',
               },
             ]
           : [],
       };
 
-      setMessages((current) => [...current, optimisticMessage]);
+      animateLayout();
+      setMessages((current) => {
+        const next = [...current, optimisticMessage];
+        void saveCachedChatMessages(chatUuid, next);
+        return next;
+      });
+
+      setReplyTo(null);
       scrollToBottom();
 
       const savedMessage = await sendChatMessage(chatUuid, {
@@ -513,23 +833,25 @@ export default function ChatScreen() {
         message_type: 'image',
         text: '',
         attachment_uuids: [uploaded.uuid],
-        ...(replyTo?.uuid ? { reply_to_uuid: replyTo.uuid } : {}),
+        ...(optimisticReply?.uuid ? { reply_to_uuid: optimisticReply.uuid } : {}),
       });
 
-      setMessages((current) =>
-        current.map((message) =>
+      setMessages((current) => {
+        const next = current.map((message) =>
           message.client_uuid === clientUuid
             ? {
                 ...savedMessage,
                 local_status: 'sent',
               }
-            : message
-        )
-      );
+            : message,
+        );
 
-      setReplyTo(null);
+        void saveCachedChatMessages(chatUuid, next);
+        return next;
+      });
     } catch (error) {
       console.error('handlePickImage error:', error);
+      Alert.alert('Ошибка', 'Не удалось отправить фото');
     }
   };
 
@@ -538,6 +860,7 @@ export default function ChatScreen() {
       if (!chatUuid) return;
 
       const clientUuid = generateUUIDv4();
+      const optimisticReply = buildReplyPayload(replyTo);
 
       const optimisticMessage: MessageItem = {
         uuid: `local-${clientUuid}`,
@@ -549,6 +872,7 @@ export default function ChatScreen() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         local_status: 'pending',
+        reply_to: optimisticReply,
         metadata: {
           sticker_uuid: sticker.uuid,
           sticker_title: sticker.title,
@@ -558,8 +882,15 @@ export default function ChatScreen() {
         },
       };
 
-      setMessages((current) => [...current, optimisticMessage]);
-      setStickersVisible(false);
+      animateLayout();
+      setMessages((current) => {
+        const next = [...current, optimisticMessage];
+        void saveCachedChatMessages(chatUuid, next);
+        return next;
+      });
+
+      setReplyTo(null);
+      closeComposerPanel();
       scrollToBottom();
 
       const savedMessage = await sendChatMessage(chatUuid, {
@@ -573,23 +904,25 @@ export default function ChatScreen() {
           sticker_image: sticker.image,
           sticker_emoji: sticker.emoji,
         },
-        ...(replyTo?.uuid ? { reply_to_uuid: replyTo.uuid } : {}),
+        ...(optimisticReply?.uuid ? { reply_to_uuid: optimisticReply.uuid } : {}),
       });
 
-      setMessages((current) =>
-        current.map((message) =>
+      setMessages((current) => {
+        const next = current.map((message) =>
           message.client_uuid === clientUuid
             ? {
                 ...savedMessage,
                 local_status: 'sent',
               }
-            : message
-        )
-      );
+            : message,
+        );
 
-      setReplyTo(null);
+        void saveCachedChatMessages(chatUuid, next);
+        return next;
+      });
     } catch (error) {
       console.error('handleSendSticker error:', error);
+      Alert.alert('Ошибка', 'Не удалось отправить стикер');
     }
   };
 
@@ -599,21 +932,14 @@ export default function ChatScreen() {
     if (!chatUuid || !text || sending) return;
 
     const clientUuid = generateUUIDv4();
+    const optimisticReply = buildReplyPayload(replyTo);
 
     const optimisticMessage: MessageItem = {
       uuid: `local-${clientUuid}`,
       client_uuid: clientUuid,
       message_type: 'text',
       text,
-      reply_to: replyTo
-        ? {
-            uuid: replyTo.uuid,
-            text: getMessagePreviewText(replyTo),
-            message_type: replyTo.message_type,
-            sender: replyTo.sender,
-            created_at: replyTo.created_at,
-          }
-        : null,
+      reply_to: optimisticReply,
       is_own_message: true,
       delivery_status: 'sent',
       created_at: new Date().toISOString(),
@@ -623,8 +949,15 @@ export default function ChatScreen() {
 
     setDraft('');
     setSending(true);
+    animateLayout();
 
-    setMessages((current) => [...current, optimisticMessage]);
+    setMessages((current) => {
+      const next = [...current, optimisticMessage];
+      void saveCachedChatMessages(chatUuid, next);
+      return next;
+    });
+
+    setReplyTo(null);
     scrollToBottom();
 
     try {
@@ -632,34 +965,38 @@ export default function ChatScreen() {
         text,
         client_uuid: clientUuid,
         message_type: 'text',
-        ...(replyTo?.uuid ? { reply_to_uuid: replyTo.uuid } : {}),
+        ...(optimisticReply?.uuid ? { reply_to_uuid: optimisticReply.uuid } : {}),
       });
 
-      setMessages((current) =>
-        current.map((message) =>
+      setMessages((current) => {
+        const next = current.map((message) =>
           message.client_uuid === clientUuid
             ? {
                 ...savedMessage,
                 local_status: 'sent',
               }
-            : message
-        )
-      );
+            : message,
+        );
 
-      setReplyTo(null);
+        void saveCachedChatMessages(chatUuid, next);
+        return next;
+      });
     } catch (error) {
       console.error('handleSend error:', error);
 
-      setMessages((current) =>
-        current.map((message) =>
+      setMessages((current) => {
+        const next = current.map((message) =>
           message.client_uuid === clientUuid
             ? {
                 ...message,
                 local_status: 'failed',
               }
-            : message
-        )
-      );
+            : message,
+        );
+
+        void saveCachedChatMessages(chatUuid, next);
+        return next;
+      });
     } finally {
       setSending(false);
     }
@@ -668,16 +1005,20 @@ export default function ChatScreen() {
   const retryMessage = async (message: MessageItem) => {
     if (!chatUuid || !message.client_uuid) return;
 
-    setMessages((current) =>
-      current.map((item) =>
+    animateLayout();
+    setMessages((current) => {
+      const next = current.map((item) =>
         item.client_uuid === message.client_uuid
           ? {
               ...item,
               local_status: 'pending',
             }
-          : item
-      )
-    );
+          : item,
+      );
+
+      void saveCachedChatMessages(chatUuid, next);
+      return next;
+    });
 
     try {
       const savedMessage = await sendChatMessage(chatUuid, {
@@ -691,36 +1032,65 @@ export default function ChatScreen() {
         ...(message.metadata ? { metadata: message.metadata as Record<string, unknown> } : {}),
       });
 
-      setMessages((current) =>
-        current.map((item) =>
+      setMessages((current) => {
+        const next = current.map((item) =>
           item.client_uuid === message.client_uuid
             ? {
                 ...savedMessage,
                 local_status: 'sent',
               }
-            : item
-        )
-      );
+            : item,
+        );
+
+        void saveCachedChatMessages(chatUuid, next);
+        return next;
+      });
     } catch (error) {
       console.error('retryMessage error:', error);
 
-      setMessages((current) =>
-        current.map((item) =>
+      setMessages((current) => {
+        const next = current.map((item) =>
           item.client_uuid === message.client_uuid
             ? {
                 ...item,
                 local_status: 'failed',
               }
-            : item
-        )
-      );
+            : item,
+        );
+
+        void saveCachedChatMessages(chatUuid, next);
+        return next;
+      });
     }
+  };
+
+  const handleRecorderPress = () => {
+    if (canSend) {
+      void handleSend();
+      return;
+    }
+
+    if (composerPanelVisible) {
+      closeComposerPanel();
+    }
+
+    animateLayout();
+    setCaptureVisible(true);
+  };
+
+  const handleRecorderLongPress = () => {
+    if (canSend) return;
+
+    animateLayout();
+    setCaptureMode((current) => (current === 'audio' ? 'video' : 'audio'));
   };
 
   const renderMessage = ({ item }: { item: MessageItem }) => {
     const isOwn = Boolean(item.is_own_message);
-    const metaColor = isOwn ? 'rgba(255,255,255,0.84)' : theme.colors.muted;
+    const metaColor = isOwn ? 'rgba(255,255,255,0.82)' : theme.colors.muted;
     const imageUrl = getFirstImageUrl(item);
+    const audioUrl = getFirstAudioUrl(item);
+    const videoUrl = getFirstVideoUrl(item);
     const stickerImage = getStickerImage(item);
     const stickerEmoji = getStickerEmoji(item);
 
@@ -743,8 +1113,10 @@ export default function ChatScreen() {
           style={[
             styles.bubble,
             {
-              backgroundColor: isOwn ? theme.colors.primary : theme.colors.card,
-              borderColor: isOwn ? 'transparent' : theme.colors.border,
+              backgroundColor: isOwn
+                ? theme.colors.bubbleOutgoing
+                : theme.colors.bubbleIncoming,
+              borderColor: isOwn ? 'transparent' : theme.colors.borderStrong,
               alignSelf: isOwn ? 'flex-end' : 'flex-start',
             },
           ]}
@@ -754,7 +1126,7 @@ export default function ChatScreen() {
               style={[
                 styles.replyBox,
                 {
-                  borderColor: isOwn ? 'rgba(255,255,255,0.24)' : theme.colors.border,
+                  borderColor: isOwn ? 'rgba(255,255,255,0.24)' : theme.colors.borderStrong,
                 },
               ]}
             >
@@ -762,7 +1134,7 @@ export default function ChatScreen() {
                 style={[
                   styles.replyText,
                   {
-                    color: isOwn ? 'rgba(255,255,255,0.85)' : theme.colors.muted,
+                    color: isOwn ? 'rgba(255,255,255,0.84)' : theme.colors.muted,
                   },
                 ]}
                 numberOfLines={2}
@@ -813,6 +1185,10 @@ export default function ChatScreen() {
                 </Text>
               )}
             </View>
+          ) : videoUrl ? (
+            <MessageVideoBubble uri={videoUrl} isOwn={isOwn} />
+          ) : audioUrl ? (
+            <MessageAudioBubble uri={audioUrl} isOwn={isOwn} />
           ) : (
             <Text
               style={[
@@ -859,33 +1235,64 @@ export default function ChatScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}
-        keyboardVerticalOffset={insets.top}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
       >
-        <View style={styles.header}>
+        <View
+          style={[
+            styles.header,
+            {
+              borderBottomColor: theme.colors.borderStrong,
+              backgroundColor: theme.colors.background,
+            },
+          ]}
+        >
           <Pressable
             onPress={() => router.back()}
-            style={[styles.headerButton, { borderColor: theme.colors.border }]}
+            style={[
+              styles.headerButton,
+              {
+                borderColor: theme.colors.borderStrong,
+                backgroundColor: theme.colors.cardStrong,
+              },
+            ]}
           >
             <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
           </Pressable>
 
-          <Pressable
-            onPress={openPeerProfile}
-            style={styles.headerCenter}
-            hitSlop={12}
-          >
-            <Text style={[styles.headerTitle, { color: theme.colors.text }]} numberOfLines={1}>
-              {formatChatTitle(chat)}
-            </Text>
-            <Text style={[styles.headerSub, { color: theme.colors.muted }]}>
-              {chat?.is_muted ? 'Без звука' : chat?.is_pinned ? 'Закреплён' : 'Переписка'}
-            </Text>
+          <Pressable onPress={openPeerProfile} style={styles.headerCenter} hitSlop={12}>
+            <View
+              style={[
+                styles.headerAvatar,
+                {
+                  backgroundColor: theme.colors.primarySoft,
+                },
+              ]}
+            >
+              <Text style={[styles.headerAvatarText, { color: theme.colors.primary }]}>
+                {formatChatTitle(chat).slice(0, 1).toUpperCase()}
+              </Text>
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.headerTitle, { color: theme.colors.text }]} numberOfLines={1}>
+                {formatChatTitle(chat)}
+              </Text>
+              <Text style={[styles.headerSub, { color: theme.colors.muted }]} numberOfLines={1}>
+                {formatChatSub(chat)}
+              </Text>
+            </View>
           </Pressable>
 
           <Pressable
             onPress={() => setSettingsVisible(true)}
-            style={[styles.headerButton, { borderColor: theme.colors.border }]}
+            style={[
+              styles.headerButton,
+              {
+                borderColor: theme.colors.borderStrong,
+                backgroundColor: theme.colors.cardStrong,
+              },
+            ]}
           >
             <Ionicons name="ellipsis-horizontal" size={18} color={theme.colors.text} />
           </Pressable>
@@ -893,13 +1300,20 @@ export default function ChatScreen() {
 
         <FlatList
           ref={listRef}
-          data={messages}
+          data={visibleMessages}
           keyExtractor={(item) => item.uuid}
           renderItem={renderMessage}
           onScroll={handleScroll}
           scrollEventThrottle={16}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            {
+              paddingBottom:
+                Math.max(insets.bottom, 14) +
+                (composerPanelVisible ? 336 : 126),
+            },
+          ]}
           ListHeaderComponent={
             nextUrl ? (
               <Pressable
@@ -907,12 +1321,12 @@ export default function ChatScreen() {
                 style={[
                   styles.loadEarlierButton,
                   {
-                    borderColor: theme.colors.border,
-                    backgroundColor: theme.colors.card,
+                    borderColor: theme.colors.borderStrong,
+                    backgroundColor: theme.colors.cardStrong,
                   },
                 ]}
               >
-                <Text style={{ color: theme.colors.text, fontWeight: '600' }}>
+                <Text style={{ color: theme.colors.text, fontWeight: '700' }}>
                   {loadingEarlier ? 'Загрузка...' : 'Загрузить более ранние'}
                 </Text>
               </Pressable>
@@ -943,7 +1357,9 @@ export default function ChatScreen() {
               styles.scrollToBottomButton,
               {
                 backgroundColor: theme.colors.primary,
-                bottom: Math.max(insets.bottom, 12) + 118,
+                bottom:
+                  Math.max(insets.bottom, 12) +
+                  (composerPanelVisible ? 340 : 126),
               },
             ]}
           >
@@ -953,10 +1369,10 @@ export default function ChatScreen() {
 
         <View
           style={[
-            styles.composerWrap,
+            styles.composerShell,
             {
+              borderTopColor: theme.colors.borderStrong,
               backgroundColor: theme.colors.background,
-              borderTopColor: theme.colors.border,
               paddingBottom: Math.max(insets.bottom, 10),
             },
           ]}
@@ -966,8 +1382,8 @@ export default function ChatScreen() {
               style={[
                 styles.replyComposer,
                 {
-                  borderColor: theme.colors.border,
-                  backgroundColor: theme.colors.card,
+                  borderColor: theme.colors.borderStrong,
+                  backgroundColor: theme.colors.cardStrong,
                 },
               ]}
             >
@@ -975,7 +1391,10 @@ export default function ChatScreen() {
                 <Text style={[styles.replyComposerTitle, { color: theme.colors.text }]}>
                   Ответ
                 </Text>
-                <Text style={[styles.replyComposerText, { color: theme.colors.muted }]} numberOfLines={1}>
+                <Text
+                  style={[styles.replyComposerText, { color: theme.colors.muted }]}
+                  numberOfLines={1}
+                >
                   {getMessagePreviewText(replyTo)}
                 </Text>
               </View>
@@ -986,75 +1405,306 @@ export default function ChatScreen() {
             </View>
           ) : null}
 
-          <View style={styles.toolbarRow}>
+          <View style={styles.composerRow}>
             <Pressable
-              onPress={() => setEmojiVisible(true)}
-              style={[styles.toolButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
-            >
-              <Ionicons name="happy-outline" size={18} color={theme.colors.text} />
-            </Pressable>
-
-            <Pressable
-              onPress={() => void handlePickImage()}
-              style={[styles.toolButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
-            >
-              <Ionicons name="image-outline" size={18} color={theme.colors.text} />
-            </Pressable>
-
-            <Pressable
-              onPress={() => void openStickerPicker()}
-              style={[styles.toolButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
-            >
-              <Ionicons name="sparkles-outline" size={18} color={theme.colors.text} />
-            </Pressable>
-          </View>
-
-          <View
-            style={[
-              styles.composer,
-              {
-                backgroundColor: theme.colors.card,
-                borderColor: theme.colors.border,
-              },
-            ]}
-          >
-            <TextInput
-              value={draft}
-              onChangeText={setDraft}
-              placeholder="Сообщение"
-              placeholderTextColor={theme.colors.muted}
+              onPress={() => void openComposerPanel('stickers')}
               style={[
-                styles.input,
+                styles.roundToolButton,
                 {
-                  color: theme.colors.text,
-                },
-              ]}
-              multiline
-              maxLength={4000}
-              textAlignVertical="top"
-            />
-
-            <Pressable
-              onPress={() => void handleSend()}
-              disabled={!draft.trim() || sending}
-              style={[
-                styles.sendButton,
-                {
-                  backgroundColor: draft.trim()
-                    ? theme.colors.primary
-                    : theme.colors.inputBackground,
+                  backgroundColor: theme.colors.cardStrong,
+                  borderColor: theme.colors.borderStrong,
                 },
               ]}
             >
               <Ionicons
-                name="arrow-up"
-                size={18}
-                color={draft.trim() ? '#FFFFFF' : theme.colors.muted}
+                name={composerPanelVisible ? 'chevron-down' : 'sparkles-outline'}
+                size={19}
+                color={theme.colors.text}
+              />
+            </Pressable>
+
+            <View
+              style={[
+                styles.composer,
+                {
+                  backgroundColor: theme.colors.composerBackground,
+                  borderColor: theme.colors.borderStrong,
+                },
+              ]}
+            >
+              <TextInput
+                value={draft}
+                onChangeText={(value) => {
+                  animateLayout();
+                  setDraft(value);
+                }}
+                onFocus={() => {
+                  if (composerPanelVisible) {
+                    closeComposerPanel();
+                  }
+                }}
+                placeholder="Сообщение"
+                placeholderTextColor={theme.colors.muted}
+                style={[
+                  styles.input,
+                  {
+                    color: theme.colors.text,
+                  },
+                ]}
+                multiline
+                maxLength={4000}
+                textAlignVertical="center"
+              />
+            </View>
+
+            <Pressable
+              onPress={() => void handlePickImage()}
+              style={[
+                styles.roundToolButton,
+                {
+                  backgroundColor: theme.colors.cardStrong,
+                  borderColor: theme.colors.borderStrong,
+                },
+              ]}
+            >
+              <Ionicons name="image-outline" size={19} color={theme.colors.text} />
+            </Pressable>
+
+            <Pressable
+              onPress={handleRecorderPress}
+              onLongPress={handleRecorderLongPress}
+              delayLongPress={220}
+              style={[
+                styles.primaryActionButton,
+                {
+                  backgroundColor: canSend ? theme.colors.primary : theme.colors.cardStrong,
+                  borderColor: canSend ? 'transparent' : theme.colors.borderStrong,
+                },
+              ]}
+            >
+              <Ionicons
+                name={composerActionIcon as any}
+                size={20}
+                color={canSend ? '#FFFFFF' : theme.colors.text}
               />
             </Pressable>
           </View>
+
+          {!canSend ? (
+            <Text style={[styles.captureHint, { color: theme.colors.muted }]}>
+              Нажми для записи. Удерживай, чтобы переключить на{' '}
+              {captureMode === 'audio' ? 'видео-сообщение' : 'голосовое сообщение'}.
+            </Text>
+          ) : null}
+
+          {composerPanelVisible ? (
+            <View
+              style={[
+                styles.composerPanel,
+                {
+                  backgroundColor: theme.colors.cardStrong,
+                  borderColor: theme.colors.borderStrong,
+                },
+              ]}
+            >
+              <View style={styles.composerPanelHeader}>
+                <View style={styles.panelTabs}>
+                  <Pressable
+                    onPress={() => setComposerPanelTab('stickers')}
+                    style={[
+                      styles.panelTab,
+                      {
+                        backgroundColor:
+                          composerPanelTab === 'stickers'
+                            ? theme.colors.primarySoft
+                            : 'transparent',
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name="sparkles-outline"
+                      size={16}
+                      color={
+                        composerPanelTab === 'stickers'
+                          ? theme.colors.primary
+                          : theme.colors.text
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.panelTabText,
+                        {
+                          color:
+                            composerPanelTab === 'stickers'
+                              ? theme.colors.primary
+                              : theme.colors.text,
+                        },
+                      ]}
+                    >
+                      Стикеры
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => setComposerPanelTab('emoji')}
+                    style={[
+                      styles.panelTab,
+                      {
+                        backgroundColor:
+                          composerPanelTab === 'emoji'
+                            ? theme.colors.primarySoft
+                            : 'transparent',
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name="happy-outline"
+                      size={16}
+                      color={
+                        composerPanelTab === 'emoji'
+                          ? theme.colors.primary
+                          : theme.colors.text
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.panelTabText,
+                        {
+                          color:
+                            composerPanelTab === 'emoji'
+                              ? theme.colors.primary
+                              : theme.colors.text,
+                        },
+                      ]}
+                    >
+                      Эмодзи
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <Pressable onPress={closeComposerPanel} style={styles.panelCloseBtn}>
+                  <Ionicons name="close" size={18} color={theme.colors.text} />
+                </Pressable>
+              </View>
+
+              {composerPanelTab === 'emoji' ? (
+                <View style={styles.emojiPanelBody}>
+                  {emojiGroups.map((group) => (
+                    <View key={group.title} style={styles.emojiGroup}>
+                      <Text style={[styles.emojiGroupTitle, { color: theme.colors.muted }]}>
+                        {group.title}
+                      </Text>
+
+                      <View style={styles.emojiGrid}>
+                        {group.items.map((emoji) => (
+                          <Pressable
+                            key={`${group.title}-${emoji}`}
+                            onPress={() => handleInsertEmoji(emoji)}
+                            style={[
+                              styles.emojiChip,
+                              {
+                                backgroundColor: theme.colors.backgroundTertiary,
+                              },
+                            ]}
+                          >
+                            <Text style={styles.emojiText}>{emoji}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.stickerPanelBody}>
+                  <View style={styles.packTabsRow}>
+                    {stickerPacks.length > 0 ? (
+                      stickerPacks.map((pack) => {
+                        const active = selectedPackSlug === pack.slug;
+
+                        return (
+                          <Pressable
+                            key={pack.uuid}
+                            onPress={() => {
+                              setSelectedPackSlug(pack.slug);
+                              void loadStickerPack(pack.slug);
+                            }}
+                            style={[
+                              styles.packChip,
+                              {
+                                backgroundColor: active
+                                  ? theme.colors.primarySoft
+                                  : theme.colors.backgroundTertiary,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.packChipText,
+                                {
+                                  color: active ? theme.colors.primary : theme.colors.text,
+                                },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {pack.title}
+                            </Text>
+                          </Pressable>
+                        );
+                      })
+                    ) : (
+                      <Text style={[styles.helperText, { color: theme.colors.muted }]}>
+                        Пакеты стикеров загружаются…
+                      </Text>
+                    )}
+                  </View>
+
+                  {loadingStickers ? (
+                    <View style={styles.centerStickerLoading}>
+                      <ActivityIndicator color={theme.colors.primary} />
+                    </View>
+                  ) : selectedPack?.stickers?.length ? (
+                    <View style={styles.stickerGrid}>
+                      {selectedPack.stickers.map((sticker) => (
+                        <Pressable
+                          key={sticker.uuid}
+                          onPress={() => void handleSendSticker(sticker)}
+                          style={[
+                            styles.stickerTile,
+                            {
+                              backgroundColor: theme.colors.backgroundTertiary,
+                              borderColor: theme.colors.borderStrong,
+                            },
+                          ]}
+                        >
+                          <ExpoImage
+                            source={{ uri: sticker.image }}
+                            style={styles.stickerTileImage}
+                            contentFit="contain"
+                          />
+                          {!!sticker.emoji && (
+                            <Text style={styles.stickerTileEmoji}>{sticker.emoji}</Text>
+                          )}
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={[styles.helperText, { color: theme.colors.muted }]}>
+                      Стикеры пока недоступны
+                    </Text>
+                  )}
+                </View>
+              )}
+            </View>
+          ) : null}
         </View>
       </KeyboardAvoidingView>
+
+      <ChatCaptureModal
+        visible={captureVisible}
+        mode={captureMode}
+        onClose={() => setCaptureVisible(false)}
+        onCaptured={handleCapturedMedia}
+      />
 
       <Modal
         visible={actionMenuVisible}
@@ -1064,6 +1714,7 @@ export default function ChatScreen() {
       >
         <View style={styles.modalOverlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setActionMenuVisible(false)} />
+
           <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <GlassCard>
               <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
@@ -1072,35 +1723,68 @@ export default function ChatScreen() {
 
               <Pressable
                 onPress={() => selectedMessage && handleQuickReply(selectedMessage)}
-                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
               >
-                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>Ответить</Text>
+                <Ionicons name="arrow-undo-outline" size={18} color={theme.colors.primary} />
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                  Ответить
+                </Text>
               </Pressable>
 
               <Pressable
                 onPress={() => void handleCopyMessage()}
-                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
               >
-                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>Копировать</Text>
+                <Ionicons name="copy-outline" size={18} color={theme.colors.primary} />
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                  Копировать
+                </Text>
               </Pressable>
 
               <Pressable
                 onPress={() => void handleShareMessage()}
-                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
               >
-                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>Поделиться</Text>
+                <Ionicons name="share-social-outline" size={18} color={theme.colors.primary} />
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                  Поделиться
+                </Text>
               </Pressable>
 
-              <View style={[styles.sheetItem, styles.sheetDisabled, { borderColor: theme.colors.border }]}>
-                <Text style={[styles.sheetItemText, { color: theme.colors.muted }]}>Изменить — скоро</Text>
+              <Pressable
+                onPress={() => void handleHideMessageForMe()}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
+              >
+                <Ionicons name="eye-off-outline" size={18} color={theme.colors.primary} />
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                  Скрыть у себя
+                </Text>
+              </Pressable>
+
+              <View
+                style={[
+                  styles.sheetItem,
+                  styles.sheetDisabled,
+                  { borderColor: theme.colors.borderStrong },
+                ]}
+              >
+                <Ionicons name="create-outline" size={18} color={theme.colors.muted} />
+                <Text style={[styles.sheetItemText, { color: theme.colors.muted }]}>
+                  Изменить — следующим пакетом
+                </Text>
               </View>
 
-              <View style={[styles.sheetItem, styles.sheetDisabled, { borderColor: theme.colors.border }]}>
-                <Text style={[styles.sheetItemText, { color: theme.colors.muted }]}>Удалить для себя — скоро</Text>
-              </View>
-
-              <View style={[styles.sheetItem, styles.sheetDisabled, { borderColor: theme.colors.border }]}>
-                <Text style={[styles.sheetItemText, { color: theme.colors.muted }]}>Удалить на сервере — скоро</Text>
+              <View
+                style={[
+                  styles.sheetItem,
+                  styles.sheetDisabled,
+                  { borderColor: theme.colors.borderStrong },
+                ]}
+              >
+                <Ionicons name="trash-outline" size={18} color={theme.colors.muted} />
+                <Text style={[styles.sheetItemText, { color: theme.colors.muted }]}>
+                  Удалить на сервере — после backend
+                </Text>
               </View>
             </GlassCard>
           </View>
@@ -1128,8 +1812,9 @@ export default function ChatScreen() {
                     setSettingsVisible(false);
                     openPeerProfile();
                   }}
-                  style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+                  style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
                 >
+                  <Ionicons name="person-outline" size={18} color={theme.colors.primary} />
                   <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
                     Профиль собеседника
                   </Text>
@@ -1138,8 +1823,9 @@ export default function ChatScreen() {
 
               <Pressable
                 onPress={() => void handleShareProfile()}
-                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
               >
+                <Ionicons name="share-outline" size={18} color={theme.colors.primary} />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
                   Поделиться профилем
                 </Text>
@@ -1148,8 +1834,13 @@ export default function ChatScreen() {
               <Pressable
                 onPress={() => void handleToggleMute()}
                 disabled={actionLoading}
-                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
               >
+                <Ionicons
+                  name={chat?.is_muted ? 'volume-high-outline' : 'volume-mute-outline'}
+                  size={18}
+                  color={theme.colors.primary}
+                />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
                   {chat?.is_muted ? 'Включить звук' : 'Без звука'}
                 </Text>
@@ -1158,8 +1849,13 @@ export default function ChatScreen() {
               <Pressable
                 onPress={() => void handleTogglePin()}
                 disabled={actionLoading}
-                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
               >
+                <Ionicons
+                  name={chat?.is_pinned ? 'bookmark' : 'bookmark-outline'}
+                  size={18}
+                  color={theme.colors.primary}
+                />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
                   {chat?.is_pinned ? 'Убрать из закрепа' : 'Закрепить чат'}
                 </Text>
@@ -1168,8 +1864,13 @@ export default function ChatScreen() {
               <Pressable
                 onPress={() => void handleToggleArchive()}
                 disabled={actionLoading}
-                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
               >
+                <Ionicons
+                  name={chat?.is_archived ? 'archive' : 'archive-outline'}
+                  size={18}
+                  color={theme.colors.primary}
+                />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
                   {chat?.is_archived ? 'Разархивировать' : 'Архивировать чат'}
                 </Text>
@@ -1181,8 +1882,9 @@ export default function ChatScreen() {
                     setReportType('user');
                     setReportVisible(true);
                   }}
-                  style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+                  style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
                 >
+                  <Ionicons name="warning-outline" size={18} color={theme.colors.danger} />
                   <Text style={[styles.sheetDangerText, { color: theme.colors.danger }]}>
                     Пожаловаться на пользователя
                   </Text>
@@ -1194,8 +1896,9 @@ export default function ChatScreen() {
                   setReportType('chat');
                   setReportVisible(true);
                 }}
-                style={[styles.sheetItem, { borderColor: theme.colors.border }]}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
               >
+                <Ionicons name="warning-outline" size={18} color={theme.colors.danger} />
                 <Text style={[styles.sheetDangerText, { color: theme.colors.danger }]}>
                   Пожаловаться на чат
                 </Text>
@@ -1231,7 +1934,7 @@ export default function ChatScreen() {
                       style={[
                         styles.reasonChip,
                         {
-                          borderColor: theme.colors.border,
+                          borderColor: theme.colors.borderStrong,
                           backgroundColor: active ? theme.colors.primary : 'transparent',
                         },
                       ]}
@@ -1239,7 +1942,7 @@ export default function ChatScreen() {
                       <Text
                         style={{
                           color: active ? '#FFFFFF' : theme.colors.text,
-                          fontWeight: '600',
+                          fontWeight: '700',
                         }}
                       >
                         {reason}
@@ -1258,9 +1961,9 @@ export default function ChatScreen() {
                 style={[
                   styles.reportInput,
                   {
-                    color: theme.colors.text,
-                    borderColor: theme.colors.border,
+                    borderColor: theme.colors.borderStrong,
                     backgroundColor: theme.colors.inputBackground,
+                    color: theme.colors.text,
                   },
                 ]}
               />
@@ -1268,123 +1971,17 @@ export default function ChatScreen() {
               <Pressable
                 onPress={() => void submitComplaint()}
                 disabled={actionLoading}
-                style={[styles.primaryButton, { backgroundColor: theme.colors.primary }]}
+                style={[
+                  styles.submitReportButton,
+                  {
+                    backgroundColor: theme.colors.primary,
+                  },
+                ]}
               >
-                <Text style={styles.primaryButtonText}>
+                <Text style={styles.submitReportButtonText}>
                   {actionLoading ? 'Отправка...' : 'Отправить жалобу'}
                 </Text>
               </Pressable>
-            </GlassCard>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={emojiVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setEmojiVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setEmojiVisible(false)} />
-          <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-            <GlassCard>
-              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>Эмодзи</Text>
-
-              <View style={styles.emojiGrid}>
-                {quickEmojis.map((emoji) => (
-                  <Pressable
-                    key={emoji}
-                    onPress={() => handleInsertEmoji(emoji)}
-                    style={[styles.emojiButton, { borderColor: theme.colors.border }]}
-                  >
-                    <Text style={styles.emojiText}>{emoji}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </GlassCard>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={stickersVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setStickersVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setStickersVisible(false)} />
-          <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-            <GlassCard>
-              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>Стикеры</Text>
-
-              <FlatList
-                horizontal
-                data={stickerPacks}
-                keyExtractor={(item) => item.uuid}
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.packList}
-                renderItem={({ item }) => {
-                  const active = item.slug === selectedPackSlug;
-
-                  return (
-                    <Pressable
-                      onPress={async () => {
-                        setSelectedPackSlug(item.slug);
-                        await loadStickerPack(item.slug);
-                      }}
-                      style={[
-                        styles.packChip,
-                        {
-                          borderColor: theme.colors.border,
-                          backgroundColor: active ? theme.colors.primary : 'transparent',
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={{
-                          color: active ? '#FFFFFF' : theme.colors.text,
-                          fontWeight: '600',
-                        }}
-                      >
-                        {item.title}
-                      </Text>
-                    </Pressable>
-                  );
-                }}
-              />
-
-              {loadingStickers ? (
-                <View style={styles.centered}>
-                  <ActivityIndicator color={theme.colors.primary} />
-                </View>
-              ) : (
-                <FlatList
-                  data={selectedPack?.stickers ?? []}
-                  keyExtractor={(item) => item.uuid}
-                  numColumns={4}
-                  contentContainerStyle={styles.stickerGrid}
-                  renderItem={({ item }) => (
-                    <Pressable
-                      onPress={() => void handleSendSticker(item)}
-                      style={[styles.stickerCell, { borderColor: theme.colors.border }]}
-                    >
-                      <ExpoImage
-                        source={{ uri: item.image }}
-                        style={styles.stickerCellImage}
-                        contentFit="contain"
-                      />
-                      {!!item.emoji && <Text style={styles.stickerCellEmoji}>{item.emoji}</Text>}
-                    </Pressable>
-                  )}
-                  ListEmptyComponent={
-                    <Text style={[styles.emptyText, { color: theme.colors.muted }]}>
-                      Стикеры не найдены
-                    </Text>
-                  }
-                />
-              )}
             </GlassCard>
           </View>
         </View>
@@ -1397,168 +1994,211 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   header: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
   },
+
   headerButton: {
-    width: 44,
-    height: 44,
+    width: 42,
+    height: 42,
     borderRadius: 16,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   headerCenter: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
+
+  headerAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  headerAvatarText: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
   },
+
   headerSub: {
-    fontSize: 13,
+    fontSize: 12,
     marginTop: 2,
   },
+
   listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 24,
+    paddingHorizontal: 14,
+    paddingTop: 14,
   },
+
   loadEarlierButton: {
     minHeight: 42,
     borderRadius: 16,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
+
   historyStart: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
+
   emptyWrap: {
-    marginTop: 20,
+    paddingTop: 40,
   },
+
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
     marginBottom: 6,
   },
+
   emptyText: {
     fontSize: 14,
     lineHeight: 20,
   },
+
   messageRow: {
-    flexDirection: 'row',
     marginBottom: 8,
+    flexDirection: 'row',
   },
+
   bubble: {
-    maxWidth: '82%',
-    borderRadius: 24,
+    maxWidth: '84%',
+    minWidth: 78,
+    borderRadius: 22,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
   },
+
   replyBox: {
     borderLeftWidth: 3,
     paddingLeft: 10,
     marginBottom: 8,
   },
+
   replyText: {
     fontSize: 12,
     lineHeight: 17,
+    fontWeight: '600',
   },
+
   messageText: {
     fontSize: 15,
     lineHeight: 21,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 6,
-    minHeight: 14,
-  },
-  metaText: {
-    fontSize: 11,
     fontWeight: '500',
   },
-  stickerWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stickerImage: {
-    width: 120,
-    height: 120,
-  },
-  stickerEmoji: {
-    fontSize: 18,
-    marginTop: 6,
-  },
+
   imageMessageWrap: {
-    overflow: 'hidden',
-    borderRadius: 18,
+    width: 220,
   },
+
   imageMessage: {
     width: 220,
     height: 220,
     borderRadius: 18,
   },
-  scrollToBottomButton: {
-    position: 'absolute',
-    right: 18,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+
+  stickerWrap: {
+    width: 144,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+  },
+
+  stickerImage: {
+    width: 132,
+    height: 132,
+  },
+
+  stickerEmoji: {
+    fontSize: 18,
+    marginTop: 6,
+  },
+
+  metaRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+  },
+
+  metaText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  scrollToBottomButton: {
+    position: 'absolute',
+    right: 16,
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowOpacity: 0.16,
-    shadowRadius: 14,
+    shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
+    elevation: 10,
   },
-  composerWrap: {
-    paddingHorizontal: 12,
-    paddingTop: 8,
+
+  composerShell: {
     borderTopWidth: 1,
+    paddingHorizontal: 12,
+    paddingTop: 10,
   },
+
   replyComposer: {
-    minHeight: 56,
+    minHeight: 54,
     borderRadius: 18,
     borderWidth: 1,
-    marginBottom: 8,
     paddingHorizontal: 14,
     paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
+    marginBottom: 10,
   },
+
   replyComposerTitle: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
     marginBottom: 2,
   },
+
   replyComposerText: {
     fontSize: 13,
+    lineHeight: 18,
   },
+
   replyCloseBtn: {
     width: 28,
     height: 28,
@@ -1566,160 +2206,274 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  toolbarRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 8,
-  },
-  toolButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  composer: {
-    minHeight: 58,
-    borderRadius: 24,
-    borderWidth: 1,
-    paddingLeft: 14,
-    paddingRight: 8,
-    paddingVertical: 8,
+
+  composerRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
   },
-  input: {
-    flex: 1,
-    maxHeight: 120,
-    fontSize: 15,
-    paddingTop: 8,
-    paddingBottom: 8,
+
+  roundToolButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
   },
-  sendButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+
+  composer: {
+    flex: 1,
+    minHeight: 50,
+    maxHeight: 128,
+    borderRadius: 22,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    justifyContent: 'center',
+  },
+
+  input: {
+    fontSize: 15,
+    lineHeight: 20,
+    minHeight: 28,
+    maxHeight: 108,
+  },
+
+  primaryActionButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 19,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.26)',
-    justifyContent: 'flex-end',
+
+  captureHint: {
+    marginTop: 8,
+    marginBottom: 2,
+    paddingHorizontal: 4,
+    fontSize: 12,
+    lineHeight: 17,
   },
-  sheetWrap: {
-    paddingHorizontal: 12,
+
+  composerPanel: {
+    marginTop: 10,
+    minHeight: 250,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 12,
   },
-  sheetTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+
+  composerPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 12,
   },
-  sheetItem: {
-    minHeight: 52,
-    borderWidth: 1,
+
+  panelTabs: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  panelTab: {
+    minHeight: 38,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  panelTabText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  panelCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  emojiPanelBody: {
+    gap: 12,
+  },
+
+  emojiGroup: {
+    gap: 8,
+  },
+
+  emojiGroupTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  emojiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  emojiChip: {
+    width: 46,
+    height: 46,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+  },
+
+  emojiText: {
+    fontSize: 22,
+  },
+
+  stickerPanelBody: {
+    flex: 1,
+  },
+
+  packTabsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+
+  packChip: {
+    minHeight: 34,
+    maxWidth: 140,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  packChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  centerStickerLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 120,
+  },
+
+  stickerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+
+  stickerTile: {
+    width: 74,
+    height: 74,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+
+  stickerTileImage: {
+    width: 56,
+    height: 56,
+  },
+
+  stickerTileEmoji: {
+    position: 'absolute',
+    right: 6,
+    bottom: 4,
+    fontSize: 13,
+  },
+
+  helperText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.34)',
+    justifyContent: 'flex-end',
+  },
+
+  sheetWrap: {
+    paddingHorizontal: 12,
+  },
+
+  sheetTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 12,
+  },
+
+  sheetItem: {
+    minHeight: 50,
+    borderRadius: 16,
+    borderWidth: 1,
     paddingHorizontal: 14,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  sheetDisabled: {
-    opacity: 0.55,
-  },
+
   sheetItemText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  sheetDangerText: {
     fontSize: 15,
     fontWeight: '700',
   },
+
+  sheetDangerText: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  sheetDisabled: {
+    opacity: 0.72,
+  },
+
   reasonWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 14,
   },
+
   reasonChip: {
     minHeight: 38,
-    borderRadius: 14,
+    borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   reportInput: {
-    minHeight: 96,
-    borderWidth: 1,
+    minHeight: 110,
     borderRadius: 18,
+    borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    marginBottom: 12,
     textAlignVertical: 'top',
+    fontSize: 15,
+    marginBottom: 14,
   },
-  primaryButton: {
+
+  submitReportButton: {
     minHeight: 50,
-    borderRadius: 16,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryButtonText: {
+
+  submitReportButtonText: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '700',
-  },
-  emojiGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  emojiButton: {
-    width: '22%',
-    aspectRatio: 1,
-    borderRadius: 18,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emojiText: {
-    fontSize: 28,
-  },
-  packList: {
-    gap: 8,
-    paddingBottom: 12,
-  },
-  packChip: {
-    minHeight: 38,
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  stickerGrid: {
-    paddingTop: 4,
-    gap: 10,
-  },
-  stickerCell: {
-    width: '23%',
-    aspectRatio: 1,
-    borderRadius: 18,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    margin: '1%',
-    overflow: 'hidden',
-  },
-  stickerCellImage: {
-    width: '72%',
-    height: '72%',
-  },
-  stickerCellEmoji: {
-    fontSize: 12,
-    marginTop: 4,
+    fontWeight: '800',
   },
 });
