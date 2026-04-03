@@ -13,7 +13,7 @@ export function MessageVideoBubble({ uri, isOwn }: MessageVideoBubbleProps) {
 
   return (
     <View style={styles.wrap}>
-      <View style={styles.circleVideoWrap}>
+      <View style={styles.circleWrap}>
         <Video
           source={{ uri }}
           style={styles.video}
@@ -32,7 +32,7 @@ export function MessageVideoBubble({ uri, isOwn }: MessageVideoBubbleProps) {
           },
         ]}
       >
-        Видео-заметка
+        Видео-сообщение
       </Text>
     </View>
   );
@@ -40,19 +40,19 @@ export function MessageVideoBubble({ uri, isOwn }: MessageVideoBubbleProps) {
 
 const styles = StyleSheet.create({
   wrap: {
-    width: 220,
+    width: 190,
     alignItems: 'center',
   },
-  circleVideoWrap: {
-    width: 220,
-    height: 220,
-    borderRadius: 110,
+  circleWrap: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
     overflow: 'hidden',
     backgroundColor: '#000000',
   },
   video: {
-    width: 220,
-    height: 220,
+    width: 180,
+    height: 180,
     backgroundColor: '#000000',
   },
   label: {

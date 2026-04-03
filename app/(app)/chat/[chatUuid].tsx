@@ -45,7 +45,13 @@ import {
   uploadPickedMedia,
   type PickedMediaAsset,
 } from '@/src/lib/api/media';
-import { fetchChatMessages, markChatRead, sendChatMessage } from '@/src/lib/api/messages';
+import {
+  deleteChatMessage,
+  editChatMessage,
+  fetchChatMessages,
+  markChatRead,
+  sendChatMessage,
+} from '@/src/lib/api/messages';
 import { fetchStickerPackDetail, fetchStickerPacks } from '@/src/lib/api/stickers';
 import {
   loadCachedChatDetail,
@@ -253,6 +259,10 @@ export default function ChatScreen() {
   const [actionMenuVisible, setActionMenuVisible] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<MessageItem | null>(null);
 
+  const [editingVisible, setEditingVisible] = useState(false);
+  const [editingText, setEditingText] = useState('');
+  const [editingLoading, setEditingLoading] = useState(false);
+
   const [composerPanelVisible, setComposerPanelVisible] = useState(false);
   const [composerPanelTab, setComposerPanelTab] = useState<ComposerPanelTab>('stickers');
 
@@ -288,6 +298,22 @@ export default function ChatScreen() {
   }, [draft, captureMode]);
 
   const canSend = draft.trim().length > 0;
+
+  const canEditSelectedMessage = useMemo(() => {
+    if (!selectedMessage) return false;
+
+    return Boolean(
+      selectedMessage.is_own_message &&
+        !selectedMessage.is_deleted &&
+        selectedMessage.message_type === 'text',
+    );
+  }, [selectedMessage]);
+
+  const canDeleteForEveryoneSelectedMessage = useMemo(() => {
+    if (!selectedMessage) return false;
+
+    return Boolean(selectedMessage.is_own_message && !selectedMessage.is_deleted);
+  }, [selectedMessage]);
 
   const scrollToBottom = (animated = true) => {
     requestAnimationFrame(() => {
@@ -668,6 +694,137 @@ export default function ChatScreen() {
     }
   };
 
+  const openEditSelectedMessage = () => {
+    if (!selectedMessage) return;
+
+    setEditingText(selectedMessage.text || '');
+    setActionMenuVisible(false);
+    setEditingVisible(true);
+  };
+
+  const handleSaveEditedMessage = async () => {
+    if (!chatUuid || !selectedMessage) return;
+
+    const nextText = editingText.trim();
+
+    if (!nextText) {
+      Alert.alert('Ошибка', 'Текст сообщения не может быть пустым');
+      return;
+    }
+
+    try {
+      setEditingLoading(true);
+
+      const updated = await editChatMessage(chatUuid, selectedMessage.uuid, {
+        text: nextText,
+      });
+
+      setMessages((current) => {
+        const next = current.map((message) =>
+          message.uuid === updated.uuid
+            ? {
+                ...updated,
+                local_status: 'sent',
+              }
+            : message,
+        );
+
+        void saveCachedChatMessages(chatUuid, next);
+        return next;
+      });
+
+      if (replyTo?.uuid === updated.uuid) {
+        setReplyTo(updated);
+      }
+
+      setSelectedMessage(updated);
+      setEditingVisible(false);
+      setEditingText('');
+    } catch (error: any) {
+      console.error('handleSaveEditedMessage error:', error);
+      Alert.alert(
+        'Ошибка',
+        error?.response?.data?.detail || 'Не удалось изменить сообщение',
+      );
+    } finally {
+      setEditingLoading(false);
+    }
+  };
+
+  const performDeleteSelectedMessage = async (deleteFor: 'me' | 'everyone') => {
+    if (!chatUuid || !selectedMessage) return;
+
+    try {
+      const response = await deleteChatMessage(chatUuid, selectedMessage.uuid, {
+        delete_for: deleteFor,
+      });
+
+      if (deleteFor === 'me') {
+        const key = getMessageLocalKey(selectedMessage);
+        if (key) {
+          const nextMap = await hideMessageLocally(chatUuid, key);
+          setHiddenMessageMap(nextMap);
+        }
+
+        if (replyTo?.uuid === selectedMessage.uuid) {
+          setReplyTo(null);
+        }
+      } else if (response.message) {
+        setMessages((current) => {
+          const next = current.map((message) =>
+            message.uuid === response.message!.uuid
+              ? {
+                  ...response.message!,
+                  local_status: 'sent',
+                }
+              : message,
+          );
+
+          void saveCachedChatMessages(chatUuid, next);
+          return next;
+        });
+
+        if (replyTo?.uuid === response.message.uuid) {
+          setReplyTo(response.message);
+        }
+      }
+
+      setActionMenuVisible(false);
+      setSelectedMessage(null);
+      animateLayout();
+    } catch (error: any) {
+      console.error('performDeleteSelectedMessage error:', error);
+      Alert.alert(
+        'Ошибка',
+        error?.response?.data?.detail || 'Не удалось удалить сообщение',
+      );
+    }
+  };
+
+  const confirmDeleteSelectedMessage = (deleteFor: 'me' | 'everyone') => {
+    if (!selectedMessage) return;
+
+    Alert.alert(
+      deleteFor === 'everyone' ? 'Удалить у всех?' : 'Удалить у себя?',
+      deleteFor === 'everyone'
+        ? 'Сообщение будет удалено на сервере для всех участников.'
+        : 'Сообщение будет скрыто у тебя.',
+      [
+        {
+          text: 'Отмена',
+          style: 'cancel',
+        },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: () => {
+            void performDeleteSelectedMessage(deleteFor);
+          },
+        },
+      ],
+    );
+  };
+
   const handleInsertEmoji = (emoji: string) => {
     animateLayout();
     setDraft((current) => `${current}${emoji}`);
@@ -769,7 +926,12 @@ export default function ChatScreen() {
         return next;
       });
 
-      Alert.alert('Ошибка', mediaType === 'audio' ? 'Не удалось отправить голосовое сообщение' : 'Не удалось отправить видео-сообщение');
+      Alert.alert(
+        'Ошибка',
+        mediaType === 'audio'
+          ? 'Не удалось отправить голосовое сообщение'
+          : 'Не удалось отправить видео-сообщение',
+      );
     }
   };
 
@@ -1003,7 +1165,7 @@ export default function ChatScreen() {
   };
 
   const retryMessage = async (message: MessageItem) => {
-    if (!chatUuid || !message.client_uuid) return;
+    if (!chatUuid || !message.client_uuid || message.message_type !== 'text') return;
 
     animateLayout();
     setMessages((current) => {
@@ -1024,12 +1186,8 @@ export default function ChatScreen() {
       const savedMessage = await sendChatMessage(chatUuid, {
         text: message.text || '',
         client_uuid: message.client_uuid,
-        message_type: (message.message_type as any) || 'text',
+        message_type: 'text',
         ...(message.reply_to?.uuid ? { reply_to_uuid: message.reply_to.uuid } : {}),
-        ...(message.attachments?.length
-          ? { attachment_uuids: message.attachments.map((item) => item.uuid) }
-          : {}),
-        ...(message.metadata ? { metadata: message.metadata as Record<string, unknown> } : {}),
       });
 
       setMessages((current) => {
@@ -1106,7 +1264,7 @@ export default function ChatScreen() {
         <Pressable
           onLongPress={() => handleOpenActionMenu(item)}
           onPress={() => {
-            if (item.local_status === 'failed') {
+            if (item.local_status === 'failed' && item.message_type === 'text') {
               void retryMessage(item);
             }
           }}
@@ -1203,6 +1361,19 @@ export default function ChatScreen() {
           )}
 
           <View style={styles.metaRow}>
+            {item.is_edited ? (
+              <Text
+                style={[
+                  styles.metaEditedText,
+                  {
+                    color: metaColor,
+                  },
+                ]}
+              >
+                изменено
+              </Text>
+            ) : null}
+
             <Text
               style={[
                 styles.metaText,
@@ -1707,6 +1878,75 @@ export default function ChatScreen() {
       />
 
       <Modal
+        visible={editingVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditingVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditingVisible(false)} />
+
+          <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <GlassCard>
+              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
+                Изменить сообщение
+              </Text>
+
+              <TextInput
+                value={editingText}
+                onChangeText={setEditingText}
+                placeholder="Новый текст"
+                placeholderTextColor={theme.colors.muted}
+                multiline
+                style={[
+                  styles.editInput,
+                  {
+                    borderColor: theme.colors.borderStrong,
+                    backgroundColor: theme.colors.inputBackground,
+                    color: theme.colors.text,
+                  },
+                ]}
+              />
+
+              <View style={styles.editActions}>
+                <Pressable
+                  onPress={() => setEditingVisible(false)}
+                  style={[
+                    styles.editSecondaryButton,
+                    {
+                      backgroundColor: theme.colors.backgroundTertiary,
+                      borderColor: theme.colors.borderStrong,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.editSecondaryButtonText, { color: theme.colors.text }]}>
+                    Отмена
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => void handleSaveEditedMessage()}
+                  disabled={editingLoading}
+                  style={[
+                    styles.editPrimaryButton,
+                    {
+                      backgroundColor: theme.colors.primary,
+                    },
+                  ]}
+                >
+                  {editingLoading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.editPrimaryButtonText}>Сохранить</Text>
+                  )}
+                </Pressable>
+              </View>
+            </GlassCard>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={actionMenuVisible}
         transparent
         animationType="fade"
@@ -1761,31 +2001,39 @@ export default function ChatScreen() {
                 </Text>
               </Pressable>
 
-              <View
-                style={[
-                  styles.sheetItem,
-                  styles.sheetDisabled,
-                  { borderColor: theme.colors.borderStrong },
-                ]}
-              >
-                <Ionicons name="create-outline" size={18} color={theme.colors.muted} />
-                <Text style={[styles.sheetItemText, { color: theme.colors.muted }]}>
-                  Изменить — следующим пакетом
-                </Text>
-              </View>
+              {canEditSelectedMessage ? (
+                <Pressable
+                  onPress={openEditSelectedMessage}
+                  style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
+                >
+                  <Ionicons name="create-outline" size={18} color={theme.colors.primary} />
+                  <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                    Изменить
+                  </Text>
+                </Pressable>
+              ) : null}
 
-              <View
-                style={[
-                  styles.sheetItem,
-                  styles.sheetDisabled,
-                  { borderColor: theme.colors.borderStrong },
-                ]}
+              <Pressable
+                onPress={() => confirmDeleteSelectedMessage('me')}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
               >
-                <Ionicons name="trash-outline" size={18} color={theme.colors.muted} />
-                <Text style={[styles.sheetItemText, { color: theme.colors.muted }]}>
-                  Удалить на сервере — после backend
+                <Ionicons name="trash-outline" size={18} color={theme.colors.danger} />
+                <Text style={[styles.sheetDangerText, { color: theme.colors.danger }]}>
+                  Удалить у себя
                 </Text>
-              </View>
+              </Pressable>
+
+              {canDeleteForEveryoneSelectedMessage ? (
+                <Pressable
+                  onPress={() => confirmDeleteSelectedMessage('everyone')}
+                  style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
+                >
+                  <Ionicons name="trash-bin-outline" size={18} color={theme.colors.danger} />
+                  <Text style={[styles.sheetDangerText, { color: theme.colors.danger }]}>
+                    Удалить у всех
+                  </Text>
+                </Pressable>
+              ) : null}
             </GlassCard>
           </View>
         </View>
@@ -2156,6 +2404,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  metaEditedText: {
+    fontSize: 11,
+    fontWeight: '700',
+    opacity: 0.88,
+  },
+
   scrollToBottomButton: {
     position: 'absolute',
     right: 16,
@@ -2433,10 +2687,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  sheetDisabled: {
-    opacity: 0.72,
-  },
-
   reasonWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2472,6 +2722,50 @@ const styles = StyleSheet.create({
   },
 
   submitReportButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  editInput: {
+    minHeight: 120,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    textAlignVertical: 'top',
+    fontSize: 15,
+    marginBottom: 14,
+  },
+
+  editActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  editSecondaryButton: {
+    flex: 1,
+    minHeight: 50,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  editSecondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  editPrimaryButton: {
+    flex: 1,
+    minHeight: 50,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  editPrimaryButtonText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',

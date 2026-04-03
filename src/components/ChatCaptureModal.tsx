@@ -101,6 +101,7 @@ export function ChatCaptureModal({
       interval = setInterval(() => {
         setVideoDurationMs((current) => {
           const next = current + 250;
+
           if (next >= VIDEO_MAX_DURATION_SECONDS * 1000) {
             try {
               cameraRef.current?.stopRecording?.();
@@ -109,6 +110,7 @@ export function ChatCaptureModal({
             }
             return VIDEO_MAX_DURATION_SECONDS * 1000;
           }
+
           return next;
         });
       }, 250);
