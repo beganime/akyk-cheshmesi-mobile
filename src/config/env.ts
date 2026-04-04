@@ -9,5 +9,5 @@ const extra = (Constants.expoConfig?.extra ?? {}) as {
 export const ENV = {
   API_BASE_URL: extra.apiBaseUrl ?? 'https://akyl-cheshmesi.ru/api/v1',
   WS_BASE_URL: extra.wsBaseUrl ?? 'wss://akyl-cheshmesi.ru/ws',
-  PUSH_TOKEN_SYNC_PATH: extra.pushTokenSyncPath ?? '/devices/push-token/',
+  PUSH_TOKEN_SYNC_PATH: extra.pushTokenSyncPath ?? '/push-tokens/',
 };

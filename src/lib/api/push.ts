@@ -1,44 +1,51 @@
 import { apiClient } from '@/src/lib/api/client';
 import { ENV } from '@/src/config/env';
 
-type SyncPushTokenPayload = {
+export type PushProvider = 'fcm' | 'apns';
+export type PushPlatform = 'android' | 'ios' | 'web';
+
+export type RegisterPushTokenPayload = {
   token: string;
-  provider: 'expo';
-  device_name?: string | null;
-  platform?: string | null;
+  provider: PushProvider;
+  platform: PushPlatform;
+  device_id?: string;
+  device_name?: string;
+  app_version?: string;
+  meta?: Record<string, unknown>;
 };
 
-function normalizePath(path: string) {
-  if (!path.startsWith('/')) {
-    return `/${path}`;
+export type DeletePushTokenPayload =
+  | {
+      token: string;
+      provider?: never;
+      platform?: never;
+      device_id?: never;
+    }
+  | {
+      token?: string;
+      provider: PushProvider;
+      platform: PushPlatform;
+      device_id: string;
+    };
+
+function normalizePath(path?: string) {
+  const value = (path || '/push-tokens/').trim();
+  if (!value.startsWith('/')) {
+    return `/${value}`;
   }
-  return path;
+  return value;
 }
 
-export async function syncExpoPushToken(token: string): Promise<void> {
-  const payload: SyncPushTokenPayload = {
-    token,
-    provider: 'expo',
-    device_name: 'mobile-app',
-    platform: 'expo',
-  };
+const PUSH_TOKEN_PATH = normalizePath(ENV.PUSH_TOKEN_SYNC_PATH);
 
-  const path = normalizePath(
-    ENV.PUSH_TOKEN_SYNC_PATH ?? '/devices/push-token/',
-  );
+export async function registerPushToken(payload: RegisterPushTokenPayload) {
+  const response = await apiClient.post(PUSH_TOKEN_PATH, payload);
+  return response.data;
+}
 
-  try {
-    await apiClient.post(path, payload);
-  } catch (error: any) {
-    const status = error?.response?.status;
-
-    if (status === 404 || status === 405) {
-      console.warn(
-        `Push token sync endpoint ${path} is not implemented on backend yet.`,
-      );
-      return;
-    }
-
-    console.error('Failed to sync expo push token:', error);
-  }
+export async function deletePushToken(payload: DeletePushTokenPayload) {
+  const response = await apiClient.delete(PUSH_TOKEN_PATH, {
+    data: payload,
+  });
+  return response.data;
 }

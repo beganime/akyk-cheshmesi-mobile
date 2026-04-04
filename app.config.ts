@@ -76,10 +76,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     wsBaseUrl:
       process.env.EXPO_PUBLIC_WS_BASE_URL ?? 'wss://akyl-cheshmesi.ru/ws',
     pushTokenSyncPath:
-      process.env.EXPO_PUBLIC_PUSH_TOKEN_SYNC_PATH ?? '/devices/push-token/',
-    eas: {
-      projectId: '1d056ce0-1890-4429-97f7-31e739a1e023',
-    },
+      process.env.EXPO_PUBLIC_PUSH_TOKEN_SYNC_PATH ?? '/push-tokens/',
   },
   runtimeVersion: {
     policy: 'appVersion',
