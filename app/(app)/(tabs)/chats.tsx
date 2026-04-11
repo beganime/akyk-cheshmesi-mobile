@@ -13,12 +13,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Image as ExpoImage } from 'expo-image';
 
 import { GlassCard } from '@/src/components/GlassCard';
 import { SearchInput } from '@/src/components/SearchInput';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { fetchChats, createDirectChat } from '@/src/lib/api/chats';
 import { searchUsers, UserShort } from '@/src/lib/api/contacts';
+import { realtimeClient } from '@/src/lib/realtime/socket';
+import { isMessageEvent } from '@/src/lib/realtime/events';
 import type { ChatListItem } from '@/src/types/chat';
 import {
   getLocalChatPreference,
@@ -205,6 +208,17 @@ export default function ChatsScreen() {
       subscription.remove();
     };
   }, [hydrateLocalPreferences, loadChats]);
+
+  useEffect(() => {
+    const unsubscribe = realtimeClient.subscribe((event) => {
+      if (!isMessageEvent(event)) return;
+      void loadChats({ silent: true });
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [loadChats]);
 
   useEffect(() => {
     const q = search.trim();
@@ -453,11 +467,15 @@ export default function ChatsScreen() {
                     {people.map((item) => (
                       <GlassCard key={item.uuid}>
                         <View style={styles.personRow}>
-                          <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
-                            <Text style={styles.avatarText}>
-                              {personName(item).slice(0, 1).toUpperCase()}
-                            </Text>
-                          </View>
+                          {item.avatar ? (
+                            <ExpoImage source={{ uri: item.avatar }} style={styles.avatarImage} contentFit="cover" />
+                          ) : (
+                            <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
+                              <Text style={styles.avatarText}>
+                                {personName(item).slice(0, 1).toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
 
                           <View style={{ flex: 1 }}>
                             <Text
@@ -527,11 +545,15 @@ export default function ChatsScreen() {
             <Pressable onPress={() => openChat(item)} onLongPress={() => openChatMenu(item)}>
               <GlassCard>
                 <View style={styles.chatRow}>
-                  <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
-                    <Text style={styles.avatarText}>
-                      {chatTitle(item).slice(0, 1).toUpperCase()}
-                    </Text>
-                  </View>
+                  {item.peer_user?.avatar ? (
+                    <ExpoImage source={{ uri: item.peer_user.avatar }} style={styles.avatarImage} contentFit="cover" />
+                  ) : (
+                    <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
+                      <Text style={styles.avatarText}>
+                        {chatTitle(item).slice(0, 1).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
 
                   <View style={{ flex: 1 }}>
                     <View style={styles.titleRow}>
@@ -796,6 +818,12 @@ const styles = StyleSheet.create({
   sheetItemText: {
     fontSize: 15,
     fontWeight: '700',
+  },
+  avatarImage: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#E5E7EB',
   },
   sheetHint: {
     fontSize: 12,
