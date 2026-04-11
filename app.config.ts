@@ -48,14 +48,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ],
   ios: {
     supportsTablet: true,
-    bundleIdentifier: 'ru.akylcheshmesi.app',
+    bundleIdentifier: 'com.akylchat.app',
     googleServicesFile: './GoogleService-Info.plist',
     infoPlist: {
       UIBackgroundModes: ['remote-notification'],
+      ITSAppUsesNonExemptEncryption: false
     },
   },
   android: {
-    package: 'ru.akylcheshmesi.app',
+    package: 'com.akylchat.app',
     googleServicesFile: './google-services.json',
     adaptiveIcon: {
       foregroundImage: './assets/images/adaptive-icon.png',
@@ -77,6 +78,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       process.env.EXPO_PUBLIC_WS_BASE_URL ?? 'wss://akyl-cheshmesi.ru/ws',
     pushTokenSyncPath:
       process.env.EXPO_PUBLIC_PUSH_TOKEN_SYNC_PATH ?? '/push-tokens/',
+    eas: {
+      projectId: '1d056ce0-1890-4429-97f7-31e739a1e023',
+    },
   },
   runtimeVersion: {
     policy: 'appVersion',

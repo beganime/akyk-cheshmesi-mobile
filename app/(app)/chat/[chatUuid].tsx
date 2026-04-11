@@ -75,6 +75,16 @@ import type {
   StickerPackListItem,
 } from '@/src/types/sticker';
 
+import { MessageMedia } from '@/src/components/chat/MessageMedia';
+import { HoldToRecordButton } from '@/src/components/chat/HoldToRecordButton';
+import {
+  DEFAULT_CHAT_APPEARANCE,
+  buildBubbleStyle,
+  buildChatBackgroundStyle,
+  loadChatAppearance,
+} from '@/src/lib/chatAppearance';
+import { uploadPickedVideo } from '@/src/lib/api/media';
+
 type ComposerPanelTab = 'stickers' | 'emoji';
 
 const reportReasons: ComplaintReason[] = ['spam', 'abuse', 'fraud', 'harassment', 'other'];
@@ -247,6 +257,8 @@ export default function ChatScreen() {
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [loadingStickers, setLoadingStickers] = useState(false);
   const [sending, setSending] = useState(false);
+
+  const [appearance, setAppearance] = useState(DEFAULT_CHAT_APPEARANCE);
 
   const [draft, setDraft] = useState('');
   const [replyTo, setReplyTo] = useState<MessageItem | null>(null);
@@ -497,6 +509,22 @@ export default function ChatScreen() {
     void loadInitialMessages();
   }, [hydrateFromCache, loadChat, loadInitialMessages]);
 
+
+  useEffect(() => {
+    let mounted = true;
+
+    loadChatAppearance()
+      .then((value) => {
+        if (mounted) {
+          setAppearance(value);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
   useFocusEffect(
     useCallback(() => {
       void refreshChat();
@@ -1017,6 +1045,73 @@ export default function ChatScreen() {
     }
   };
 
+  const handlePickVideo = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        quality: 0.9,
+        allowsEditing: false,
+      });
+
+      if (result.canceled || !result.assets?.[0] || !chatUuid) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const uploaded = await uploadPickedVideo(asset);
+      const clientUuid = generateUUIDv4();
+
+      const optimisticMessage: MessageItem = {
+        uuid: `local-${clientUuid}`,
+        client_uuid: clientUuid,
+        message_type: 'video',
+        text: '',
+        is_own_message: true,
+        delivery_status: 'sent',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        local_status: 'pending',
+        attachments: uploaded.file_url
+          ? [
+              {
+                uuid: uploaded.uuid,
+                file_url: uploaded.file_url,
+                content_type: uploaded.content_type,
+                original_name: uploaded.original_name,
+                media_kind: uploaded.media_kind,
+              },
+            ]
+          : [],
+      };
+
+      setMessages((current) => [...current, optimisticMessage]);
+      scrollToBottom();
+
+      const savedMessage = await sendChatMessage(chatUuid, {
+        client_uuid: clientUuid,
+        message_type: 'video',
+        text: '',
+        attachment_uuids: [uploaded.uuid],
+        ...(replyTo?.uuid ? { reply_to_uuid: replyTo.uuid } : {}),
+      });
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.client_uuid === clientUuid
+            ? {
+                ...savedMessage,
+                local_status: 'sent',
+              }
+            : message
+        )
+      );
+
+      setReplyTo(null);
+    } catch (error) {
+      console.error('handlePickVideo error:', error);
+    }
+  };
+
   const handleSendSticker = async (sticker: StickerItem) => {
     try {
       if (!chatUuid) return;
@@ -1270,11 +1365,8 @@ export default function ChatScreen() {
           }}
           style={[
             styles.bubble,
+            buildBubbleStyle(theme, appearance, isOwn),
             {
-              backgroundColor: isOwn
-                ? theme.colors.bubbleOutgoing
-                : theme.colors.bubbleIncoming,
-              borderColor: isOwn ? 'transparent' : theme.colors.borderStrong,
               alignSelf: isOwn ? 'flex-end' : 'flex-start',
             },
           ]}
@@ -1322,13 +1414,12 @@ export default function ChatScreen() {
                 </Text>
               )}
             </View>
-          ) : imageUrl ? (
+          ) : item.message_type === 'image' ||
+              item.message_type === 'video' ||
+              item.message_type === 'audio' ||
+              item.message_type === 'file' ? (
             <View style={styles.imageMessageWrap}>
-              <ExpoImage
-                source={{ uri: imageUrl }}
-                style={styles.imageMessage}
-                contentFit="cover"
-              />
+              <MessageMedia message={item} isOwn={isOwn} theme={theme} />
               {!!item.text?.trim() && (
                 <Text
                   style={[
@@ -1343,10 +1434,6 @@ export default function ChatScreen() {
                 </Text>
               )}
             </View>
-          ) : videoUrl ? (
-            <MessageVideoBubble uri={videoUrl} isOwn={isOwn} />
-          ) : audioUrl ? (
-            <MessageAudioBubble uri={audioUrl} isOwn={isOwn} />
           ) : (
             <Text
               style={[
@@ -1394,8 +1481,7 @@ export default function ChatScreen() {
 
   if (loadingChat || loadingMessages) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centered}>
+      <SafeAreaView style={[styles.container, buildChatBackgroundStyle(theme, appearance)]}>        <View style={styles.centered}>
           <ActivityIndicator color={theme.colors.primary} />
         </View>
       </SafeAreaView>
@@ -1403,7 +1489,7 @@ export default function ChatScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <SafeAreaView style={[styles.container, buildChatBackgroundStyle(theme, appearance)]}>
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -1630,16 +1716,28 @@ export default function ChatScreen() {
 
             <Pressable
               onPress={() => void handlePickImage()}
-              style={[
-                styles.roundToolButton,
-                {
-                  backgroundColor: theme.colors.cardStrong,
-                  borderColor: theme.colors.borderStrong,
-                },
-              ]}
+              style={[styles.toolButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
             >
-              <Ionicons name="image-outline" size={19} color={theme.colors.text} />
+              <Ionicons name="image-outline" size={18} color={theme.colors.text} />
             </Pressable>
+
+            <Pressable
+              onPress={() => void handlePickVideo()}
+              style={[styles.toolButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+            >
+              <Ionicons name="videocam-outline" size={18} color={theme.colors.text} />
+            </Pressable>
+
+            <HoldToRecordButton
+              chatUuid={chatUuid}
+              replyToUuid={replyTo?.uuid}
+              theme={theme}
+              onMessageCreated={(message) => {
+                setMessages((current) => mergeMessages([...current, message], current));
+                setReplyTo(null);
+                scrollToBottom();
+              }}
+            />
 
             <Pressable
               onPress={handleRecorderPress}
@@ -2475,6 +2573,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,
+  },
+
+  toolButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   composer: {

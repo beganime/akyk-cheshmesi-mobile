@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { ThemeProvider } from '@/src/theme/ThemeProvider';
+import { ThemeProvider, useTheme } from '@/src/theme/ThemeProvider';
 import { initializeDatabase } from '@/src/lib/db';
 import { realtimeClient } from '@/src/lib/realtime/socket';
 import {
@@ -13,9 +13,31 @@ import {
   subscribeSessionTokensChanged,
 } from '@/src/lib/auth/session';
 import { useAuthStore } from '@/src/state/auth';
-import { registerNativePushToken, unregisterCurrentPushToken } from '@/src/lib/push/register';
+import {
+  registerNativePushToken,
+  unregisterCurrentPushToken,
+} from '@/src/lib/push/register';
 
 const queryClient = new QueryClient();
+
+function RootNavigator() {
+  const { theme } = useTheme();
+
+  return (
+    <>
+      <StatusBar
+        style={theme.blurTint === 'dark' ? 'light' : 'dark'}
+        backgroundColor={theme.colors.background}
+      />
+
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(app)" />
+      </Stack>
+    </>
+  );
+}
 
 export default function RootLayout() {
   const bootstrap = useAuthStore((s) => s.bootstrap);
@@ -23,7 +45,6 @@ export default function RootLayout() {
   const setTokens = useAuthStore((s) => s.setTokens);
   const accessToken = useAuthStore((s) => s.accessToken);
   const hydrated = useAuthStore((s) => s.hydrated);
-
   const [appReady, setAppReady] = useState(false);
 
   useEffect(() => {
@@ -32,9 +53,11 @@ export default function RootLayout() {
       void logout();
     });
 
-    const unsubscribeTokens = subscribeSessionTokensChanged(({ accessToken, refreshToken }) => {
-      void setTokens({ accessToken, refreshToken });
-    });
+    const unsubscribeTokens = subscribeSessionTokensChanged(
+      ({ accessToken, refreshToken }) => {
+        void setTokens({ accessToken, refreshToken });
+      }
+    );
 
     return () => {
       unsubscribeTokens();
@@ -104,12 +127,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          <StatusBar style="light" />
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="index" />
-            <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(app)" />
-          </Stack>
+          <RootNavigator />
         </ThemeProvider>
       </QueryClientProvider>
     </GestureHandlerRootView>
