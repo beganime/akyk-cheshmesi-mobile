@@ -7,6 +7,7 @@ export type UpdateMePayload = {
   last_name?: string | null;
   bio?: string | null;
   date_of_birth?: string | null;
+  avatar?: string | null;
 };
 
 export async function updateMe(payload: UpdateMePayload): Promise<UserProfile> {

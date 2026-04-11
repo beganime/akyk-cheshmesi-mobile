@@ -133,6 +133,14 @@ export default function SettingsScreen() {
             <Text style={[styles.rowText, { color: theme.colors.text }]}>Редактировать профиль</Text>
             <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
           </Pressable>
+
+          <Pressable
+            onPress={() => router.push('/(app)/blocked-users')}
+            style={[styles.rowItem, { borderColor: theme.colors.border }]}
+          >
+            <Text style={[styles.rowText, { color: theme.colors.text }]}>Черный список</Text>
+            <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
+          </Pressable>
         </GlassCard>
 
         <GlassCard>

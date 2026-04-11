@@ -8,12 +8,15 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { Image as ExpoImage } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { GlassCard } from '@/src/components/GlassCard';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { useAuthStore } from '@/src/state/auth';
 import { updateMe } from '@/src/lib/api/users';
+import { uploadPickedImage } from '@/src/lib/api/media';
 
 export default function ProfileEditScreen() {
   const { theme } = useTheme();
@@ -32,6 +35,7 @@ export default function ProfileEditScreen() {
   );
 
   const [form, setForm] = useState(initial);
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatar || '');
   const [saving, setSaving] = useState(false);
 
   const setField = (key: keyof typeof form, value: string) => {
@@ -51,6 +55,7 @@ export default function ProfileEditScreen() {
         last_name: form.last_name.trim() || null,
         bio: form.bio.trim() || null,
         date_of_birth: form.date_of_birth.trim() || null,
+        avatar: avatarUrl.trim() || null,
       });
 
       await refreshProfile();
@@ -59,6 +64,20 @@ export default function ProfileEditScreen() {
       console.error('handleSave profile error:', error);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePickAvatar = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.9,
+      allowsEditing: true,
+      aspect: [1, 1],
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const uploaded = await uploadPickedImage(result.assets[0]);
+    if (uploaded.file_url) {
+      setAvatarUrl(uploaded.file_url);
     }
   };
 
@@ -82,6 +101,17 @@ export default function ProfileEditScreen() {
       <View style={styles.content}>
         <GlassCard>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Основное</Text>
+
+          <Pressable
+            onPress={() => void handlePickAvatar()}
+            style={[styles.avatarPicker, { borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground }]}
+          >
+            {avatarUrl ? (
+              <ExpoImage source={{ uri: avatarUrl }} style={styles.avatarPreview} contentFit="cover" />
+            ) : (
+              <Text style={{ color: theme.colors.muted }}>Выбрать аватар</Text>
+            )}
+          </Pressable>
 
           <TextInput
             value={form.first_name}
@@ -212,6 +242,19 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     marginBottom: 10,
+  },
+  avatarPicker: {
+    height: 90,
+    borderWidth: 1,
+    borderRadius: 18,
+    marginBottom: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarPreview: {
+    width: '100%',
+    height: '100%',
   },
   input: {
     minHeight: 50,
