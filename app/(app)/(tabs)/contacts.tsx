@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Image as ExpoImage } from 'expo-image';
 
 import { GlassCard } from '@/src/components/GlassCard';
 import { SearchInput } from '@/src/components/SearchInput';
@@ -295,9 +296,13 @@ export default function ContactsScreen() {
             >
               <GlassCard>
                 <View style={styles.row}>
-                  <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
-                    <Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text>
-                  </View>
+                  {item.avatar ? (
+                    <ExpoImage source={{ uri: item.avatar }} style={styles.avatarImage} contentFit="cover" />
+                  ) : (
+                    <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
+                      <Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text>
+                    </View>
+                  )}
 
                   <View style={{ flex: 1 }}>
                     <View style={styles.titleRow}>
@@ -436,6 +441,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
+  },
+  avatarImage: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#E5E7EB',
   },
   emptyTitle: {
     fontSize: 16,

@@ -17,15 +17,27 @@ export type ChatAppearance = {
   backgroundPreset: ChatBackgroundPreset;
   ownBubblePreset: BubblePreset;
   peerBubblePreset: BubblePreset;
+  customBackgroundColor?: string | null;
+  customOwnBubbleColor?: string | null;
+  customPeerBubbleColor?: string | null;
+  backgroundImageUri?: string | null;
+  backgroundSizeMode?: 'cover' | 'contain';
+  gradientPreset?: 'none' | 'sunrise' | 'ocean' | 'violet';
 };
 
 export const DEFAULT_CHAT_APPEARANCE: ChatAppearance = {
   backgroundPreset: 'theme',
   ownBubblePreset: 'default',
   peerBubblePreset: 'default',
+  customBackgroundColor: null,
+  customOwnBubbleColor: null,
+  customPeerBubbleColor: null,
+  backgroundImageUri: null,
+  backgroundSizeMode: 'cover',
+  gradientPreset: 'none',
 };
 
-const STORAGE_KEY = 'chat_appearance_v1';
+const STORAGE_KEY = 'chat_appearance_v2';
 
 function normalizeBackgroundPreset(value: unknown): ChatBackgroundPreset {
   switch (value) {
@@ -53,30 +65,95 @@ function normalizeBubblePreset(value: unknown): BubblePreset {
 }
 
 export async function loadChatAppearance(): Promise<ChatAppearance> {
+  return loadChatAppearanceForChat();
+}
+
+type ChatAppearanceStorage = {
+  global?: Partial<ChatAppearance>;
+  perChat?: Record<string, Partial<ChatAppearance>>;
+};
+
+function normalizeAppearance(value: Partial<ChatAppearance> | null | undefined): ChatAppearance {
+  return {
+    backgroundPreset: normalizeBackgroundPreset(value?.backgroundPreset),
+    ownBubblePreset: normalizeBubblePreset(value?.ownBubblePreset),
+    peerBubblePreset: normalizeBubblePreset(value?.peerBubblePreset),
+    customBackgroundColor:
+      typeof value?.customBackgroundColor === 'string' ? value.customBackgroundColor : null,
+    customOwnBubbleColor:
+      typeof value?.customOwnBubbleColor === 'string' ? value.customOwnBubbleColor : null,
+    customPeerBubbleColor:
+      typeof value?.customPeerBubbleColor === 'string' ? value.customPeerBubbleColor : null,
+    backgroundImageUri:
+      typeof value?.backgroundImageUri === 'string' ? value.backgroundImageUri : null,
+    backgroundSizeMode: value?.backgroundSizeMode === 'contain' ? 'contain' : 'cover',
+    gradientPreset:
+      value?.gradientPreset === 'sunrise' ||
+      value?.gradientPreset === 'ocean' ||
+      value?.gradientPreset === 'violet'
+        ? value.gradientPreset
+        : 'none',
+  };
+}
+
+async function readStorage(): Promise<ChatAppearanceStorage> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
-
-    if (!raw) {
-      return DEFAULT_CHAT_APPEARANCE;
-    }
-
-    const parsed = JSON.parse(raw);
-
-    return {
-      backgroundPreset: normalizeBackgroundPreset(parsed?.backgroundPreset),
-      ownBubblePreset: normalizeBubblePreset(parsed?.ownBubblePreset),
-      peerBubblePreset: normalizeBubblePreset(parsed?.peerBubblePreset),
-    };
+    if (!raw) return {};
+    return JSON.parse(raw);
   } catch {
-    return DEFAULT_CHAT_APPEARANCE;
+    return {};
   }
 }
 
+export async function loadChatAppearanceForChat(chatUuid?: string | null): Promise<ChatAppearance> {
+  const storage = await readStorage();
+  const global = normalizeAppearance(storage.global);
+
+  if (!chatUuid) {
+    return global;
+  }
+
+  const perChat = normalizeAppearance(storage.perChat?.[chatUuid]);
+  return {
+    ...global,
+    ...perChat,
+  };
+}
+
 export async function saveChatAppearance(nextValue: ChatAppearance) {
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextValue));
+  return saveChatAppearanceForChat(nextValue);
+}
+
+export async function saveChatAppearanceForChat(
+  nextValue: ChatAppearance,
+  chatUuid?: string | null,
+) {
+  const storage = await readStorage();
+  if (!chatUuid) {
+    const next: ChatAppearanceStorage = {
+      ...storage,
+      global: nextValue,
+    };
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    return;
+  }
+
+  const next: ChatAppearanceStorage = {
+    ...storage,
+    perChat: {
+      ...(storage.perChat || {}),
+      [chatUuid]: nextValue,
+    },
+  };
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 }
 
 export function buildChatBackgroundStyle(theme: any, appearance: ChatAppearance) {
+  if (appearance.customBackgroundColor?.trim()) {
+    return { backgroundColor: appearance.customBackgroundColor.trim() };
+  }
+
   switch (appearance.backgroundPreset) {
     case 'plain':
       return { backgroundColor: theme.colors.background };
@@ -96,7 +173,9 @@ export function buildBubbleStyle(theme: any, appearance: ChatAppearance, isOwn: 
   const preset = isOwn ? appearance.ownBubblePreset : appearance.peerBubblePreset;
 
   const base = {
-    backgroundColor: isOwn ? theme.colors.primary : theme.colors.card,
+    backgroundColor:
+      (isOwn ? appearance.customOwnBubbleColor : appearance.customPeerBubbleColor) ||
+      (isOwn ? theme.colors.primary : theme.colors.card),
     borderColor: isOwn ? 'transparent' : theme.colors.border,
     borderWidth: 1,
     borderRadius: 24,
