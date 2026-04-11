@@ -20,6 +20,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { Image as ExpoImage } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -39,6 +40,7 @@ import {
   setChatMuted,
   setChatPinned,
 } from '@/src/lib/api/chats';
+import { fetchPresence } from '@/src/lib/api/presence';
 import { createComplaint, ComplaintReason } from '@/src/lib/api/complaints';
 import {
   uploadPickedImage,
@@ -69,6 +71,7 @@ import { mergeMessages } from '@/src/lib/utils/messageSync';
 import { generateUUIDv4 } from '@/src/lib/utils/uuid';
 import type { ChatListItem } from '@/src/types/chat';
 import type { MessageAttachment, MessageItem } from '@/src/types/message';
+import type { PresenceDetail } from '@/src/types/presence';
 import type {
   StickerItem,
   StickerPackDetail,
@@ -76,14 +79,16 @@ import type {
 } from '@/src/types/sticker';
 
 import { MessageMedia } from '@/src/components/chat/MessageMedia';
-import { HoldToRecordButton } from '@/src/components/chat/HoldToRecordButton';
 import {
   DEFAULT_CHAT_APPEARANCE,
   buildBubbleStyle,
   buildChatBackgroundStyle,
-  loadChatAppearance,
+  loadChatAppearanceForChat,
+  saveChatAppearanceForChat,
 } from '@/src/lib/chatAppearance';
 import { uploadPickedVideo } from '@/src/lib/api/media';
+import { addLocalContact, isLocalContact } from '@/src/lib/local/localContacts';
+import { blockUserLocal, isUserBlocked } from '@/src/lib/local/blockedUsers';
 
 type ComposerPanelTab = 'stickers' | 'emoji';
 
@@ -112,14 +117,37 @@ function formatChatTitle(chat: ChatListItem | null) {
   return chat?.display_title || chat?.title || chat?.peer_user?.full_name || 'Чат';
 }
 
-function formatChatSub(chat: ChatListItem | null) {
+function formatLastSeen(lastSeenAt?: string | null) {
+  if (!lastSeenAt) return 'был(а) давно';
+  const date = new Date(lastSeenAt);
+  if (Number.isNaN(date.getTime())) return 'был(а) недавно';
+
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (sameDay) {
+    return `был(а) сегодня в ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  if (date.toDateString() === yesterday.toDateString()) {
+    return `был(а) вчера в ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  return `был(а) ${date.toLocaleDateString([], { day: '2-digit', month: '2-digit' })} в ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function formatChatSub(chat: ChatListItem | null, presence: PresenceDetail | null) {
   if (!chat) return 'Переписка';
 
   if (chat.is_muted) return 'Без звука';
   if (chat.is_pinned) return 'Закреплён';
   if (chat.is_archived) return 'В архиве';
 
-  return chat.chat_type === 'group' ? 'Групповой чат' : 'В сети';
+  if (chat.chat_type === 'group') return 'Групповой чат';
+  if (presence?.status === 'online') return 'В сети';
+  return formatLastSeen(presence?.last_seen_at || null);
 }
 
 function normalizeMessagesForUi(items: MessageItem[]) {
@@ -253,6 +281,7 @@ export default function ChatScreen() {
 
   const [chat, setChat] = useState<ChatListItem | null>(null);
   const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [presence, setPresence] = useState<PresenceDetail | null>(null);
   const [hiddenMessageMap, setHiddenMessageMap] = useState<HiddenMessageMap>({});
   const [nextUrl, setNextUrl] = useState<string | null>(null);
 
@@ -263,6 +292,10 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
 
   const [appearance, setAppearance] = useState(DEFAULT_CHAT_APPEARANCE);
+  const [appearanceVisible, setAppearanceVisible] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [isContact, setIsContact] = useState(false);
+  const [showQuickActions, setShowQuickActions] = useState(true);
 
   const [draft, setDraft] = useState('');
   const [replyTo, setReplyTo] = useState<MessageItem | null>(null);
@@ -370,6 +403,12 @@ export default function ChatScreen() {
       const data = await fetchChatDetail(chatUuid);
       setChat(data);
       await saveCachedChatDetail(chatUuid, data);
+      if (data.chat_type !== 'group' && data.peer_user?.uuid) {
+        const presenceData = await fetchPresence(data.peer_user.uuid);
+        setPresence(presenceData);
+      } else {
+        setPresence(null);
+      }
     } catch (error) {
       console.error('refreshChat error:', error);
     }
@@ -381,9 +420,12 @@ export default function ChatScreen() {
 
       const response = await fetchChatMessages(chatUuid);
       const serverMessages = normalizeMessagesForUi(response.results ?? []);
+      const filtered = isBlocked
+        ? serverMessages.filter((message) => message.is_own_message)
+        : serverMessages;
 
       setMessages((current) => {
-        const merged = mergeMessages(serverMessages, current);
+        const merged = mergeMessages(filtered, current);
         void saveCachedChatMessages(chatUuid, merged);
         return merged;
       });
@@ -392,7 +434,7 @@ export default function ChatScreen() {
     } catch (error) {
       console.error('refreshMessagesSilent error:', error);
     }
-  }, [chatUuid]);
+  }, [chatUuid, isBlocked]);
 
   const loadChat = useCallback(async () => {
     try {
@@ -414,17 +456,20 @@ export default function ChatScreen() {
 
       const response = await fetchChatMessages(chatUuid);
       const normalized = normalizeMessagesForUi(response.results ?? []);
+      const filtered = isBlocked
+        ? normalized.filter((message) => message.is_own_message)
+        : normalized;
 
-      setMessages(normalized);
+      setMessages(filtered);
       setNextUrl(response.next ?? null);
 
-      await saveCachedChatMessages(chatUuid, normalized);
+      await saveCachedChatMessages(chatUuid, filtered);
     } catch (error) {
       console.error('loadInitialMessages error:', error);
     } finally {
       setLoadingMessages(false);
     }
-  }, [chatUuid]);
+  }, [chatUuid, isBlocked]);
 
   const loadStickerPack = async (slug: string) => {
     try {
@@ -517,7 +562,7 @@ export default function ChatScreen() {
   useEffect(() => {
     let mounted = true;
 
-    loadChatAppearance()
+    loadChatAppearanceForChat(chatUuid)
       .then((value) => {
         if (mounted) {
           setAppearance(value);
@@ -528,7 +573,32 @@ export default function ChatScreen() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [chatUuid]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!chat?.peer_user?.uuid) {
+      setIsBlocked(false);
+      setIsContact(false);
+      return;
+    }
+
+    Promise.all([
+      isUserBlocked(chat.peer_user.uuid),
+      isLocalContact(chat.peer_user.uuid),
+    ])
+      .then(([blocked, contact]) => {
+        if (!mounted) return;
+        setIsBlocked(blocked);
+        setIsContact(contact);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      mounted = false;
+    };
+  }, [chat?.peer_user?.uuid]);
   useFocusEffect(
     useCallback(() => {
       void refreshChat();
@@ -706,6 +776,58 @@ export default function ChatScreen() {
     } catch (error) {
       console.error('handleShareMessage error:', error);
     }
+  };
+
+  const handleShowMessageInfo = () => {
+    if (!selectedMessage) return;
+    const sentAt = selectedMessage.created_at
+      ? new Date(selectedMessage.created_at).toLocaleString()
+      : 'Нет данных';
+    const editedAt = selectedMessage.edited_at
+      ? new Date(selectedMessage.edited_at).toLocaleString()
+      : 'Не редактировалось';
+    Alert.alert(
+      'Информация о сообщении',
+      `Отправлено: ${sentAt}\nИзменено: ${editedAt}\nСтатус: ${selectedMessage.delivery_status || 'sent'}`,
+    );
+  };
+
+  const handleAddToContacts = async () => {
+    if (!chat?.peer_user?.uuid) return;
+    await addLocalContact(chat.peer_user.uuid);
+    setIsContact(true);
+    setShowQuickActions(false);
+  };
+
+  const handleBlockLocal = async () => {
+    if (!chat?.peer_user?.uuid) return;
+    await blockUserLocal(chat.peer_user.uuid);
+    setIsBlocked(true);
+    setShowQuickActions(false);
+    Alert.alert('Пользователь заблокирован', 'Новые входящие сообщения от него скрыты локально.');
+  };
+
+  const updateAppearance = async (patch: Partial<typeof appearance>) => {
+    if (!chatUuid) return;
+    const next = {
+      ...appearance,
+      ...patch,
+    };
+    setAppearance(next);
+    await saveChatAppearanceForChat(next, chatUuid);
+  };
+
+  const handlePickChatBackground = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.9,
+      allowsEditing: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    await updateAppearance({
+      backgroundImageUri: result.assets[0].uri,
+      backgroundPreset: 'plain',
+    });
   };
 
   const handleHideMessageForMe = async () => {
@@ -918,7 +1040,16 @@ export default function ChatScreen() {
     scrollToBottom();
 
     try {
-      const uploaded = await uploadPickedMedia(asset);
+      const uploaded =
+        mediaType === 'audio'
+          ? await uploadPickedMedia(asset, {
+              filenamePrefix: 'voice',
+              fallbackContentType: asset.mimeType || 'audio/m4a',
+            })
+          : await uploadPickedMedia(asset, {
+              filenamePrefix: 'video',
+              fallbackContentType: asset.mimeType || 'video/mp4',
+            });
 
       const savedMessage = await sendChatMessage(chatUuid, {
         client_uuid: clientUuid,
@@ -1499,6 +1630,26 @@ export default function ChatScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}
       >
+        {appearance.backgroundImageUri ? (
+          <ExpoImage
+            source={{ uri: appearance.backgroundImageUri }}
+            style={StyleSheet.absoluteFill}
+            contentFit={appearance.backgroundSizeMode === 'contain' ? 'contain' : 'cover'}
+          />
+        ) : null}
+        {appearance.gradientPreset && appearance.gradientPreset !== 'none' ? (
+          <LinearGradient
+            colors={
+              appearance.gradientPreset === 'sunrise'
+                ? ['#FEF3C7', '#F97316']
+                : appearance.gradientPreset === 'ocean'
+                  ? ['#0EA5E9', '#22D3EE']
+                  : ['#7C3AED', '#DB2777']
+            }
+            style={StyleSheet.absoluteFill}
+          />
+        ) : null}
+
         <View
           style={[
             styles.header,
@@ -1540,7 +1691,7 @@ export default function ChatScreen() {
                 {formatChatTitle(chat)}
               </Text>
               <Text style={[styles.headerSub, { color: theme.colors.muted }]} numberOfLines={1}>
-                {formatChatSub(chat)}
+                {formatChatSub(chat, presence)}
               </Text>
             </View>
           </Pressable>
@@ -1558,6 +1709,25 @@ export default function ChatScreen() {
             <Ionicons name="ellipsis-horizontal" size={18} color={theme.colors.text} />
           </Pressable>
         </View>
+
+        {chat?.chat_type === 'direct' && chat?.peer_user?.uuid && showQuickActions && !isBlocked ? (
+          <View style={[styles.quickActionsBar, { borderBottomColor: theme.colors.borderStrong }]}>
+            {!isContact ? (
+              <Pressable
+                onPress={() => void handleAddToContacts()}
+                style={[styles.quickActionBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}
+              >
+                <Text style={[styles.quickActionText, { color: theme.colors.text }]}>Добавить в контакты</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={() => void handleBlockLocal()}
+              style={[styles.quickActionBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}
+            >
+              <Text style={[styles.quickActionText, { color: theme.colors.danger }]}>Заблокировать</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <FlatList
           ref={listRef}
@@ -1731,17 +1901,6 @@ export default function ChatScreen() {
             >
               <Ionicons name="videocam-outline" size={18} color={theme.colors.text} />
             </Pressable>
-
-            <HoldToRecordButton
-              chatUuid={chatUuid}
-              replyToUuid={replyTo?.uuid}
-              theme={theme}
-              onMessageCreated={(message) => {
-                setMessages((current) => mergeMessages([...current, message], current));
-                setReplyTo(null);
-                scrollToBottom();
-              }}
-            />
 
             <Pressable
               onPress={handleRecorderPress}
@@ -2103,6 +2262,19 @@ export default function ChatScreen() {
                 </Text>
               </Pressable>
 
+              <Pressable
+                onPress={() => {
+                  handleShowMessageInfo();
+                  setActionMenuVisible(false);
+                }}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
+              >
+                <Ionicons name="information-circle-outline" size={18} color={theme.colors.primary} />
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                  Информация
+                </Text>
+              </Pressable>
+
               {canEditSelectedMessage ? (
                 <Pressable
                   onPress={openEditSelectedMessage}
@@ -2182,6 +2354,32 @@ export default function ChatScreen() {
               </Pressable>
 
               <Pressable
+                onPress={() => {
+                  setSettingsVisible(false);
+                  setAppearanceVisible(true);
+                }}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
+              >
+                <Ionicons name="color-palette-outline" size={18} color={theme.colors.primary} />
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                  Оформление этого чата
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setSettingsVisible(false);
+                  router.push('/(app)/blocked-users');
+                }}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
+              >
+                <Ionicons name="ban-outline" size={18} color={theme.colors.primary} />
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                  Черный список
+                </Text>
+              </Pressable>
+
+              <Pressable
                 onPress={() => void handleToggleMute()}
                 disabled={actionLoading}
                 style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
@@ -2253,6 +2451,79 @@ export default function ChatScreen() {
                   Пожаловаться на чат
                 </Text>
               </Pressable>
+            </GlassCard>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={appearanceVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAppearanceVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setAppearanceVisible(false)} />
+          <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <GlassCard>
+              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
+                Оформление этого чата
+              </Text>
+
+              <Pressable
+                onPress={() => void handlePickChatBackground()}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
+              >
+                <Ionicons name="image-outline" size={18} color={theme.colors.primary} />
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                  Фон из галереи
+                </Text>
+              </Pressable>
+
+              <View style={styles.reasonWrap}>
+                {(['none', 'sunrise', 'ocean', 'violet'] as const).map((preset) => (
+                  <Pressable
+                    key={preset}
+                    onPress={() => void updateAppearance({ gradientPreset: preset })}
+                    style={[
+                      styles.reasonChip,
+                      {
+                        borderColor: theme.colors.borderStrong,
+                        backgroundColor:
+                          appearance.gradientPreset === preset
+                            ? theme.colors.primary
+                            : 'transparent',
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: appearance.gradientPreset === preset ? '#fff' : theme.colors.text }}>
+                      {preset}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <TextInput
+                value={appearance.customBackgroundColor || ''}
+                onChangeText={(value) => void updateAppearance({ customBackgroundColor: value })}
+                placeholder="#0F172A фон"
+                placeholderTextColor={theme.colors.muted}
+                style={[styles.reportInput, { borderColor: theme.colors.borderStrong, color: theme.colors.text }]}
+              />
+              <TextInput
+                value={appearance.customOwnBubbleColor || ''}
+                onChangeText={(value) => void updateAppearance({ customOwnBubbleColor: value })}
+                placeholder="#F97316 мои сообщения"
+                placeholderTextColor={theme.colors.muted}
+                style={[styles.reportInput, { borderColor: theme.colors.borderStrong, color: theme.colors.text }]}
+              />
+              <TextInput
+                value={appearance.customPeerBubbleColor || ''}
+                onChangeText={(value) => void updateAppearance({ customPeerBubbleColor: value })}
+                placeholder="#1F2937 сообщения собеседника"
+                placeholderTextColor={theme.colors.muted}
+                style={[styles.reportInput, { borderColor: theme.colors.borderStrong, color: theme.colors.text }]}
+              />
             </GlassCard>
           </View>
         </View>
@@ -2359,6 +2630,25 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 10,
     borderBottomWidth: 1,
+  },
+  quickActionsBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quickActionBtn: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickActionText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   headerButton: {
