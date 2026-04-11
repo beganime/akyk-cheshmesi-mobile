@@ -228,12 +228,16 @@ function MessageStatusIcon({
     return <Ionicons name="alert-circle" size={14} color="#FFD7D7" />;
   }
 
-  if (message.delivery_status === 'read') {
-    return <Ionicons name="checkmark-done" size={14} color={color} />;
-  }
-
   if (message.local_status === 'pending') {
     return <Ionicons name="time-outline" size={14} color={color} />;
+  }
+
+  if (message.delivery_status === 'read') {
+    return <Ionicons name="ellipse" size={10} color={color} />;
+  }
+
+  if (message.delivery_status === 'delivered') {
+    return <Ionicons name="checkmark-done" size={14} color={color} />;
   }
 
   return <Ionicons name="checkmark" size={14} color={color} />;

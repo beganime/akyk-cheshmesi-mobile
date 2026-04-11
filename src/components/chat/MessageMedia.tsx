@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Pressable,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -11,7 +13,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import { Audio, ResizeMode, Video } from 'expo-av';
 
-import { downloadAndShareRemoteFile } from '@/src/lib/media/download';
 import type { MessageAttachment, MessageItem } from '@/src/types/message';
 
 type Props = {
@@ -20,12 +21,28 @@ type Props = {
   theme: any;
 };
 
-function getPrimaryAttachment(message: MessageItem): MessageAttachment | null {
-  if (!message.attachments?.length) {
+function getAttachmentByKind(message: MessageItem) {
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+
+  if (!attachments.length) {
     return null;
   }
 
-  return message.attachments[0] || null;
+  const type = String(message.message_type || '').toLowerCase();
+
+  const byType = attachments.find((item) => {
+    const mediaKind = String(item.media_kind || '').toLowerCase();
+    const contentType = String(item.content_type || '').toLowerCase();
+
+    if (type === 'image') return mediaKind === 'image' || contentType.startsWith('image/');
+    if (type === 'video') return mediaKind === 'video' || contentType.startsWith('video/');
+    if (type === 'audio') return mediaKind === 'audio' || contentType.startsWith('audio/');
+    if (type === 'file') return true;
+
+    return false;
+  });
+
+  return byType || attachments[0] || null;
 }
 
 function formatDuration(millis?: number | null) {
@@ -38,16 +55,15 @@ function formatDuration(millis?: number | null) {
 }
 
 export function MessageMedia({ message, isOwn, theme }: Props) {
-  const attachment = useMemo(() => getPrimaryAttachment(message), [message]);
+  const attachment = useMemo(() => getAttachmentByKind(message), [message]);
+  const soundRef = useRef<Audio.Sound | null>(null);
+
   const [imageVisible, setImageVisible] = useState(false);
   const [videoVisible, setVideoVisible] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
+  const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioPositionMillis, setAudioPositionMillis] = useState(0);
   const [audioDurationMillis, setAudioDurationMillis] = useState(0);
-  const [audioPlaying, setAudioPlaying] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-
-  const soundRef = useRef<Audio.Sound | null>(null);
 
   useEffect(() => {
     return () => {
@@ -55,7 +71,7 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
       soundRef.current = null;
 
       if (sound) {
-        void sound.unloadAsync();
+        void sound.unloadAsync().catch(() => undefined);
       }
     };
   }, []);
@@ -66,26 +82,43 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
 
   const mediaKind = String(attachment.media_kind || '').toLowerCase();
   const contentType = String(attachment.content_type || '').toLowerCase();
-  const isImage = mediaKind === 'image' || contentType.startsWith('image/');
-  const isVideo = mediaKind === 'video' || contentType.startsWith('video/');
-  const isAudio = mediaKind === 'audio' || contentType.startsWith('audio/');
-  const isFile = !isImage && !isVideo && !isAudio;
+
+  const isImage =
+    message.message_type === 'image' ||
+    mediaKind === 'image' ||
+    contentType.startsWith('image/');
+
+  const isVideo =
+    message.message_type === 'video' ||
+    mediaKind === 'video' ||
+    contentType.startsWith('video/');
+
+  const isAudio =
+    message.message_type === 'audio' ||
+    mediaKind === 'audio' ||
+    contentType.startsWith('audio/');
 
   const textColor = isOwn ? '#FFFFFF' : theme.colors.text;
-  const metaColor = isOwn ? 'rgba(255,255,255,0.84)' : theme.colors.muted;
+  const metaColor = isOwn ? 'rgba(255,255,255,0.82)' : theme.colors.muted;
 
-  const handleDownload = async () => {
+  const openFile = async () => {
     try {
-      setDownloading(true);
+      const url = attachment.file_url;
 
-      await downloadAndShareRemoteFile({
-        url: attachment.file_url,
-        filename: attachment.original_name || undefined,
-        contentType: attachment.content_type || undefined,
-        shareDialogTitle: 'Скачать медиа',
+      if (!url) return;
+
+      const canOpen = await Linking.canOpenURL(url);
+
+      if (canOpen) {
+        await Linking.openURL(url);
+        return;
+      }
+
+      await Share.share({
+        message: url,
       });
-    } finally {
-      setDownloading(false);
+    } catch (error) {
+      console.error('openFile error:', error);
     }
   };
 
@@ -115,7 +148,7 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
               setAudioPlaying(false);
               setAudioPositionMillis(0);
             }
-          }
+          },
         );
 
         soundRef.current = sound;
@@ -133,6 +166,8 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
       } else {
         await soundRef.current.playAsync();
       }
+    } catch (error) {
+      console.error('toggleAudio error:', error);
     } finally {
       setAudioLoading(false);
     }
@@ -142,35 +177,37 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
     return (
       <>
         <Pressable style={styles.imageWrap} onPress={() => setImageVisible(true)}>
-          <ExpoImage source={{ uri: attachment.file_url }} style={styles.image} contentFit="cover" />
-          <View style={styles.topAction}>
-            <Pressable
-              onPress={handleDownload}
-              disabled={downloading}
-              style={[styles.iconButton, { backgroundColor: 'rgba(0,0,0,0.45)' }]}
-            >
-              <Ionicons
-                name={downloading ? 'hourglass-outline' : 'download-outline'}
-                size={18}
-                color="#FFFFFF"
-              />
-            </Pressable>
+          <ExpoImage
+            source={{ uri: attachment.file_url }}
+            style={styles.image}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
+
+          <View style={styles.zoomBadge}>
+            <Ionicons name="expand-outline" size={16} color="#FFFFFF" />
           </View>
         </Pressable>
 
-        <Modal visible={imageVisible} transparent animationType="fade" onRequestClose={() => setImageVisible(false)}>
+        <Modal
+          visible={imageVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setImageVisible(false)}
+        >
           <View style={styles.modalRoot}>
-            <ExpoImage source={{ uri: attachment.file_url }} style={styles.fullImage} contentFit="contain" />
-            <View style={styles.modalActions}>
-              <Pressable onPress={handleDownload} style={styles.modalActionButton}>
-                <Ionicons name="download-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.modalActionText}>Скачать</Text>
-              </Pressable>
-              <Pressable onPress={() => setImageVisible(false)} style={styles.modalActionButton}>
-                <Ionicons name="close-outline" size={20} color="#FFFFFF" />
-                <Text style={styles.modalActionText}>Закрыть</Text>
-              </Pressable>
-            </View>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setImageVisible(false)} />
+
+            <ExpoImage
+              source={{ uri: attachment.file_url }}
+              style={styles.fullImage}
+              contentFit="contain"
+              cachePolicy="memory-disk"
+            />
+
+            <Pressable style={styles.closeButton} onPress={() => setImageVisible(false)}>
+              <Ionicons name="close" size={20} color="#FFFFFF" />
+            </Pressable>
           </View>
         </Modal>
       </>
@@ -185,30 +222,23 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
             style={styles.video}
             source={{ uri: attachment.file_url }}
             resizeMode={ResizeMode.COVER}
+            isMuted
+            shouldPlay={false}
             useNativeControls={false}
-            isLooping={false}
           />
+
           <View style={styles.videoOverlay}>
             <View style={styles.playCircle}>
               <Ionicons name="play" size={18} color="#FFFFFF" />
             </View>
           </View>
-          <View style={styles.topAction}>
-            <Pressable
-              onPress={handleDownload}
-              disabled={downloading}
-              style={[styles.iconButton, { backgroundColor: 'rgba(0,0,0,0.45)' }]}
-            >
-              <Ionicons
-                name={downloading ? 'hourglass-outline' : 'download-outline'}
-                size={18}
-                color="#FFFFFF"
-              />
-            </Pressable>
-          </View>
         </Pressable>
 
-        <Modal visible={videoVisible} animationType="slide" onRequestClose={() => setVideoVisible(false)}>
+        <Modal
+          visible={videoVisible}
+          animationType="slide"
+          onRequestClose={() => setVideoVisible(false)}
+        >
           <View style={styles.fullscreenVideoRoot}>
             <Video
               style={styles.fullscreenVideo}
@@ -217,16 +247,10 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
               useNativeControls
               shouldPlay
             />
-            <View style={styles.modalActions}>
-              <Pressable onPress={handleDownload} style={styles.modalActionButton}>
-                <Ionicons name="download-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.modalActionText}>Скачать</Text>
-              </Pressable>
-              <Pressable onPress={() => setVideoVisible(false)} style={styles.modalActionButton}>
-                <Ionicons name="close-outline" size={20} color="#FFFFFF" />
-                <Text style={styles.modalActionText}>Закрыть</Text>
-              </Pressable>
-            </View>
+
+            <Pressable style={styles.closeButton} onPress={() => setVideoVisible(false)}>
+              <Ionicons name="close" size={20} color="#FFFFFF" />
+            </Pressable>
           </View>
         </Modal>
       </>
@@ -247,7 +271,7 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
           },
         ]}
       >
-        <Pressable onPress={toggleAudio} style={styles.audioButton}>
+        <Pressable onPress={() => void toggleAudio()} style={styles.audioButton}>
           {audioLoading ? (
             <ActivityIndicator size="small" color={textColor} />
           ) : (
@@ -277,53 +301,37 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
             {formatDuration(audioPositionMillis)} / {formatDuration(audioDurationMillis)}
           </Text>
         </View>
-
-        <Pressable onPress={handleDownload} style={styles.audioButton}>
-          <Ionicons
-            name={downloading ? 'hourglass-outline' : 'download-outline'}
-            size={18}
-            color={textColor}
-          />
-        </Pressable>
       </View>
     );
   }
 
-  if (isFile) {
-    return (
-      <Pressable
-        onPress={handleDownload}
-        style={[
-          styles.fileWrap,
-          {
-            backgroundColor: isOwn ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.03)',
-            borderColor: isOwn ? 'rgba(255,255,255,0.14)' : theme.colors.border,
-          },
-        ]}
-      >
-        <View style={styles.fileIcon}>
-          <Ionicons name="document-outline" size={20} color={textColor} />
-        </View>
+  return (
+    <Pressable
+      onPress={() => void openFile()}
+      style={[
+        styles.fileWrap,
+        {
+          backgroundColor: isOwn ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.03)',
+          borderColor: isOwn ? 'rgba(255,255,255,0.14)' : theme.colors.border,
+        },
+      ]}
+    >
+      <View style={styles.fileIcon}>
+        <Ionicons name="document-outline" size={20} color={textColor} />
+      </View>
 
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.fileName, { color: textColor }]} numberOfLines={1}>
-            {attachment.original_name || 'Файл'}
-          </Text>
-          <Text style={[styles.fileSub, { color: metaColor }]} numberOfLines={1}>
-            {attachment.content_type || 'attachment'}
-          </Text>
-        </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.fileName, { color: textColor }]} numberOfLines={1}>
+          {attachment.original_name || 'Файл'}
+        </Text>
+        <Text style={[styles.fileSub, { color: metaColor }]} numberOfLines={1}>
+          {attachment.content_type || 'attachment'}
+        </Text>
+      </View>
 
-        <Ionicons
-          name={downloading ? 'hourglass-outline' : 'download-outline'}
-          size={18}
-          color={textColor}
-        />
-      </Pressable>
-    );
-  }
-
-  return null;
+      <Ionicons name="open-outline" size={18} color={textColor} />
+    </Pressable>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -336,6 +344,17 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+  },
+  zoomBadge: {
+    position: 'absolute',
+    right: 8,
+    bottom: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
   videoWrap: {
     width: 220,
@@ -354,22 +373,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   playCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0,0,0,0.48)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  topAction: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-  },
-  iconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(0,0,0,0.52)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -436,11 +443,12 @@ const styles = StyleSheet.create({
   modalRoot: {
     flex: 1,
     backgroundColor: '#000',
+    alignItems: 'center',
     justifyContent: 'center',
   },
   fullImage: {
     width: '100%',
-    height: '78%',
+    height: '82%',
   },
   fullscreenVideoRoot: {
     flex: 1,
@@ -449,30 +457,17 @@ const styles = StyleSheet.create({
   },
   fullscreenVideo: {
     width: '100%',
-    height: '78%',
+    height: '100%',
   },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingBottom: 28,
-    paddingTop: 12,
-  },
-  modalActionButton: {
-    minHeight: 44,
-    minWidth: 124,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    flexDirection: 'row',
+  closeButton: {
+    position: 'absolute',
+    top: 56,
+    right: 18,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-  },
-  modalActionText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
+    backgroundColor: 'rgba(0,0,0,0.48)',
   },
 });
