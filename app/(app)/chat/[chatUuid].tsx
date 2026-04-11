@@ -88,7 +88,7 @@ import {
 } from '@/src/lib/chatAppearance';
 import { uploadPickedVideo } from '@/src/lib/api/media';
 import { addLocalContact, isLocalContact } from '@/src/lib/local/localContacts';
-import { blockUserLocal, isUserBlocked } from '@/src/lib/local/blockedUsers';
+import { blockUserLocal, isUserBlocked } from '@/src/lib/local/blockedUsers'
 import { realtimeClient } from '@/src/lib/realtime/socket';
 import {
   extractChatUuidFromRealtimeEvent,
