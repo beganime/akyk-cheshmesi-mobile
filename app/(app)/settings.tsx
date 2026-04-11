@@ -3,6 +3,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from 'react-native';
@@ -14,6 +15,10 @@ import { GlassCard } from '@/src/components/GlassCard';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { useAuthStore } from '@/src/state/auth';
 import {
+  registerNativePushToken,
+  unregisterCurrentPushToken,
+} from '@/src/lib/push/register';
+import {
   DEFAULT_CHAT_APPEARANCE,
   type BubblePreset,
   type ChatAppearance,
@@ -23,6 +28,7 @@ import {
   loadChatAppearance,
   saveChatAppearance,
 } from '@/src/lib/chatAppearance';
+import { getNotificationPrefs, setPushEnabled } from '@/src/lib/local/notificationPrefs';
 
 const themeModes = [
   'lightOrange',
@@ -68,6 +74,7 @@ export default function SettingsScreen() {
   const logout = useAuthStore((s) => s.logout);
 
   const [appearance, setAppearance] = useState<ChatAppearance>(DEFAULT_CHAT_APPEARANCE);
+  const [pushEnabled, setPushEnabledState] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -85,6 +92,12 @@ export default function SettingsScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    getNotificationPrefs()
+      .then((prefs) => setPushEnabledState(prefs.pushEnabled))
+      .catch(() => undefined);
+  }, []);
+
   const handleLogout = async () => {
     await logout();
     router.replace('/(auth)/login');
@@ -98,6 +111,16 @@ export default function SettingsScreen() {
 
     setAppearance(nextValue);
     await saveChatAppearance(nextValue);
+  };
+
+  const handleTogglePush = async (value: boolean) => {
+    setPushEnabledState(value);
+    await setPushEnabled(value);
+    if (value) {
+      await registerNativePushToken();
+    } else {
+      await unregisterCurrentPushToken();
+    }
   };
 
   return (
@@ -296,6 +319,14 @@ export default function SettingsScreen() {
             >
               <Text style={{ color: '#FFFFFF', fontSize: 13 }}>Вот так будет выглядеть чат</Text>
             </View>
+          </View>
+        </GlassCard>
+
+        <GlassCard>
+          <Text style={[styles.groupTitle, { color: theme.colors.text }]}>Уведомления</Text>
+          <View style={[styles.rowItem, { borderColor: theme.colors.border }]}>
+            <Text style={[styles.rowText, { color: theme.colors.text }]}>Пуш уведомления</Text>
+            <Switch value={pushEnabled} onValueChange={(value) => void handleTogglePush(value)} />
           </View>
         </GlassCard>
 
