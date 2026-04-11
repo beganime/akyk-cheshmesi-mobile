@@ -25,6 +25,7 @@ export function HoldToRecordButton({
 }: Props) {
   const recordingRef = useRef<Audio.Recording | null>(null);
   const startedAtRef = useRef<number>(0);
+  const longPressActivatedRef = useRef(false);
 
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -139,8 +140,19 @@ export function HoldToRecordButton({
 
   return (
     <Pressable
-      onPressIn={() => void startRecording()}
-      onPressOut={() => void stopRecordingAndSend()}
+      onLongPress={() => {
+        longPressActivatedRef.current = true;
+        void startRecording();
+      }}
+      delayLongPress={220}
+      onPressOut={() => {
+        if (!longPressActivatedRef.current) {
+          return;
+        }
+
+        longPressActivatedRef.current = false;
+        void stopRecordingAndSend();
+      }}
       disabled={disabled || busy}
       style={[
         styles.button,

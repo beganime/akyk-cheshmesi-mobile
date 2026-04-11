@@ -14,6 +14,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { Audio, ResizeMode, Video } from 'expo-av';
 
 import type { MessageAttachment, MessageItem } from '@/src/types/message';
+import { downloadAndShareRemoteFile } from '@/src/lib/media/download';
 
 type Props = {
   message: MessageItem;
@@ -64,6 +65,7 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioPositionMillis, setAudioPositionMillis] = useState(0);
   const [audioDurationMillis, setAudioDurationMillis] = useState(0);
+  const [downloadLoading, setDownloadLoading] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -79,6 +81,7 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
   if (!attachment?.file_url) {
     return null;
   }
+  const fileUrl = attachment.file_url;
 
   const mediaKind = String(attachment.media_kind || '').toLowerCase();
   const contentType = String(attachment.content_type || '').toLowerCase();
@@ -100,6 +103,9 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
 
   const textColor = isOwn ? '#FFFFFF' : theme.colors.text;
   const metaColor = isOwn ? 'rgba(255,255,255,0.82)' : theme.colors.muted;
+  const videoNote = Boolean(
+    (message.metadata as Record<string, unknown> | null | undefined)?.is_video_note,
+  );
 
   const openFile = async () => {
     try {
@@ -122,6 +128,24 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
     }
   };
 
+  const handleDownload = async () => {
+    try {
+      if (!attachment?.file_url || downloadLoading) return;
+      setDownloadLoading(true);
+
+      await downloadAndShareRemoteFile({
+        url: attachment.file_url,
+        filename: attachment.original_name || undefined,
+        contentType: attachment.content_type || undefined,
+        shareDialogTitle: isImage ? 'Скачать фото' : isVideo ? 'Скачать видео' : 'Скачать файл',
+      });
+    } catch (error) {
+      console.error('handleDownload error:', error);
+    } finally {
+      setDownloadLoading(false);
+    }
+  };
+
   const toggleAudio = async () => {
     try {
       if (!soundRef.current) {
@@ -133,7 +157,7 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
         });
 
         const { sound } = await Audio.Sound.createAsync(
-          { uri: attachment.file_url },
+          { uri: fileUrl },
           { shouldPlay: true },
           (status: any) => {
             if (!status?.isLoaded) {
@@ -208,6 +232,14 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
             <Pressable style={styles.closeButton} onPress={() => setImageVisible(false)}>
               <Ionicons name="close" size={20} color="#FFFFFF" />
             </Pressable>
+
+            <Pressable style={styles.downloadButton} onPress={() => void handleDownload()}>
+              {downloadLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons name="download-outline" size={18} color="#FFFFFF" />
+              )}
+            </Pressable>
           </View>
         </Modal>
       </>
@@ -217,9 +249,12 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
   if (isVideo) {
     return (
       <>
-        <Pressable style={styles.videoWrap} onPress={() => setVideoVisible(true)}>
+        <Pressable
+          style={[styles.videoWrap, videoNote ? styles.videoNoteWrap : null]}
+          onPress={() => setVideoVisible(true)}
+        >
           <Video
-            style={styles.video}
+            style={[styles.video, videoNote ? styles.videoNote : null]}
             source={{ uri: attachment.file_url }}
             resizeMode={ResizeMode.COVER}
             isMuted
@@ -232,6 +267,8 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
               <Ionicons name="play" size={18} color="#FFFFFF" />
             </View>
           </View>
+
+          {videoNote ? <View style={styles.videoNoteEdgeProgress} /> : null}
         </Pressable>
 
         <Modal
@@ -250,6 +287,14 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
 
             <Pressable style={styles.closeButton} onPress={() => setVideoVisible(false)}>
               <Ionicons name="close" size={20} color="#FFFFFF" />
+            </Pressable>
+
+            <Pressable style={styles.downloadButton} onPress={() => void handleDownload()}>
+              {downloadLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons name="download-outline" size={18} color="#FFFFFF" />
+              )}
             </Pressable>
           </View>
         </Modal>
@@ -363,9 +408,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#000',
   },
+  videoNoteWrap: {
+    borderRadius: 110,
+  },
   video: {
     width: '100%',
     height: '100%',
+  },
+  videoNote: {
+    borderRadius: 110,
   },
   videoOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -379,6 +430,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.52)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  videoNoteEdgeProgress: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.35)',
   },
   audioWrap: {
     width: 240,
@@ -463,6 +522,17 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 56,
     right: 18,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.48)',
+  },
+  downloadButton: {
+    position: 'absolute',
+    top: 56,
+    right: 66,
     width: 42,
     height: 42,
     borderRadius: 21,

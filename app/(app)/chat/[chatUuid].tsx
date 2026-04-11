@@ -39,6 +39,7 @@ import {
   setChatMuted,
   setChatPinned,
 } from '@/src/lib/api/chats';
+import { fetchPresence } from '@/src/lib/api/presence';
 import { createComplaint, ComplaintReason } from '@/src/lib/api/complaints';
 import {
   uploadPickedImage,
@@ -69,6 +70,7 @@ import { mergeMessages } from '@/src/lib/utils/messageSync';
 import { generateUUIDv4 } from '@/src/lib/utils/uuid';
 import type { ChatListItem } from '@/src/types/chat';
 import type { MessageAttachment, MessageItem } from '@/src/types/message';
+import type { PresenceDetail } from '@/src/types/presence';
 import type {
   StickerItem,
   StickerPackDetail,
@@ -112,14 +114,37 @@ function formatChatTitle(chat: ChatListItem | null) {
   return chat?.display_title || chat?.title || chat?.peer_user?.full_name || 'Чат';
 }
 
-function formatChatSub(chat: ChatListItem | null) {
+function formatLastSeen(lastSeenAt?: string | null) {
+  if (!lastSeenAt) return 'был(а) давно';
+  const date = new Date(lastSeenAt);
+  if (Number.isNaN(date.getTime())) return 'был(а) недавно';
+
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (sameDay) {
+    return `был(а) сегодня в ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  if (date.toDateString() === yesterday.toDateString()) {
+    return `был(а) вчера в ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  return `был(а) ${date.toLocaleDateString([], { day: '2-digit', month: '2-digit' })} в ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function formatChatSub(chat: ChatListItem | null, presence: PresenceDetail | null) {
   if (!chat) return 'Переписка';
 
   if (chat.is_muted) return 'Без звука';
   if (chat.is_pinned) return 'Закреплён';
   if (chat.is_archived) return 'В архиве';
 
-  return chat.chat_type === 'group' ? 'Групповой чат' : 'В сети';
+  if (chat.chat_type === 'group') return 'Групповой чат';
+  if (presence?.status === 'online') return 'В сети';
+  return formatLastSeen(presence?.last_seen_at || null);
 }
 
 function normalizeMessagesForUi(items: MessageItem[]) {
@@ -253,6 +278,7 @@ export default function ChatScreen() {
 
   const [chat, setChat] = useState<ChatListItem | null>(null);
   const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [presence, setPresence] = useState<PresenceDetail | null>(null);
   const [hiddenMessageMap, setHiddenMessageMap] = useState<HiddenMessageMap>({});
   const [nextUrl, setNextUrl] = useState<string | null>(null);
 
@@ -370,6 +396,12 @@ export default function ChatScreen() {
       const data = await fetchChatDetail(chatUuid);
       setChat(data);
       await saveCachedChatDetail(chatUuid, data);
+      if (data.chat_type !== 'group' && data.peer_user?.uuid) {
+        const presenceData = await fetchPresence(data.peer_user.uuid);
+        setPresence(presenceData);
+      } else {
+        setPresence(null);
+      }
     } catch (error) {
       console.error('refreshChat error:', error);
     }
@@ -1540,7 +1572,7 @@ export default function ChatScreen() {
                 {formatChatTitle(chat)}
               </Text>
               <Text style={[styles.headerSub, { color: theme.colors.muted }]} numberOfLines={1}>
-                {formatChatSub(chat)}
+                {formatChatSub(chat, presence)}
               </Text>
             </View>
           </Pressable>

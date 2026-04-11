@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image as ExpoImage } from 'expo-image';
 import { GlassCard } from '@/src/components/GlassCard';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { useAuthStore } from '@/src/state/auth';
@@ -26,9 +27,13 @@ export default function ProfileScreen() {
 
         <GlassCard>
           <View style={styles.row}>
-            <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
-              <Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text>
-            </View>
+            {user?.avatar ? (
+              <ExpoImage source={{ uri: user.avatar }} style={styles.avatarImage} contentFit="cover" />
+            ) : (
+              <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
+                <Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text>
+              </View>
+            )}
 
             <View style={{ flex: 1 }}>
               <Text style={[styles.name, { color: theme.colors.text }]}>{name}</Text>
@@ -92,6 +97,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 24,
     fontWeight: '700',
+  },
+  avatarImage: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#E5E7EB',
   },
   name: {
     fontSize: 20,
