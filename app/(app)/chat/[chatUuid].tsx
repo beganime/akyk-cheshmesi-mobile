@@ -88,7 +88,13 @@ import {
 } from '@/src/lib/chatAppearance';
 import { uploadPickedVideo } from '@/src/lib/api/media';
 import { addLocalContact, isLocalContact } from '@/src/lib/local/localContacts';
-import { blockUserLocal, isUserBlocked } from '@/src/lib/local/blockedUsers';
+import { blockUserLocal, isUserBlocked } from '@/src/lib/local/blockedUsers'
+import { realtimeClient } from '@/src/lib/realtime/socket';
+import {
+  extractChatUuidFromRealtimeEvent,
+  extractMessageFromRealtimeEvent,
+  isMessageEvent,
+} from '@/src/lib/realtime/events';
 
 type ComposerPanelTab = 'stickers' | 'emoji';
 
@@ -607,11 +613,41 @@ export default function ChatScreen() {
       const interval = setInterval(() => {
         void refreshChat();
         void refreshMessagesSilent();
-      }, 2500);
+      }, 6000);
 
       return () => clearInterval(interval);
     }, [refreshChat, refreshMessagesSilent]),
   );
+
+  useEffect(() => {
+    if (!chatUuid) return;
+
+    const unsubscribe = realtimeClient.subscribe((event) => {
+      if (!isMessageEvent(event)) return;
+
+      const eventChatUuid = extractChatUuidFromRealtimeEvent(event);
+      if (eventChatUuid !== chatUuid) return;
+
+      const incomingMessage = extractMessageFromRealtimeEvent(event);
+      if (incomingMessage?.uuid) {
+        setMessages((current) => {
+          const exists = current.some((item) => item.uuid === incomingMessage.uuid);
+          if (exists) return current;
+          const next = mergeMessages([...current, { ...incomingMessage, local_status: 'sent' }], current);
+          void saveCachedChatMessages(chatUuid, next);
+          return next;
+        });
+      } else {
+        void refreshMessagesSilent();
+      }
+
+      void refreshChat();
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [chatUuid, refreshChat, refreshMessagesSilent]);
 
   useEffect(() => {
     void syncReadState();
