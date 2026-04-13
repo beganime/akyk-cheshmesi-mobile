@@ -20,6 +20,8 @@ import { SearchInput } from '@/src/components/SearchInput';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { fetchChats, createDirectChat } from '@/src/lib/api/chats';
 import { searchUsers, UserShort } from '@/src/lib/api/contacts';
+import { realtimeClient } from '@/src/lib/realtime/socket';
+import { isMessageEvent } from '@/src/lib/realtime/events';
 import type { ChatListItem } from '@/src/types/chat';
 import {
   getLocalChatPreference,
@@ -206,6 +208,17 @@ export default function ChatsScreen() {
       subscription.remove();
     };
   }, [hydrateLocalPreferences, loadChats]);
+
+  useEffect(() => {
+    const unsubscribe = realtimeClient.subscribe((event) => {
+      if (!isMessageEvent(event)) return;
+      void loadChats({ silent: true });
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [loadChats]);
 
   useEffect(() => {
     const q = search.trim();
