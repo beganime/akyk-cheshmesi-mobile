@@ -70,6 +70,21 @@ function buildContentType(asset: PickedMediaAsset, fallback: string) {
   return asset.mimeType?.trim() || fallback;
 }
 
+function normalizeDurationSeconds(raw?: number | null): number | undefined {
+  const value = Number(raw);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+
+  // У image picker duration часто приходит в ms, а в некоторых местах — уже в секундах.
+  if (value > 1000) {
+    return Math.max(1, Math.ceil(value / 1000));
+  }
+
+  return Math.max(1, Math.ceil(value));
+}
+
 async function assetToBlob(asset: PickedMediaAsset): Promise<Blob | File> {
   if (Platform.OS === 'web' && asset.file) {
     return asset.file;
@@ -84,6 +99,7 @@ async function uploadLocal(
   options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean }
 ): Promise<UploadedMedia> {
   const formData = new FormData();
+  const durationSeconds = normalizeDurationSeconds(asset.duration);
 
   if (Platform.OS === 'web' && asset.file) {
     formData.append('file', asset.file);
@@ -99,6 +115,10 @@ async function uploadLocal(
   }
 
   formData.append('is_public', String(Boolean(options.isPublic)));
+
+  if (durationSeconds) {
+    formData.append('duration_seconds', String(durationSeconds));
+  }
 
   const response = await apiClient.post<UploadedMedia>('/media/upload-local/', formData, {
     headers: {
@@ -117,11 +137,13 @@ async function uploadViaPresign(
 
   const filename = buildSafeFilename(asset, options.filenamePrefix);
   const contentType = buildContentType(asset, options.fallbackContentType);
+  const durationSeconds = normalizeDurationSeconds(asset.duration);
 
   const presignResponse = await apiClient.post<MediaPresignResponse>('/media/presign/', {
     filename,
     content_type: contentType,
     size: asset.fileSize || blob.size,
+    ...(durationSeconds ? { duration_seconds: durationSeconds } : {}),
   });
 
   const presignData = presignResponse.data;

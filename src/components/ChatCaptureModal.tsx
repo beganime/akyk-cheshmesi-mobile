@@ -203,6 +203,7 @@ export function ChatCaptureModal({
       });
 
       const uri = audioRecording.getURI();
+      const durationSeconds = Math.max(1, Math.ceil(audioDurationMs / 1000));
 
       setAudioRecording(null);
 
@@ -214,6 +215,7 @@ export function ChatCaptureModal({
         uri,
         fileName: `voice-${Date.now()}${Platform.OS === 'web' ? '.webm' : '.m4a'}`,
         mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/m4a',
+        duration: durationSeconds,
       });
 
       setAudioDurationMs(0);
@@ -265,6 +267,7 @@ export function ChatCaptureModal({
         codec: Platform.OS === 'ios' ? 'avc1' : undefined,
       });
 
+      const durationSeconds = Math.max(1, Math.ceil(videoDurationMs / 1000));
       setVideoRecording(false);
 
       if (!result?.uri) {
@@ -275,6 +278,7 @@ export function ChatCaptureModal({
         uri: result.uri,
         fileName: `video-${Date.now()}.mp4`,
         mimeType: 'video/mp4',
+        duration: durationSeconds,
       });
 
       setVideoDurationMs(0);
