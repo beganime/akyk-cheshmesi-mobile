@@ -77,12 +77,33 @@ function normalizeDurationSeconds(raw?: number | null): number | undefined {
     return undefined;
   }
 
-  // У image picker duration часто приходит в ms, а в некоторых местах — уже в секундах.
   if (value > 1000) {
     return Math.max(1, Math.ceil(value / 1000));
   }
 
   return Math.max(1, Math.ceil(value));
+}
+
+function extractBackendDetail(error: any): string {
+  const data = error?.response?.data;
+
+  if (!data) {
+    return '';
+  }
+
+  if (typeof data.detail === 'string') {
+    return data.detail;
+  }
+
+  if (typeof data === 'string') {
+    return data;
+  }
+
+  try {
+    return JSON.stringify(data);
+  } catch {
+    return '';
+  }
 }
 
 async function assetToBlob(asset: PickedMediaAsset): Promise<Blob | File> {
@@ -92,6 +113,15 @@ async function assetToBlob(asset: PickedMediaAsset): Promise<Blob | File> {
 
   const response = await fetch(asset.uri);
   return await response.blob();
+}
+
+async function readResponsePreview(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    return text.slice(0, 300);
+  } catch {
+    return '';
+  }
 }
 
 async function uploadLocal(
@@ -131,7 +161,7 @@ async function uploadLocal(
 
 async function uploadViaPresign(
   asset: PickedMediaAsset,
-  options: { filenamePrefix: string; fallbackContentType: string }
+  options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean }
 ): Promise<UploadedMedia> {
   const blob = await assetToBlob(asset);
 
@@ -143,19 +173,35 @@ async function uploadViaPresign(
     filename,
     content_type: contentType,
     size: asset.fileSize || blob.size,
+    is_public: Boolean(options.isPublic),
     ...(durationSeconds ? { duration_seconds: durationSeconds } : {}),
   });
 
   const presignData = presignResponse.data;
 
+  if (!presignData?.media?.uuid || !presignData?.upload?.url) {
+    throw new Error('Invalid presign response');
+  }
+
+  const uploadHeaders: Record<string, string> = {
+    ...(presignData.upload.headers || {}),
+  };
+
+  if (!uploadHeaders['Content-Type'] && !uploadHeaders['content-type']) {
+    uploadHeaders['Content-Type'] = contentType;
+  }
+
   const putResponse = await fetch(presignData.upload.url, {
     method: presignData.upload.method || 'PUT',
-    headers: presignData.upload.headers || {},
+    headers: uploadHeaders,
     body: blob,
   });
 
   if (!putResponse.ok) {
-    throw new Error(`S3 upload failed with status ${putResponse.status}`);
+    const preview = await readResponsePreview(putResponse);
+    throw new Error(
+      `S3 upload failed with status ${putResponse.status}${preview ? `: ${preview}` : ''}`
+    );
   }
 
   const completeResponse = await apiClient.post<UploadedMedia>('/media/complete/', {
@@ -165,17 +211,27 @@ async function uploadViaPresign(
   return completeResponse.data;
 }
 
+function shouldFallbackToLocalUpload(error: any): boolean {
+  const status = Number(error?.response?.status || 0);
+  const detail = extractBackendDetail(error).toLowerCase();
+
+  return (
+    detail.includes('use_s3 is disabled') ||
+    detail.includes('use /api/v1/media/upload-local/') ||
+    status === 404 ||
+    status === 405
+  );
+}
+
 export async function uploadPickedMedia(
   asset: PickedMediaAsset,
   options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean }
 ): Promise<UploadedMedia> {
   try {
-    return await uploadLocal(asset, options);
+    return await uploadViaPresign(asset, options);
   } catch (error: any) {
-    const detail = String(error?.response?.data?.detail || '');
-
-    if (detail.includes('USE_S3 is enabled')) {
-      return await uploadViaPresign(asset, options);
+    if (shouldFallbackToLocalUpload(error)) {
+      return await uploadLocal(asset, options);
     }
 
     throw error;
@@ -186,6 +242,7 @@ export async function uploadPickedImage(asset: PickedMediaAsset): Promise<Upload
   return await uploadPickedMedia(asset, {
     filenamePrefix: 'photo',
     fallbackContentType: 'image/jpeg',
+    isPublic: false,
   });
 }
 
@@ -193,6 +250,7 @@ export async function uploadPickedVideo(asset: PickedMediaAsset): Promise<Upload
   return await uploadPickedMedia(asset, {
     filenamePrefix: 'video',
     fallbackContentType: 'video/mp4',
+    isPublic: false,
   });
 }
 
@@ -200,6 +258,7 @@ export async function uploadPickedAudio(asset: PickedMediaAsset): Promise<Upload
   return await uploadPickedMedia(asset, {
     filenamePrefix: 'voice',
     fallbackContentType: Platform.OS === 'web' ? 'audio/webm' : 'audio/mp4',
+    isPublic: false,
   });
 }
 
