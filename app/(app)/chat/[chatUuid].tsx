@@ -43,7 +43,6 @@ import {
 import { fetchPresence } from '@/src/lib/api/presence';
 import { createComplaint, ComplaintReason } from '@/src/lib/api/complaints';
 import {
-  uploadPickedImage,
   uploadPickedMedia,
   type PickedMediaAsset,
 } from '@/src/lib/api/media';
@@ -86,7 +85,6 @@ import {
   loadChatAppearanceForChat,
   saveChatAppearanceForChat,
 } from '@/src/lib/chatAppearance';
-import { uploadPickedVideo } from '@/src/lib/api/media';
 import { addLocalContact, isLocalContact } from '@/src/lib/local/localContacts';
 import { blockUserLocal, isUserBlocked } from '@/src/lib/local/blockedUsers'
 import { realtimeClient } from '@/src/lib/realtime/socket';
@@ -1034,6 +1032,19 @@ export default function ChatScreen() {
     };
   };
 
+  const getPickedMediaKind = (
+    asset: PickedMediaAsset & { type?: string | null }
+  ): 'image' | 'video' => {
+    const explicitType = String((asset as any)?.type || '').toLowerCase();
+    const mimeType = String(asset.mimeType || '').toLowerCase();
+
+    if (explicitType === 'video' || mimeType.startsWith('video/')) {
+      return 'video';
+    }
+
+    return 'image';
+  };
+
   const sendMediaMessage = async (
     mediaType: 'audio' | 'video',
     asset: PickedMediaAsset,
@@ -1058,7 +1069,7 @@ export default function ChatScreen() {
         {
           uuid: `local-attachment-${clientUuid}`,
           file_url: asset.uri,
-          content_type: asset.mimeType || (mediaType === 'audio' ? 'audio/m4a' : 'video/mp4'),
+          content_type: mediaType === 'audio' ? 'audio/mp4' : 'video/mp4',
           original_name: asset.fileName || undefined,
           media_kind: mediaType,
         },
@@ -1080,11 +1091,13 @@ export default function ChatScreen() {
         mediaType === 'audio'
           ? await uploadPickedMedia(asset, {
               filenamePrefix: 'voice',
-              fallbackContentType: asset.mimeType || 'audio/m4a',
+              fallbackContentType: 'audio/mp4',
+              isPublic: false,
             })
           : await uploadPickedMedia(asset, {
               filenamePrefix: 'video',
-              fallbackContentType: asset.mimeType || 'video/mp4',
+              fallbackContentType: 'video/mp4',
+              isPublic: false,
             });
 
       const savedMessage = await sendChatMessage(chatUuid, {
@@ -1138,11 +1151,13 @@ export default function ChatScreen() {
     await sendMediaMessage(captureMode, asset);
   };
 
-  const handlePickImage = async () => {
+  const handlePickMediaFromGallery = async () => {
+    let pickedKind: 'image' | 'video' = 'image';
+
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.88,
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        quality: 0.9,
         allowsEditing: false,
       });
 
@@ -1150,15 +1165,20 @@ export default function ChatScreen() {
         return;
       }
 
-      const asset = result.assets[0];
-      const uploaded = await uploadPickedImage(asset);
+      const asset = result.assets[0] as PickedMediaAsset & { type?: string | null };
+      pickedKind = getPickedMediaKind(asset);
+
+      const messageType = pickedKind === 'video' ? 'video' : 'image';
+      const filenamePrefix = messageType === 'video' ? 'video' : 'photo';
+      const fallbackContentType = messageType === 'video' ? 'video/mp4' : 'image/jpeg';
+
       const clientUuid = generateUUIDv4();
       const optimisticReply = buildReplyPayload(replyTo);
 
       const optimisticMessage: MessageItem = {
         uuid: `local-${clientUuid}`,
         client_uuid: clientUuid,
-        message_type: 'image',
+        message_type: messageType,
         text: '',
         is_own_message: true,
         delivery_status: 'sent',
@@ -1171,9 +1191,9 @@ export default function ChatScreen() {
               {
                 uuid: `local-attachment-${clientUuid}`,
                 file_url: asset.uri,
-                content_type: asset.mimeType || 'image/jpeg',
+                content_type: fallbackContentType,
                 original_name: asset.fileName || undefined,
-                media_kind: 'image',
+                media_kind: messageType,
               },
             ]
           : [],
@@ -1189,9 +1209,15 @@ export default function ChatScreen() {
       setReplyTo(null);
       scrollToBottom();
 
+      const uploaded = await uploadPickedMedia(asset, {
+        filenamePrefix,
+        fallbackContentType,
+        isPublic: false,
+      });
+
       const savedMessage = await sendChatMessage(chatUuid, {
         client_uuid: clientUuid,
-        message_type: 'image',
+        message_type: messageType,
         text: '',
         attachment_uuids: [uploaded.uuid],
         ...(optimisticReply?.uuid ? { reply_to_uuid: optimisticReply.uuid } : {}),
@@ -1211,75 +1237,13 @@ export default function ChatScreen() {
         return next;
       });
     } catch (error) {
-      console.error('handlePickImage error:', error);
-      Alert.alert('Ошибка', 'Не удалось отправить фото');
-    }
-  };
-
-  const handlePickVideo = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-        quality: 0.9,
-        allowsEditing: false,
-      });
-
-      if (result.canceled || !result.assets?.[0] || !chatUuid) {
-        return;
-      }
-
-      const asset = result.assets[0];
-      const uploaded = await uploadPickedVideo(asset);
-      const clientUuid = generateUUIDv4();
-
-      const optimisticMessage: MessageItem = {
-        uuid: `local-${clientUuid}`,
-        client_uuid: clientUuid,
-        message_type: 'video',
-        text: '',
-        is_own_message: true,
-        delivery_status: 'sent',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        local_status: 'pending',
-        attachments: uploaded.file_url
-          ? [
-              {
-                uuid: uploaded.uuid,
-                file_url: uploaded.file_url,
-                content_type: uploaded.content_type,
-                original_name: uploaded.original_name,
-                media_kind: uploaded.media_kind,
-              },
-            ]
-          : [],
-      };
-
-      setMessages((current) => [...current, optimisticMessage]);
-      scrollToBottom();
-
-      const savedMessage = await sendChatMessage(chatUuid, {
-        client_uuid: clientUuid,
-        message_type: 'video',
-        text: '',
-        attachment_uuids: [uploaded.uuid],
-        ...(replyTo?.uuid ? { reply_to_uuid: replyTo.uuid } : {}),
-      });
-
-      setMessages((current) =>
-        current.map((message) =>
-          message.client_uuid === clientUuid
-            ? {
-                ...savedMessage,
-                local_status: 'sent',
-              }
-            : message
-        )
+      console.error('handlePickMediaFromGallery error:', error);
+      Alert.alert(
+        'Ошибка',
+        pickedKind === 'video'
+          ? 'Не удалось отправить видео'
+          : 'Не удалось отправить фото',
       );
-
-      setReplyTo(null);
-    } catch (error) {
-      console.error('handlePickVideo error:', error);
     }
   };
 
@@ -1925,17 +1889,13 @@ export default function ChatScreen() {
             </View>
 
             <Pressable
-              onPress={() => void handlePickImage()}
-              style={[styles.toolButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+              onPress={() => void handlePickMediaFromGallery()}
+              style={[
+                styles.toolButton,
+                { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+              ]}
             >
-              <Ionicons name="image-outline" size={18} color={theme.colors.text} />
-            </Pressable>
-
-            <Pressable
-              onPress={() => void handlePickVideo()}
-              style={[styles.toolButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
-            >
-              <Ionicons name="videocam-outline" size={18} color={theme.colors.text} />
+              <Ionicons name="images-outline" size={18} color={theme.colors.text} />
             </Pressable>
 
             <Pressable

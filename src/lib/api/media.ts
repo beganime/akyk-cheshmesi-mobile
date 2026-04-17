@@ -38,8 +38,19 @@ type MediaPresignResponse = {
   };
 };
 
+function normalizeMimeType(mimeType?: string | null, fallback?: string): string {
+  const value = String(mimeType || fallback || '').trim().toLowerCase();
+
+  if (!value) return '';
+  if (value === 'audio/m4a' || value === 'audio/x-m4a') return 'audio/mp4';
+  if (value === 'image/jpg') return 'image/jpeg';
+  if (value === 'video/mov') return 'video/quicktime';
+
+  return value;
+}
+
 function getFileExtensionFromMime(mimeType?: string | null): string {
-  const value = String(mimeType || '').toLowerCase();
+  const value = normalizeMimeType(mimeType);
 
   if (value.includes('jpeg') || value.includes('jpg')) return '.jpg';
   if (value.includes('png')) return '.png';
@@ -67,7 +78,7 @@ function buildSafeFilename(asset: PickedMediaAsset, fallbackPrefix: string) {
 }
 
 function buildContentType(asset: PickedMediaAsset, fallback: string) {
-  return asset.mimeType?.trim() || fallback;
+  return normalizeMimeType(asset.mimeType, fallback);
 }
 
 function normalizeDurationSeconds(raw?: number | null): number | undefined {
