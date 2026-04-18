@@ -71,28 +71,13 @@ export function ChatCaptureModal({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    if (audioRecording) {
-      interval = setInterval(async () => {
-        try {
-          const status = await audioRecording.getStatusAsync();
-
-          if (status.isLoaded && status.canRecord) {
-            setAudioDurationMs(status.durationMillis || 0);
-          }
-        } catch (error) {
-          console.error('audio status interval error:', error);
-        }
-      }, 250);
+    if (!visible) {
+      setVideoDurationMs(0);
+      setAudioDurationMs(0);
+      setCameraTorch(false);
+      setCameraFacing('front');
     }
-
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [audioRecording]);
+  }, [visible]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
@@ -117,20 +102,9 @@ export function ChatCaptureModal({
     }
 
     return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
+      if (interval) clearInterval(interval);
     };
   }, [videoRecording]);
-
-  useEffect(() => {
-    if (!visible) {
-      setVideoDurationMs(0);
-      setAudioDurationMs(0);
-      setCameraTorch(false);
-      setCameraFacing('front');
-    }
-  }, [visible]);
 
   const title = useMemo(() => {
     return mode === 'audio' ? 'Голосовое сообщение' : 'Видео-сообщение';
@@ -147,14 +121,15 @@ export function ChatCaptureModal({
           playsInSilentModeIOS: true,
         }).catch(() => null);
         setAudioRecording(null);
-        setAudioDurationMs(0);
       }
 
       if (videoRecording) {
         cameraRef.current?.stopRecording?.();
         setVideoRecording(false);
-        setVideoDurationMs(0);
       }
+
+      setAudioDurationMs(0);
+      setVideoDurationMs(0);
     } finally {
       onClose();
     }
@@ -177,12 +152,18 @@ export function ChatCaptureModal({
         playsInSilentModeIOS: true,
       });
 
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recording.startAsync();
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        (status) => {
+          if (status.isLoaded) {
+            setAudioDurationMs(status.durationMillis || 0);
+          }
+        },
+        200,
+      );
 
-      setAudioDurationMs(0);
       setAudioRecording(recording);
+      setAudioDurationMs(0);
     } catch (error) {
       console.error('startAudioRecording error:', error);
     } finally {
@@ -214,7 +195,7 @@ export function ChatCaptureModal({
       await onCaptured({
         uri,
         fileName: `voice-${Date.now()}${Platform.OS === 'web' ? '.webm' : '.m4a'}`,
-        mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/m4a',
+        mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/mp4',
         duration: durationSeconds,
       });
 
@@ -503,7 +484,6 @@ export function ChatCaptureModal({
                   ref={cameraRef}
                   style={styles.cameraView}
                   facing={cameraFacing}
-                  mode="video"
                   active={visible}
                   enableTorch={cameraTorch}
                   mirror={cameraFacing === 'front'}

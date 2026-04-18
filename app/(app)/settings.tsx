@@ -123,21 +123,40 @@ export default function SettingsScreen() {
     }
   };
 
-  return (
-    <SafeAreaView
-      style={[
-        styles.container,
-        {
-          backgroundColor: theme.colors.background,
-        },
+  // Вспомогательный рендер для пунктов с выбором (галочкой)
+  const renderCheckmarkRow = (
+    label: string,
+    isActive: boolean,
+    onPress: () => void,
+    isLast: boolean = false
+  ) => (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.actionRow,
+        !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border },
+        pressed && { opacity: 0.7 },
       ]}
     >
+      <Text style={[styles.actionText, { color: theme.colors.text, fontWeight: isActive ? '700' : '500' }]}>
+        {label}
+      </Text>
+      {isActive && <Ionicons name="checkmark" size={22} color={theme.colors.primary} />}
+    </Pressable>
+  );
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={styles.header}>
         <Pressable
           onPress={() => router.back()}
-          style={[styles.headerButton, { borderColor: theme.colors.border }]}
+          style={({ pressed }) => [
+            styles.headerButton,
+            { backgroundColor: theme.colors.card },
+            pressed && { opacity: 0.7 }
+          ]}
         >
-          <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
+          <Ionicons name="chevron-back" size={22} color={theme.colors.text} />
         </Pressable>
 
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Настройки</Text>
@@ -145,153 +164,110 @@ export default function SettingsScreen() {
         <View style={{ width: 44 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <GlassCard>
-          <Text style={[styles.groupTitle, { color: theme.colors.text }]}>Аккаунт</Text>
-
-          <Pressable
-            onPress={() => router.push('/(app)/profile-edit')}
-            style={[styles.rowItem, { borderColor: theme.colors.border }]}
-          >
-            <Text style={[styles.rowText, { color: theme.colors.text }]}>Редактировать профиль</Text>
-            <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => router.push('/(app)/blocked-users')}
-            style={[styles.rowItem, { borderColor: theme.colors.border }]}
-          >
-            <Text style={[styles.rowText, { color: theme.colors.text }]}>Черный список</Text>
-            <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
-          </Pressable>
-        </GlassCard>
-
-        <GlassCard>
-          <Text style={[styles.groupTitle, { color: theme.colors.text }]}>Оформление приложения</Text>
-
-          {themeModes.map((mode) => {
-            const active = themeName === mode;
-
-            return (
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        
+        {/* РАЗДЕЛ: АККАУНТ */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.muted }]}>АККАУНТ</Text>
+          <GlassCard style={styles.cardOverrides}>
+            <View style={styles.actionsContainer}>
               <Pressable
-                key={mode}
-                onPress={() => void setThemeName(mode)}
-                style={[
-                  styles.optionItem,
-                  {
-                    borderColor: theme.colors.border,
-                    backgroundColor: active ? theme.colors.primary : 'transparent',
-                  },
+                onPress={() => router.push('/(app)/profile-edit')}
+                style={({ pressed }) => [
+                  styles.actionRow,
+                  { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border },
+                  pressed && { opacity: 0.7 }
                 ]}
               >
-                <Text
-                  style={[
-                    styles.optionText,
-                    {
-                      color: active ? '#FFFFFF' : theme.colors.text,
-                    },
-                  ]}
-                >
-                  {themeLabels[mode]}
-                </Text>
+                <View style={[styles.actionIcon, { backgroundColor: theme.colors.primarySoft }]}>
+                  <Ionicons name="person-outline" size={18} color={theme.colors.primary} />
+                </View>
+                <Text style={[styles.actionText, { color: theme.colors.text }]}>Редактировать профиль</Text>
+                <Ionicons name="chevron-forward" size={20} color={theme.colors.muted} />
               </Pressable>
-            );
-          })}
-        </GlassCard>
 
-        <GlassCard>
-          <Text style={[styles.groupTitle, { color: theme.colors.text }]}>Оформление чата</Text>
-
-          <Text style={[styles.subTitle, { color: theme.colors.muted }]}>Фон чата</Text>
-          {backgroundPresets.map((preset) => {
-            const active = appearance.backgroundPreset === preset;
-
-            return (
               <Pressable
-                key={preset}
-                onPress={() => void patchAppearance({ backgroundPreset: preset })}
-                style={[
-                  styles.optionItem,
-                  {
-                    borderColor: theme.colors.border,
-                    backgroundColor: active ? theme.colors.primary : 'transparent',
-                  },
+                onPress={() => router.push('/(app)/blocked-users')}
+                style={({ pressed }) => [
+                  styles.actionRow,
+                  pressed && { opacity: 0.7 }
                 ]}
               >
-                <Text
-                  style={[
-                    styles.optionText,
-                    {
-                      color: active ? '#FFFFFF' : theme.colors.text,
-                    },
-                  ]}
-                >
-                  {backgroundLabels[preset]}
-                </Text>
+                <View style={[styles.actionIcon, { backgroundColor: 'rgba(229, 72, 77, 0.1)' }]}>
+                  <Ionicons name="ban-outline" size={18} color={theme.colors.danger} />
+                </View>
+                <Text style={[styles.actionText, { color: theme.colors.text }]}>Черный список</Text>
+                <Ionicons name="chevron-forward" size={20} color={theme.colors.muted} />
               </Pressable>
-            );
-          })}
+            </View>
+          </GlassCard>
+        </View>
 
-          <Text style={[styles.subTitle, { color: theme.colors.muted }]}>Мои сообщения</Text>
-          {bubblePresets.map((preset) => {
-            const active = appearance.ownBubblePreset === preset;
+        {/* РАЗДЕЛ: ТЕМА */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.muted }]}>ОФОРМЛЕНИЕ ПРИЛОЖЕНИЯ</Text>
+          <GlassCard style={styles.cardOverrides}>
+            <View style={styles.actionsContainer}>
+              {themeModes.map((mode, index) =>
+                renderCheckmarkRow(
+                  themeLabels[mode],
+                  themeName === mode,
+                  () => void setThemeName(mode),
+                  index === themeModes.length - 1
+                )
+              )}
+            </View>
+          </GlassCard>
+        </View>
 
-            return (
-              <Pressable
-                key={`own-${preset}`}
-                onPress={() => void patchAppearance({ ownBubblePreset: preset })}
-                style={[
-                  styles.optionItem,
-                  {
-                    borderColor: theme.colors.border,
-                    backgroundColor: active ? theme.colors.primary : 'transparent',
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    {
-                      color: active ? '#FFFFFF' : theme.colors.text,
-                    },
-                  ]}
-                >
-                  {bubbleLabels[preset]}
-                </Text>
-              </Pressable>
-            );
-          })}
+        {/* РАЗДЕЛ: ОФОРМЛЕНИЕ ЧАТА */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.muted }]}>ОФОРМЛЕНИЕ ЧАТА</Text>
+          
+          <GlassCard style={[styles.cardOverrides, { marginBottom: 16 }]}>
+            <Text style={[styles.subTitle, { color: theme.colors.primary }]}>Фон чата</Text>
+            <View style={styles.actionsContainer}>
+              {backgroundPresets.map((preset, index) =>
+                renderCheckmarkRow(
+                  backgroundLabels[preset],
+                  appearance.backgroundPreset === preset,
+                  () => void patchAppearance({ backgroundPreset: preset }),
+                  index === backgroundPresets.length - 1
+                )
+              )}
+            </View>
+          </GlassCard>
 
-          <Text style={[styles.subTitle, { color: theme.colors.muted }]}>Сообщения собеседника</Text>
-          {bubblePresets.map((preset) => {
-            const active = appearance.peerBubblePreset === preset;
+          <GlassCard style={[styles.cardOverrides, { marginBottom: 16 }]}>
+            <Text style={[styles.subTitle, { color: theme.colors.primary }]}>Мои сообщения</Text>
+            <View style={styles.actionsContainer}>
+              {bubblePresets.map((preset, index) =>
+                renderCheckmarkRow(
+                  bubbleLabels[preset],
+                  appearance.ownBubblePreset === preset,
+                  () => void patchAppearance({ ownBubblePreset: preset }),
+                  index === bubblePresets.length - 1
+                )
+              )}
+            </View>
+          </GlassCard>
 
-            return (
-              <Pressable
-                key={`peer-${preset}`}
-                onPress={() => void patchAppearance({ peerBubblePreset: preset })}
-                style={[
-                  styles.optionItem,
-                  {
-                    borderColor: theme.colors.border,
-                    backgroundColor: active ? theme.colors.primary : 'transparent',
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    {
-                      color: active ? '#FFFFFF' : theme.colors.text,
-                    },
-                  ]}
-                >
-                  {bubbleLabels[preset]}
-                </Text>
-              </Pressable>
-            );
-          })}
+          <GlassCard style={[styles.cardOverrides, { marginBottom: 16 }]}>
+            <Text style={[styles.subTitle, { color: theme.colors.primary }]}>Сообщения собеседника</Text>
+            <View style={styles.actionsContainer}>
+              {bubblePresets.map((preset, index) =>
+                renderCheckmarkRow(
+                  bubbleLabels[preset],
+                  appearance.peerBubblePreset === preset,
+                  () => void patchAppearance({ peerBubblePreset: preset }),
+                  index === bubblePresets.length - 1
+                )
+              )}
+            </View>
+          </GlassCard>
 
+          {/* ПРЕВЬЮ ЧАТА */}
+          <Text style={[styles.sectionTitle, { color: theme.colors.muted, marginTop: 4 }]}>ПРЕВЬЮ</Text>
           <View
             style={[
               styles.previewWrap,
@@ -307,7 +283,7 @@ export default function SettingsScreen() {
                 buildBubblePreviewStyle(theme, appearance.peerBubblePreset, false),
               ]}
             >
-              <Text style={{ color: theme.colors.text, fontSize: 13 }}>Привет 👋</Text>
+              <Text style={{ color: theme.colors.text, fontSize: 14 }}>Привет 👋</Text>
             </View>
 
             <View
@@ -317,39 +293,71 @@ export default function SettingsScreen() {
                 buildBubblePreviewStyle(theme, appearance.ownBubblePreset, true),
               ]}
             >
-              <Text style={{ color: '#FFFFFF', fontSize: 13 }}>Вот так будет выглядеть чат</Text>
+              <Text style={{ color: '#FFFFFF', fontSize: 14 }}>Вот так будет выглядеть чат</Text>
             </View>
           </View>
-        </GlassCard>
+        </View>
 
-        <GlassCard>
-          <Text style={[styles.groupTitle, { color: theme.colors.text }]}>Уведомления</Text>
-          <View style={[styles.rowItem, { borderColor: theme.colors.border }]}>
-            <Text style={[styles.rowText, { color: theme.colors.text }]}>Пуш уведомления</Text>
-            <Switch value={pushEnabled} onValueChange={(value) => void handleTogglePush(value)} />
-          </View>
-        </GlassCard>
+        {/* РАЗДЕЛ: УВЕДОМЛЕНИЯ */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.muted }]}>НАСТРОЙКИ УСТРОЙСТВА</Text>
+          <GlassCard style={styles.cardOverrides}>
+            <View style={styles.actionsContainer}>
+              <View style={styles.actionRow}>
+                <View style={[styles.actionIcon, { backgroundColor: theme.colors.primarySoft }]}>
+                  <Ionicons name="notifications-outline" size={18} color={theme.colors.primary} />
+                </View>
+                <Text style={[styles.actionText, { color: theme.colors.text }]}>Push-уведомления</Text>
+                <Switch 
+                  value={pushEnabled} 
+                  onValueChange={(value) => void handleTogglePush(value)} 
+                  trackColor={{ true: theme.colors.primary, false: theme.colors.border }}
+                />
+              </View>
+            </View>
+          </GlassCard>
+        </View>
 
-        <GlassCard>
-          <Text style={[styles.groupTitle, { color: theme.colors.text }]}>Приложение</Text>
+        {/* РАЗДЕЛ: ДОПОЛНИТЕЛЬНО */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.muted }]}>ДОПОЛНИТЕЛЬНО</Text>
+          <GlassCard style={styles.cardOverrides}>
+            <View style={styles.actionsContainer}>
+              <View style={[styles.actionRow, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border }]}>
+                <View style={[styles.actionIcon, { backgroundColor: theme.colors.primarySoft }]}>
+                  <Ionicons name="chatbox-ellipses-outline" size={18} color={theme.colors.primary} />
+                </View>
+                <Text style={[styles.actionText, { color: theme.colors.text }]}>Внутриигровые уведомления</Text>
+                <Text style={[styles.soonText, { color: theme.colors.muted }]}>Скоро</Text>
+              </View>
 
-          <View style={[styles.rowItem, { borderColor: theme.colors.border }]}>
-            <Text style={[styles.rowText, { color: theme.colors.text }]}>Уведомления</Text>
-            <Text style={[styles.soonText, { color: theme.colors.muted }]}>Следующий этап</Text>
-          </View>
+              <View style={styles.actionRow}>
+                <View style={[styles.actionIcon, { backgroundColor: theme.colors.primarySoft }]}>
+                  <Ionicons name="folder-outline" size={18} color={theme.colors.primary} />
+                </View>
+                <Text style={[styles.actionText, { color: theme.colors.text }]}>Данные и память</Text>
+                <Text style={[styles.soonText, { color: theme.colors.muted }]}>Скоро</Text>
+              </View>
+            </View>
+          </GlassCard>
+        </View>
 
-          <View style={[styles.rowItem, { borderColor: theme.colors.border }]}>
-            <Text style={[styles.rowText, { color: theme.colors.text }]}>Медиа и кэш</Text>
-            <Text style={[styles.soonText, { color: theme.colors.muted }]}>Следующий этап</Text>
-          </View>
-        </GlassCard>
-
-        <Pressable
-          onPress={() => void handleLogout()}
-          style={[styles.logoutButton, { backgroundColor: theme.colors.primary }]}
-        >
-          <Text style={styles.logoutText}>Выйти</Text>
-        </Pressable>
+        {/* КНОПКА ВЫХОДА */}
+        <View style={[styles.section, { marginTop: 10 }]}>
+          <GlassCard style={styles.cardOverrides}>
+            <Pressable
+              onPress={() => void handleLogout()}
+              style={({ pressed }) => [
+                styles.actionRow,
+                { justifyContent: 'center' },
+                pressed && { opacity: 0.7 }
+              ]}
+            >
+              <Text style={[styles.logoutText, { color: theme.colors.danger }]}>Выйти из аккаунта</Text>
+            </Pressable>
+          </GlassCard>
+        </View>
+        
       </ScrollView>
     </SafeAreaView>
   );
@@ -361,8 +369,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -370,90 +377,96 @@ const styles = StyleSheet.create({
   headerButton: {
     width: 44,
     height: 44,
-    borderRadius: 16,
-    borderWidth: 1,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
   content: {
-    padding: 16,
-    paddingBottom: 120,
-    gap: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 100,
+    paddingTop: 10,
   },
-  groupTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    marginBottom: 10,
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    marginLeft: 12,
+  },
+  cardOverrides: {
+    padding: 0, // Убираем внутренний паддинг карточки, чтобы элементы касались краев
+    overflow: 'hidden',
   },
   subTitle: {
     fontSize: 13,
-    fontWeight: '600',
-    marginTop: 6,
-    marginBottom: 8,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 16,
+    marginBottom: 4,
+    marginLeft: 16,
   },
-  rowItem: {
-    minHeight: 52,
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    marginBottom: 10,
+  actionsContainer: {
+    width: '100%',
+  },
+  actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    minHeight: 54,
   },
-  rowText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  optionItem: {
-    minHeight: 46,
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 14,
+  actionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginRight: 14,
   },
-  optionText: {
+  actionText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  soonText: {
     fontSize: 14,
+    fontWeight: '500',
+  },
+  logoutText: {
+    fontSize: 16,
     fontWeight: '600',
-    textAlign: 'center',
   },
   previewWrap: {
     borderWidth: 1,
-    borderRadius: 22,
-    padding: 14,
-    marginTop: 8,
-    gap: 10,
+    borderRadius: 20,
+    padding: 16,
+    gap: 12,
+    overflow: 'hidden',
   },
   previewBubble: {
-    maxWidth: '82%',
+    maxWidth: '85%',
     minHeight: 42,
-    borderRadius: 24,
-    paddingHorizontal: 14,
+    borderRadius: 20,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     borderWidth: 1,
     alignSelf: 'flex-start',
   },
   previewOwnBubble: {
     alignSelf: 'flex-end',
-  },
-  soonText: {
-    fontSize: 13,
-  },
-  logoutButton: {
-    minHeight: 52,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoutText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
   },
 });

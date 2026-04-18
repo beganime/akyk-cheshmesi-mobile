@@ -20,6 +20,13 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { Image as ExpoImage } from 'expo-image';
+import { Audio } from 'expo-av';
+import {
+  CameraView,
+  type CameraType,
+  useCameraPermissions,
+  useMicrophonePermissions,
+} from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,12 +36,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { GlassCard } from '@/src/components/GlassCard';
 import {
-  ChatCaptureModal,
-  type CaptureMode,
-} from '@/src/components/ChatCaptureModal';
-import { MessageAudioBubble } from '@/src/components/MessageAudioBubble';
-import { MessageVideoBubble } from '@/src/components/MessageVideoBubble';
-import {
   fetchChatDetail,
   setChatArchived,
   setChatMuted,
@@ -42,10 +43,8 @@ import {
 } from '@/src/lib/api/chats';
 import { fetchPresence } from '@/src/lib/api/presence';
 import { createComplaint, ComplaintReason } from '@/src/lib/api/complaints';
-import {
-  uploadPickedMedia,
-  type PickedMediaAsset,
-} from '@/src/lib/api/media';
+import { apiClient } from '@/src/lib/api/client';
+import type { PickedMediaAsset } from '@/src/lib/api/media';
 import {
   deleteChatMessage,
   editChatMessage,
@@ -95,6 +94,7 @@ import {
 } from '@/src/lib/realtime/events';
 
 type ComposerPanelTab = 'stickers' | 'emoji';
+type CaptureMode = 'audio' | 'video';
 
 const reportReasons: ComplaintReason[] = ['spam', 'abuse', 'fraud', 'harassment', 'other'];
 
@@ -112,6 +112,151 @@ const emojiGroups = [
     items: ['💯', '💪', '👌', '🤝', '👏', '🙌', '🤍', '💙', '💜', '💥', '✨', '⚡'],
   },
 ];
+
+const VIDEO_MAX_DURATION_SECONDS = 30;
+const VIDEO_MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
+const VIDEO_BITRATE = 750_000;
+
+function formatMillis(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatSecondsRemaining(ms: number) {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  return `00:${String(seconds).padStart(2, '0')}`;
+}
+
+
+function normalizeUploadMimeType(mimeType?: string | null, fallback?: string): string {
+  const value = String(mimeType || fallback || '').trim().toLowerCase();
+
+  if (!value) return '';
+  if (value === 'audio/m4a' || value === 'audio/x-m4a') return 'audio/mp4';
+  if (value === 'image/jpg') return 'image/jpeg';
+  if (value === 'video/mov') return 'video/quicktime';
+
+  return value;
+}
+
+function buildUploadFilename(
+  asset: PickedMediaAsset & { type?: string | null },
+  fallbackPrefix: string,
+  fallbackExtension: string,
+) {
+  if (asset.fileName?.trim()) {
+    return asset.fileName.trim();
+  }
+
+  return `${fallbackPrefix}-${Date.now()}${fallbackExtension}`;
+}
+
+async function assetUriToBlob(asset: PickedMediaAsset): Promise<Blob | File> {
+  if (Platform.OS === 'web' && asset.file) {
+    return asset.file;
+  }
+
+  const response = await fetch(asset.uri);
+  return await response.blob();
+}
+
+async function uploadBlobToSignedUrl(
+  url: string,
+  method: string,
+  body: Blob | File,
+  headers: Record<string, string>,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method || 'PUT', url);
+
+    Object.entries(headers).forEach(([key, value]) => {
+      xhr.setRequestHeader(key, value);
+    });
+
+    xhr.onload = () => {
+      const status = xhr.status || 0;
+
+      if (status >= 200 && status < 300) {
+        resolve();
+        return;
+      }
+
+      reject(
+        new Error(
+          `S3 upload failed with status ${status}${xhr.responseText ? `: ${xhr.responseText}` : ''}`,
+        ),
+      );
+    };
+
+    xhr.onerror = () => reject(new Error('S3 upload network error'));
+    xhr.ontimeout = () => reject(new Error('S3 upload timeout'));
+    xhr.timeout = 60000;
+
+    xhr.send(body as any);
+  });
+}
+
+async function uploadChatAsset(
+  asset: PickedMediaAsset & { type?: string | null },
+  options: {
+    filenamePrefix: string;
+    fallbackContentType: string;
+    fallbackExtension: string;
+    durationSeconds?: number;
+  },
+): Promise<{ uuid: string }> {
+  const blob = await assetUriToBlob(asset);
+  const filename = buildUploadFilename(asset, options.filenamePrefix, options.fallbackExtension);
+  const contentType =
+    normalizeUploadMimeType(asset.mimeType, options.fallbackContentType) ||
+    options.fallbackContentType;
+  const size = asset.fileSize || Number((blob as any)?.size || 0);
+
+  const presignResponse = await apiClient.post('/media/presign/', {
+    filename,
+    content_type: contentType,
+    size,
+    is_public: false,
+    ...(options.durationSeconds ? { duration_seconds: options.durationSeconds } : {}),
+  });
+
+  const presignData = presignResponse.data as {
+    media?: { uuid?: string };
+    upload?: { method?: string; url?: string; headers?: Record<string, string> };
+  };
+
+  const mediaUuid = presignData?.media?.uuid;
+  const uploadUrl = presignData?.upload?.url;
+
+  if (!mediaUuid || !uploadUrl) {
+    throw new Error('Invalid presign response');
+  }
+
+  const uploadHeaders: Record<string, string> = {
+    ...(presignData.upload?.headers || {}),
+  };
+
+  if (!uploadHeaders['Content-Type'] && !uploadHeaders['content-type']) {
+    uploadHeaders['Content-Type'] = contentType;
+  }
+
+  await uploadBlobToSignedUrl(
+    uploadUrl,
+    presignData.upload?.method || 'PUT',
+    blob,
+    uploadHeaders,
+  );
+
+  const completeResponse = await apiClient.post('/media/complete/', {
+    media_uuid: mediaUuid,
+  });
+
+  return completeResponse.data as { uuid: string };
+}
 
 function animateLayout() {
   LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -280,6 +425,11 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { chatUuid } = useLocalSearchParams<{ chatUuid: string }>();
 
+  const cameraRef = useRef<any>(null);
+  const [audioPermission, requestAudioPermission] = Audio.usePermissions();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
+
   const listRef = useRef<FlatList<MessageItem>>(null);
   const isNearBottomRef = useRef(true);
 
@@ -321,6 +471,15 @@ export default function ChatScreen() {
 
   const [captureVisible, setCaptureVisible] = useState(false);
   const [captureMode, setCaptureMode] = useState<CaptureMode>('audio');
+  const [audioRecording, setAudioRecording] = useState<Audio.Recording | null>(null);
+  const [audioDurationMs, setAudioDurationMs] = useState(0);
+  const [videoRecording, setVideoRecording] = useState(false);
+  const [videoDurationMs, setVideoDurationMs] = useState(0);
+  const [cameraFacing, setCameraFacing] = useState<CameraType>('front');
+  const [cameraTorch, setCameraTorch] = useState(false);
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const audioStatusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [reportType, setReportType] = useState<'user' | 'chat'>('chat');
   const [reportReason, setReportReason] = useState<ComplaintReason>('other');
@@ -367,6 +526,63 @@ export default function ChatScreen() {
 
     return Boolean(selectedMessage.is_own_message && !selectedMessage.is_deleted);
   }, [selectedMessage]);
+
+  useEffect(() => {
+    if (!captureVisible) {
+      setVideoDurationMs(0);
+      setAudioDurationMs(0);
+      setCameraTorch(false);
+      setCameraFacing('front');
+      setCameraReady(false);
+
+      if (audioStatusIntervalRef.current) {
+        clearInterval(audioStatusIntervalRef.current);
+        audioStatusIntervalRef.current = null;
+      }
+    }
+  }, [captureVisible]);
+
+  useEffect(() => {
+    if (captureVisible && captureMode === 'video') {
+      void ensureVideoPermissions();
+    }
+  }, [captureVisible, captureMode]);
+
+  useEffect(() => {
+    return () => {
+      if (audioStatusIntervalRef.current) {
+        clearInterval(audioStatusIntervalRef.current);
+        audioStatusIntervalRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    if (videoRecording) {
+      interval = setInterval(() => {
+        setVideoDurationMs((current) => {
+          const next = current + 250;
+
+          if (next >= VIDEO_MAX_DURATION_SECONDS * 1000) {
+            try {
+              cameraRef.current?.stopRecording?.();
+            } catch (error) {
+              console.error('auto stop video recording error:', error);
+            }
+            return VIDEO_MAX_DURATION_SECONDS * 1000;
+          }
+
+          return next;
+        });
+      }, 250);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [videoRecording]);
 
   const scrollToBottom = (animated = true) => {
     requestAnimationFrame(() => {
@@ -1032,6 +1248,24 @@ export default function ChatScreen() {
     };
   };
 
+  const getApiErrorMessage = (error: any, fallback: string) => {
+    const data = error?.response?.data;
+
+    if (typeof data?.detail === 'string' && data.detail.trim()) {
+      return data.detail.trim();
+    }
+
+    if (typeof error?.message === 'string' && error.message.trim()) {
+      return error.message.trim();
+    }
+
+    return fallback;
+  };
+
+  const getHeaderAvatarUrl = (currentChat: ChatListItem | null) => {
+    return currentChat?.peer_user?.avatar || currentChat?.avatar || null;
+  };
+
   const getPickedMediaKind = (
     asset: PickedMediaAsset & { type?: string | null }
   ): 'image' | 'video' => {
@@ -1087,18 +1321,12 @@ export default function ChatScreen() {
     scrollToBottom();
 
     try {
-      const uploaded =
-        mediaType === 'audio'
-          ? await uploadPickedMedia(asset, {
-              filenamePrefix: 'voice',
-              fallbackContentType: 'audio/mp4',
-              isPublic: false,
-            })
-          : await uploadPickedMedia(asset, {
-              filenamePrefix: 'video',
-              fallbackContentType: 'video/mp4',
-              isPublic: false,
-            });
+      const uploaded = await uploadChatAsset(asset, {
+        filenamePrefix: mediaType === 'audio' ? 'voice' : 'video',
+        fallbackContentType: mediaType === 'audio' ? 'audio/mp4' : 'video/mp4',
+        fallbackExtension: mediaType === 'audio' ? (Platform.OS === 'web' ? '.webm' : '.m4a') : '.mp4',
+        durationSeconds: Math.max(1, Math.ceil(Number(asset.duration || 1))),
+      });
 
       const savedMessage = await sendChatMessage(chatUuid, {
         client_uuid: clientUuid,
@@ -1140,15 +1368,223 @@ export default function ChatScreen() {
 
       Alert.alert(
         'Ошибка',
-        mediaType === 'audio'
-          ? 'Не удалось отправить голосовое сообщение'
-          : 'Не удалось отправить видео-сообщение',
+        getApiErrorMessage(
+          error,
+          mediaType === 'audio'
+            ? 'Не удалось отправить голосовое сообщение'
+            : 'Не удалось отправить видео-сообщение',
+        ),
       );
     }
   };
 
   const handleCapturedMedia = async (asset: PickedMediaAsset) => {
     await sendMediaMessage(captureMode, asset);
+  };
+
+  const closeCaptureSafely = async () => {
+    if (captureBusy) return;
+
+    try {
+      if (audioRecording) {
+        await audioRecording.stopAndUnloadAsync().catch(() => null);
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+        }).catch(() => null);
+        setAudioRecording(null);
+      }
+
+      if (videoRecording) {
+        cameraRef.current?.stopRecording?.();
+        setVideoRecording(false);
+      }
+
+      setAudioDurationMs(0);
+      setVideoDurationMs(0);
+    } finally {
+      setCaptureVisible(false);
+    }
+  };
+
+  const startAudioRecording = async () => {
+    try {
+      setCaptureBusy(true);
+
+      const permission = audioPermission?.granted
+        ? audioPermission
+        : await requestAudioPermission();
+
+      if (!permission?.granted) {
+        Alert.alert('Нет доступа', 'Разреши микрофон для записи голосовых сообщений.');
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.startAsync();
+
+      if (audioStatusIntervalRef.current) {
+        clearInterval(audioStatusIntervalRef.current);
+      }
+
+      audioStatusIntervalRef.current = setInterval(async () => {
+        try {
+          const status = await recording.getStatusAsync();
+          if (status.isLoaded) {
+            setAudioDurationMs(status.durationMillis || 0);
+          }
+        } catch (error) {
+          console.error('audio status poll error:', error);
+        }
+      }, 200);
+
+      setAudioDurationMs(0);
+      setAudioRecording(recording);
+    } catch (error) {
+      console.error('startAudioRecording error:', error);
+      Alert.alert('Ошибка', 'Не удалось начать запись голосового сообщения');
+    } finally {
+      setCaptureBusy(false);
+    }
+  };
+
+  const stopAudioRecordingAndSend = async () => {
+    if (!audioRecording) return;
+
+    try {
+      setCaptureBusy(true);
+
+      if (audioStatusIntervalRef.current) {
+        clearInterval(audioStatusIntervalRef.current);
+        audioStatusIntervalRef.current = null;
+      }
+
+      const statusBeforeStop = await audioRecording.getStatusAsync().catch(() => null);
+      await audioRecording.stopAndUnloadAsync();
+      const statusAfterStop = await audioRecording.getStatusAsync().catch(() => null);
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+
+      const uri = audioRecording.getURI();
+      const durationMillis =
+        Number((statusAfterStop as any)?.durationMillis || 0) ||
+        Number((statusBeforeStop as any)?.durationMillis || 0) ||
+        audioDurationMs ||
+        1000;
+      const durationSeconds = Math.max(1, Math.ceil(durationMillis / 1000));
+
+      setAudioRecording(null);
+
+      if (!uri) {
+        Alert.alert('Ошибка', 'Не удалось получить аудиофайл');
+        return;
+      }
+
+      await handleCapturedMedia({
+        uri,
+        fileName: `voice-${Date.now()}${Platform.OS === 'web' ? '.webm' : '.m4a'}`,
+        mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/mp4',
+        duration: durationSeconds,
+      });
+
+      setAudioDurationMs(0);
+      setCaptureVisible(false);
+    } catch (error) {
+      console.error('stopAudioRecordingAndSend error:', error);
+      Alert.alert('Ошибка', 'Не удалось отправить голосовое сообщение');
+    } finally {
+      setCaptureBusy(false);
+    }
+  };
+
+  const ensureVideoPermissions = async () => {
+    const cameraStatus = cameraPermission?.granted
+      ? cameraPermission
+      : await requestCameraPermission();
+
+    if (!cameraStatus?.granted) {
+      Alert.alert('Нет доступа', 'Разреши камеру для записи видео.');
+      return false;
+    }
+
+    const micStatus = microphonePermission?.granted
+      ? microphonePermission
+      : await requestMicrophonePermission();
+
+    if (!micStatus?.granted) {
+      Alert.alert('Нет доступа', 'Разреши микрофон для записи видео.');
+      return false;
+    }
+
+    return true;
+  };
+
+  const startVideoRecording = async () => {
+    try {
+      setCaptureBusy(true);
+
+      const granted = await ensureVideoPermissions();
+      if (!granted) {
+        return;
+      }
+
+      if (!cameraRef.current || !cameraReady) {
+        Alert.alert('Камера не готова', 'Подожди секунду и попробуй снова.');
+        return;
+      }
+
+      setVideoDurationMs(0);
+      setVideoRecording(true);
+
+      const result = await cameraRef.current.recordAsync?.({
+        maxDuration: VIDEO_MAX_DURATION_SECONDS,
+        maxFileSize: VIDEO_MAX_FILE_SIZE_BYTES,
+        videoBitrate: VIDEO_BITRATE,
+        videoQuality: Platform.OS === 'android' ? '480p' : '4:3',
+        codec: Platform.OS === 'ios' ? 'avc1' : undefined,
+      });
+
+      const durationSeconds = Math.max(1, Math.ceil((videoDurationMs || 1000) / 1000));
+      setVideoRecording(false);
+
+      if (!result?.uri) {
+        Alert.alert('Ошибка', 'Не удалось записать видео');
+        return;
+      }
+
+      await handleCapturedMedia({
+        uri: result.uri,
+        fileName: `video-${Date.now()}.mp4`,
+        mimeType: 'video/mp4',
+        duration: durationSeconds,
+      });
+
+      setVideoDurationMs(0);
+      setCaptureVisible(false);
+    } catch (error) {
+      console.error('startVideoRecording error:', error);
+      setVideoRecording(false);
+      Alert.alert('Ошибка', 'Не удалось записать видео');
+    } finally {
+      setCaptureBusy(false);
+    }
+  };
+
+  const stopVideoRecording = () => {
+    try {
+      cameraRef.current?.stopRecording?.();
+    } catch (error) {
+      console.error('stopVideoRecording error:', error);
+    }
   };
 
   const handlePickMediaFromGallery = async () => {
@@ -1209,10 +1645,14 @@ export default function ChatScreen() {
       setReplyTo(null);
       scrollToBottom();
 
-      const uploaded = await uploadPickedMedia(asset, {
+      const uploaded = await uploadChatAsset(asset, {
         filenamePrefix,
         fallbackContentType,
-        isPublic: false,
+        fallbackExtension: messageType === 'video' ? '.mp4' : '.jpg',
+        durationSeconds:
+          messageType === 'video'
+            ? Math.max(1, Math.ceil(Number(asset.duration || 1)))
+            : undefined,
       });
 
       const savedMessage = await sendChatMessage(chatUuid, {
@@ -1240,9 +1680,12 @@ export default function ChatScreen() {
       console.error('handlePickMediaFromGallery error:', error);
       Alert.alert(
         'Ошибка',
-        pickedKind === 'video'
-          ? 'Не удалось отправить видео'
-          : 'Не удалось отправить фото',
+        getApiErrorMessage(
+          error,
+          pickedKind === 'video'
+            ? 'Не удалось отправить видео'
+            : 'Не удалось отправить фото',
+        ),
       );
     }
   };
@@ -1476,9 +1919,6 @@ export default function ChatScreen() {
   const renderMessage = ({ item }: { item: MessageItem }) => {
     const isOwn = Boolean(item.is_own_message);
     const metaColor = isOwn ? 'rgba(255,255,255,0.82)' : theme.colors.muted;
-    const imageUrl = getFirstImageUrl(item);
-    const audioUrl = getFirstAudioUrl(item);
-    const videoUrl = getFirstVideoUrl(item);
     const stickerImage = getStickerImage(item);
     const stickerEmoji = getStickerEmoji(item);
 
@@ -1673,18 +2113,26 @@ export default function ChatScreen() {
           </Pressable>
 
           <Pressable onPress={openPeerProfile} style={styles.headerCenter} hitSlop={12}>
-            <View
-              style={[
-                styles.headerAvatar,
-                {
-                  backgroundColor: theme.colors.primarySoft,
-                },
-              ]}
-            >
-              <Text style={[styles.headerAvatarText, { color: theme.colors.primary }]}>
-                {formatChatTitle(chat).slice(0, 1).toUpperCase()}
-              </Text>
-            </View>
+            {getHeaderAvatarUrl(chat) ? (
+              <ExpoImage
+                source={{ uri: getHeaderAvatarUrl(chat)! }}
+                style={styles.headerAvatarImage}
+                contentFit="cover"
+              />
+            ) : (
+              <View
+                style={[
+                  styles.headerAvatar,
+                  {
+                    backgroundColor: theme.colors.primarySoft,
+                  },
+                ]}
+              >
+                <Text style={[styles.headerAvatarText, { color: theme.colors.primary }]}>
+                  {formatChatTitle(chat).slice(0, 1).toUpperCase()}
+                </Text>
+              </View>
+            )}
 
             <View style={{ flex: 1 }}>
               <Text style={[styles.headerTitle, { color: theme.colors.text }]} numberOfLines={1}>
@@ -1710,7 +2158,7 @@ export default function ChatScreen() {
           </Pressable>
         </View>
 
-        {chat?.chat_type === 'direct' && chat?.peer_user?.uuid && showQuickActions && !isBlocked ? (
+        {chat?.chat_type === 'direct' && chat?.peer_user?.uuid && showQuickActions && !isBlocked && !isContact ? (
           <View style={[styles.quickActionsBar, { borderBottomColor: theme.colors.borderStrong }]}>
             {!isContact ? (
               <Pressable
@@ -2127,12 +2575,294 @@ export default function ChatScreen() {
         </View>
       </KeyboardAvoidingView>
 
-      <ChatCaptureModal
+      <Modal
         visible={captureVisible}
-        mode={captureMode}
-        onClose={() => setCaptureVisible(false)}
-        onCaptured={handleCapturedMedia}
-      />
+        transparent
+        animationType="fade"
+        onRequestClose={() => void closeCaptureSafely()}
+      >
+        {captureMode === 'audio' ? (
+          <View style={styles.audioOverlay}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => void closeCaptureSafely()} />
+
+            <View
+              style={[
+                styles.audioSheet,
+                {
+                  backgroundColor: theme.colors.cardSolid,
+                  borderColor: theme.colors.borderStrong,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.audioIconWrap,
+                  {
+                    backgroundColor: theme.colors.primarySoft,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={audioRecording ? 'mic' : 'mic-outline'}
+                  size={30}
+                  color={theme.colors.primary}
+                />
+              </View>
+
+              <Text style={[styles.audioTitle, { color: theme.colors.text }]}>Голосовое сообщение</Text>
+              <Text style={[styles.audioTimer, { color: theme.colors.muted }]}> 
+                {formatMillis(audioDurationMs)}
+              </Text>
+
+              <Text style={[styles.audioHint, { color: theme.colors.muted }]}> 
+                {audioRecording
+                  ? 'Нажми “Отправить”, чтобы закончить и отправить запись'
+                  : 'Нажми “Записать”, чтобы начать запись'}
+              </Text>
+
+              <View style={styles.audioActions}>
+                <Pressable
+                  onPress={() => void closeCaptureSafely()}
+                  style={[
+                    styles.secondaryBtn,
+                    {
+                      borderColor: theme.colors.borderStrong,
+                      backgroundColor: theme.colors.backgroundTertiary,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.secondaryBtnText, { color: theme.colors.text }]}>
+                    Отмена
+                  </Text>
+                </Pressable>
+
+                {!audioRecording ? (
+                  <Pressable
+                    onPress={() => void startAudioRecording()}
+                    disabled={captureBusy}
+                    style={[
+                      styles.primaryBtn,
+                      {
+                        backgroundColor: theme.colors.primary,
+                      },
+                    ]}
+                  >
+                    {captureBusy ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="radio-button-on" size={18} color="#FFFFFF" />
+                        <Text style={styles.primaryBtnText}>Записать</Text>
+                      </>
+                    )}
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    onPress={() => void stopAudioRecordingAndSend()}
+                    disabled={captureBusy}
+                    style={[
+                      styles.primaryBtn,
+                      {
+                        backgroundColor: theme.colors.primary,
+                      },
+                    ]}
+                  >
+                    {captureBusy ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="send" size={18} color="#FFFFFF" />
+                        <Text style={styles.primaryBtnText}>Отправить</Text>
+                      </>
+                    )}
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.videoOverlay}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => void closeCaptureSafely()} />
+
+            <View
+              style={[
+                styles.videoSheet,
+                {
+                  backgroundColor: theme.colors.cardSolid,
+                  borderColor: theme.colors.borderStrong,
+                },
+              ]}
+            >
+              <View style={styles.videoTopRow}>
+                <Pressable
+                  onPress={() => void closeCaptureSafely()}
+                  style={[
+                    styles.videoIconBtn,
+                    {
+                      backgroundColor: theme.colors.backgroundTertiary,
+                    },
+                  ]}
+                >
+                  <Ionicons name="close" size={20} color={theme.colors.text} />
+                </Pressable>
+
+                <View
+                  style={[
+                    styles.videoPill,
+                    {
+                      backgroundColor: theme.colors.backgroundTertiary,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.videoPillDot,
+                      {
+                        opacity: videoRecording ? 1 : 0.45,
+                      },
+                    ]}
+                  />
+                  <Text style={[styles.videoPillText, { color: theme.colors.text }]}> 
+                    {videoRecording
+                      ? formatSecondsRemaining(Math.max(0, VIDEO_MAX_DURATION_SECONDS * 1000 - videoDurationMs))
+                      : 'Лимит 00:30'}
+                  </Text>
+                </View>
+
+                <Pressable
+                  onPress={() => setCameraTorch((current) => !current)}
+                  style={[
+                    styles.videoIconBtn,
+                    {
+                      backgroundColor: theme.colors.backgroundTertiary,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={cameraTorch ? 'flash' : 'flash-off'}
+                    size={18}
+                    color={theme.colors.text}
+                  />
+                </Pressable>
+              </View>
+
+              <View
+                style={[
+                  styles.cameraCircleOuter,
+                  {
+                    borderColor: theme.colors.borderStrong,
+                    backgroundColor: '#000000',
+                  },
+                ]}
+              >
+                {captureVisible && cameraPermission?.granted && microphonePermission?.granted ? (
+                  <View style={styles.cameraCircleInner}>
+                    <CameraView
+                      ref={cameraRef}
+                      style={styles.cameraView}
+                      facing={cameraFacing}
+                      mode="video"
+                      active={captureVisible}
+                      enableTorch={cameraTorch}
+                      mirror={cameraFacing === 'front'}
+                      mute={false}
+                      onCameraReady={() => setCameraReady(true)}
+                    />
+                  </View>
+                ) : (
+                  <View style={styles.cameraFallback}>
+                    <Ionicons name="videocam-outline" size={42} color={theme.colors.primary} />
+                    <Text style={[styles.cameraFallbackTitle, { color: theme.colors.text }]}>Нужен доступ</Text>
+                    <Text style={[styles.cameraFallbackText, { color: theme.colors.muted }]}> 
+                      Разреши камеру и микрофон для записи видео-сообщений
+                    </Text>
+
+                    <Pressable
+                      onPress={() => void ensureVideoPermissions()}
+                      style={[
+                        styles.permissionBtn,
+                        {
+                          backgroundColor: theme.colors.primary,
+                        },
+                      ]}
+                    >
+                      <Text style={styles.permissionBtnText}>Разрешить</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+
+              <Text style={[styles.videoCaption, { color: theme.colors.muted }]}> 
+                Видео записывается в кружке, до 30 секунд, в лёгком качестве для меньшего веса.
+              </Text>
+
+              <View style={styles.videoBottomRow}>
+                <Pressable
+                  onPress={() =>
+                    setCameraFacing((current) => (current === 'back' ? 'front' : 'back'))
+                  }
+                  style={[
+                    styles.videoControlBtn,
+                    {
+                      backgroundColor: theme.colors.backgroundTertiary,
+                    },
+                  ]}
+                >
+                  <Ionicons name="camera-reverse-outline" size={22} color={theme.colors.text} />
+                </Pressable>
+
+                {!videoRecording ? (
+                  <Pressable
+                    onPress={() => void startVideoRecording()}
+                    disabled={captureBusy || !cameraPermission?.granted || !microphonePermission?.granted || !cameraReady}
+                    style={styles.recordButtonWrap}
+                  >
+                    <View
+                      style={[
+                        styles.recordButtonOuter,
+                        {
+                          borderColor: theme.colors.primary,
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.recordButtonInner,
+                          {
+                            backgroundColor: theme.colors.primary,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </Pressable>
+                ) : (
+                  <Pressable onPress={stopVideoRecording} style={styles.recordButtonWrap}>
+                    <View
+                      style={[
+                        styles.stopButtonOuter,
+                        {
+                          borderColor: theme.colors.primary,
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.stopButtonInner,
+                          {
+                            backgroundColor: theme.colors.primary,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </Pressable>
+                )}
+
+                <View style={styles.videoControlGhost} />
+              </View>
+            </View>
+          </View>
+        )}
+      </Modal>
 
       <Modal
         visible={editingVisible}
@@ -2671,6 +3401,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  headerAvatarImage: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    backgroundColor: '#E5E7EB',
+  },
+
   headerAvatarText: {
     fontSize: 16,
     fontWeight: '800',
@@ -3045,6 +3782,263 @@ const styles = StyleSheet.create({
   helperText: {
     fontSize: 13,
     lineHeight: 18,
+  },
+
+  audioOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.34)',
+    justifyContent: 'flex-end',
+    padding: 14,
+  },
+
+  audioSheet: {
+    borderRadius: 28,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+
+  audioIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+
+  audioTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+
+  audioTimer: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+
+  audioHint: {
+    textAlign: 'center',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 18,
+  },
+
+  audioActions: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+
+  secondaryBtn: {
+    flex: 1,
+    minHeight: 50,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  secondaryBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  primaryBtn: {
+    flex: 1,
+    minHeight: 50,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  primaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  videoOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.34)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+
+  videoSheet: {
+    width: '100%',
+    borderRadius: 30,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 18,
+    alignItems: 'center',
+  },
+
+  videoTopRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+
+  videoIconBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  videoPill: {
+    minHeight: 40,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  videoPillDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: '#FF4D4F',
+  },
+
+  videoPillText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  cameraCircleOuter: {
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+
+  cameraCircleInner: {
+    width: 268,
+    height: 268,
+    borderRadius: 134,
+    overflow: 'hidden',
+    backgroundColor: '#000000',
+  },
+
+  cameraView: {
+    width: '100%',
+    height: '100%',
+  },
+
+  cameraFallback: {
+    width: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  cameraFallbackTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginTop: 14,
+    marginBottom: 6,
+  },
+
+  cameraFallbackText: {
+    textAlign: 'center',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+
+  permissionBtn: {
+    minWidth: 140,
+    minHeight: 46,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+
+  permissionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  videoCaption: {
+    marginTop: 14,
+    textAlign: 'center',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+
+  videoBottomRow: {
+    marginTop: 18,
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  videoControlBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  videoControlGhost: {
+    width: 52,
+    height: 52,
+  },
+
+  recordButtonWrap: {
+    width: 86,
+    height: 86,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  recordButtonOuter: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    borderWidth: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  recordButtonInner: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+  },
+
+  stopButtonOuter: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    borderWidth: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  stopButtonInner: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
   },
 
   modalOverlay: {

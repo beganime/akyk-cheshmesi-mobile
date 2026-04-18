@@ -21,13 +21,14 @@ function formatDisplayName(params: Record<string, string | string[] | undefined>
   return fullName || username || 'Пользователь';
 }
 
-function formatPresence(presence: PresenceDetail | null) {
+function formatPresenceText(presence: PresenceDetail | null) {
   if (!presence) return 'Статус неизвестен';
   if (presence.status === 'online') return 'В сети';
 
   if (presence.last_seen_at) {
     const date = new Date(presence.last_seen_at);
-    return `Был(а) в сети ${date.toLocaleString()}`;
+    // Можно улучшить форматирование даты (например, "Сегодня в 14:00")
+    return `Был(а) ${date.toLocaleDateString()} в ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   }
 
   return 'Не в сети';
@@ -75,14 +76,20 @@ export default function ChatUserProfileScreen() {
     }
   };
 
+  const isOnline = presence?.status === 'online';
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={styles.header}>
         <Pressable
           onPress={() => router.back()}
-          style={[styles.headerButton, { borderColor: theme.colors.border }]}
+          style={({ pressed }) => [
+            styles.headerButton,
+            { backgroundColor: theme.colors.card },
+            pressed && { opacity: 0.7 }
+          ]}
         >
-          <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
+          <Ionicons name="chevron-back" size={22} color={theme.colors.text} />
         </Pressable>
 
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
@@ -91,9 +98,13 @@ export default function ChatUserProfileScreen() {
 
         <Pressable
           onPress={() => void handleShare()}
-          style={[styles.headerButton, { borderColor: theme.colors.border }]}
+          style={({ pressed }) => [
+            styles.headerButton,
+            { backgroundColor: theme.colors.card },
+            pressed && { opacity: 0.7 }
+          ]}
         >
-          <Ionicons name="share-outline" size={18} color={theme.colors.text} />
+          <Ionicons name="share-outline" size={20} color={theme.colors.text} style={{ marginLeft: 2 }} />
         </Pressable>
       </View>
 
@@ -106,8 +117,8 @@ export default function ChatUserProfileScreen() {
               </Text>
             </View>
 
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.name, { color: theme.colors.text }]}>
+            <View style={styles.userInfo}>
+              <Text style={[styles.name, { color: theme.colors.text }]} numberOfLines={2}>
                 {displayName}
               </Text>
 
@@ -117,23 +128,34 @@ export default function ChatUserProfileScreen() {
             </View>
           </View>
 
-          {loading ? (
-            <View style={styles.loaderWrap}>
-              <ActivityIndicator color={theme.colors.primary} />
-            </View>
-          ) : (
-            <Text style={[styles.presence, { color: theme.colors.muted }]}>
-              {formatPresence(presence)}
-            </Text>
-          )}
+          <View style={[styles.presenceContainer, { backgroundColor: theme.colors.backgroundTertiary }]}>
+            {loading ? (
+              <ActivityIndicator color={theme.colors.primary} size="small" />
+            ) : (
+              <View style={styles.presenceRow}>
+                <View 
+                  style={[
+                    styles.statusDot, 
+                    { backgroundColor: isOnline ? theme.colors.success : theme.colors.muted }
+                  ]} 
+                />
+                <Text style={[styles.presenceText, { color: theme.colors.text }]}>
+                  {formatPresenceText(presence)}
+                </Text>
+              </View>
+            )}
+          </View>
         </GlassCard>
 
         <GlassCard>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            О пользователе
-          </Text>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="information-circle-outline" size={20} color={theme.colors.primary} />
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+              О пользователе
+            </Text>
+          </View>
 
-          <Text style={[styles.aboutText, { color: theme.colors.muted }]}>
+          <Text style={[styles.aboutText, { color: theme.colors.text }]}>
             {bio || 'Пользователь пока не добавил описание.'}
           </Text>
         </GlassCard>
@@ -148,8 +170,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -157,61 +178,89 @@ const styles = StyleSheet.create({
   headerButton: {
     width: 44,
     height: 44,
-    borderRadius: 16,
-    borderWidth: 1,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
   content: {
     padding: 16,
-    paddingBottom: 120,
-    gap: 12,
+    gap: 16,
   },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    marginBottom: 10,
+    gap: 16,
+    marginBottom: 16,
   },
   avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     color: '#FFFFFF',
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '700',
+  },
+  userInfo: {
+    flex: 1,
+    justifyContent: 'center',
   },
   name: {
     fontSize: 22,
     fontWeight: '700',
     marginBottom: 4,
+    lineHeight: 26,
   },
   username: {
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '500',
   },
-  loaderWrap: {
-    marginTop: 8,
+  presenceContainer: {
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     alignItems: 'flex-start',
   },
-  presence: {
+  presenceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  presenceText: {
     fontSize: 14,
-    marginTop: 8,
+    fontWeight: '500',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
   },
   sectionTitle: {
     fontSize: 17,
     fontWeight: '700',
-    marginBottom: 8,
   },
   aboutText: {
     fontSize: 15,
     lineHeight: 22,
+    opacity: 0.9,
   },
 });

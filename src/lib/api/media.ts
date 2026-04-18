@@ -126,18 +126,47 @@ async function assetToBlob(asset: PickedMediaAsset): Promise<Blob | File> {
   return await response.blob();
 }
 
-async function readResponsePreview(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.slice(0, 300);
-  } catch {
-    return '';
-  }
+async function uploadToSignedUrl(
+  url: string,
+  method: string,
+  body: Blob | File,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+
+    xhr.open(method, url);
+
+    xhr.onload = () => {
+      const status = xhr.status || 0;
+
+      if (status >= 200 && status < 300) {
+        resolve();
+        return;
+      }
+
+      reject(
+        new Error(
+          `S3 upload failed with status ${status}${xhr.responseText ? `: ${xhr.responseText}` : ''}`,
+        ),
+      );
+    };
+
+    xhr.onerror = () => {
+      reject(new Error('S3 upload network error'));
+    };
+
+    xhr.ontimeout = () => {
+      reject(new Error('S3 upload timeout'));
+    };
+
+    xhr.timeout = 60000;
+    xhr.send(body as any);
+  });
 }
 
 async function uploadLocal(
   asset: PickedMediaAsset,
-  options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean }
+  options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean },
 ): Promise<UploadedMedia> {
   const formData = new FormData();
   const durationSeconds = normalizeDurationSeconds(asset.duration);
@@ -151,7 +180,7 @@ async function uploadLocal(
         uri: asset.uri,
         name: buildSafeFilename(asset, options.filenamePrefix),
         type: buildContentType(asset, options.fallbackContentType),
-      } as any
+      } as any,
     );
   }
 
@@ -172,7 +201,7 @@ async function uploadLocal(
 
 async function uploadViaPresign(
   asset: PickedMediaAsset,
-  options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean }
+  options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean },
 ): Promise<UploadedMedia> {
   const blob = await assetToBlob(asset);
 
@@ -194,26 +223,11 @@ async function uploadViaPresign(
     throw new Error('Invalid presign response');
   }
 
-  const uploadHeaders: Record<string, string> = {
-    ...(presignData.upload.headers || {}),
-  };
-
-  if (!uploadHeaders['Content-Type'] && !uploadHeaders['content-type']) {
-    uploadHeaders['Content-Type'] = contentType;
-  }
-
-  const putResponse = await fetch(presignData.upload.url, {
-    method: presignData.upload.method || 'PUT',
-    headers: uploadHeaders,
-    body: blob,
-  });
-
-  if (!putResponse.ok) {
-    const preview = await readResponsePreview(putResponse);
-    throw new Error(
-      `S3 upload failed with status ${putResponse.status}${preview ? `: ${preview}` : ''}`
-    );
-  }
+  await uploadToSignedUrl(
+    presignData.upload.url,
+    presignData.upload.method || 'PUT',
+    blob,
+  );
 
   const completeResponse = await apiClient.post<UploadedMedia>('/media/complete/', {
     media_uuid: presignData.media.uuid,
@@ -236,7 +250,7 @@ function shouldFallbackToLocalUpload(error: any): boolean {
 
 export async function uploadPickedMedia(
   asset: PickedMediaAsset,
-  options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean }
+  options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean },
 ): Promise<UploadedMedia> {
   try {
     return await uploadViaPresign(asset, options);
@@ -273,11 +287,9 @@ export async function uploadPickedAudio(asset: PickedMediaAsset): Promise<Upload
   });
 }
 
-export function buildMessageTypeFromMedia(media?: UploadedMedia | null):
-  | 'image'
-  | 'video'
-  | 'audio'
-  | 'file' {
+export function buildMessageTypeFromMedia(
+  media?: UploadedMedia | null,
+): 'image' | 'video' | 'audio' | 'file' {
   const kind = String(media?.media_kind || '').toLowerCase();
   const contentType = String(media?.content_type || '').toLowerCase();
 
