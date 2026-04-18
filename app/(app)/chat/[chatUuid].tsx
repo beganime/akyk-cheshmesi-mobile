@@ -45,9 +45,11 @@ import { fetchPresence } from '@/src/lib/api/presence';
 import { createComplaint, ComplaintReason } from '@/src/lib/api/complaints';
 import { apiClient } from '@/src/lib/api/client';
 import type { PickedMediaAsset } from '@/src/lib/api/media';
+import { uploadPickedMedia } from '@/src/lib/api/media';
 import {
   deleteChatMessage,
   editChatMessage,
+  fetchChatMessageDetail,
   fetchChatMessages,
   markChatRead,
   sendChatMessage,
@@ -209,55 +211,28 @@ async function uploadChatAsset(
     durationSeconds?: number;
   },
 ): Promise<{ uuid: string }> {
-  const blob = await assetUriToBlob(asset);
-  const filename = buildUploadFilename(asset, options.filenamePrefix, options.fallbackExtension);
-  const contentType =
-    normalizeUploadMimeType(asset.mimeType, options.fallbackContentType) ||
-    options.fallbackContentType;
-  const size = asset.fileSize || Number((blob as any)?.size || 0);
-
-  const presignResponse = await apiClient.post('/media/presign/', {
-    filename,
-    content_type: contentType,
-    size,
-    is_public: false,
-    ...(options.durationSeconds ? { duration_seconds: options.durationSeconds } : {}),
-  });
-
-  const presignData = presignResponse.data as {
-    media?: { uuid?: string };
-    upload?: { method?: string; url?: string; headers?: Record<string, string> };
-  };
-
-  const mediaUuid = presignData?.media?.uuid;
-  const uploadUrl = presignData?.upload?.url;
-
-  if (!mediaUuid || !uploadUrl) {
-    throw new Error('Invalid presign response');
-  }
-
-  const uploadHeaders: Record<string, string> = {
-    ...(presignData.upload?.headers || {}),
-  };
-
-  if (!uploadHeaders['Content-Type'] && !uploadHeaders['content-type']) {
-    uploadHeaders['Content-Type'] = contentType;
-  }
-
-  await uploadBlobToSignedUrl(
-    uploadUrl,
-    presignData.upload?.method || 'PUT',
-    blob,
-    uploadHeaders,
+  const uploaded = await uploadPickedMedia(
+    {
+      ...asset,
+      duration: options.durationSeconds ?? asset.duration,
+      mimeType: normalizeUploadMimeType(asset.mimeType, options.fallbackContentType),
+      fileName: buildUploadFilename(asset, options.filenamePrefix, options.fallbackExtension),
+    },
+    {
+      filenamePrefix: options.filenamePrefix,
+      fallbackContentType: options.fallbackContentType,
+      isPublic: false,
+    },
   );
 
-  const completeResponse = await apiClient.post('/media/complete/', {
-    media_uuid: mediaUuid,
-  });
+  if (!uploaded?.uuid) {
+    throw new Error('Invalid upload response');
+  }
 
-  return completeResponse.data as { uuid: string };
+  return {
+    uuid: uploaded.uuid,
+  };
 }
-
 function animateLayout() {
   LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 }
@@ -843,14 +818,41 @@ export default function ChatScreen() {
       if (eventChatUuid !== chatUuid) return;
 
       const incomingMessage = extractMessageFromRealtimeEvent(event);
+
       if (incomingMessage?.uuid) {
-        setMessages((current) => {
-          const exists = current.some((item) => item.uuid === incomingMessage.uuid);
-          if (exists) return current;
-          const next = mergeMessages([...current, { ...incomingMessage, local_status: 'sent' }], current);
-          void saveCachedChatMessages(chatUuid, next);
-          return next;
-        });
+        const needsFullFetch =
+          incomingMessage.message_type === 'image' ||
+          incomingMessage.message_type === 'video' ||
+          incomingMessage.message_type === 'audio' ||
+          incomingMessage.message_type === 'file' ||
+          !Array.isArray(incomingMessage.attachments) ||
+          incomingMessage.attachments.some((attachment) => !attachment.file_url);
+
+        if (needsFullFetch) {
+          void fetchChatMessageDetail(chatUuid, incomingMessage.uuid)
+            .then((fullMessage) => {
+              setMessages((current) => {
+                const next = mergeMessages(
+                  [{ ...fullMessage, local_status: 'sent' }],
+                  current,
+                );
+                void saveCachedChatMessages(chatUuid, next);
+                return next;
+              });
+            })
+            .catch(() => {
+              void refreshMessagesSilent();
+            });
+        } else {
+          setMessages((current) => {
+            const next = mergeMessages(
+              [{ ...incomingMessage, local_status: 'sent' }],
+              current,
+            );
+            void saveCachedChatMessages(chatUuid, next);
+            return next;
+          });
+        }
       } else {
         void refreshMessagesSilent();
       }
@@ -862,7 +864,6 @@ export default function ChatScreen() {
       unsubscribe();
     };
   }, [chatUuid, refreshChat, refreshMessagesSilent]);
-
   useEffect(() => {
     void syncReadState();
   }, [latestIncomingMessage?.uuid]);
@@ -1593,8 +1594,9 @@ export default function ChatScreen() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.All,
-        quality: 0.9,
+        quality: 0.72,
         allowsEditing: false,
+        videoMaxDuration: VIDEO_MAX_DURATION_SECONDS,
       });
 
       if (result.canceled || !result.assets?.[0] || !chatUuid) {

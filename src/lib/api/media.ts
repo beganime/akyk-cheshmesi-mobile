@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+
 import { apiClient } from '@/src/lib/api/client';
 
 export type PickedMediaAsset = {
@@ -130,11 +131,18 @@ async function uploadToSignedUrl(
   url: string,
   method: string,
   body: Blob | File,
+  headers?: Record<string, string>,
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
 
-    xhr.open(method, url);
+    xhr.open(method || 'PUT', url);
+
+    Object.entries(headers || {}).forEach(([key, value]) => {
+      if (value) {
+        xhr.setRequestHeader(key, value);
+      }
+    });
 
     xhr.onload = () => {
       const status = xhr.status || 0;
@@ -159,7 +167,7 @@ async function uploadToSignedUrl(
       reject(new Error('S3 upload timeout'));
     };
 
-    xhr.timeout = 60000;
+    xhr.timeout = 90000;
     xhr.send(body as any);
   });
 }
@@ -191,8 +199,9 @@ async function uploadLocal(
   }
 
   const response = await apiClient.post<UploadedMedia>('/media/upload-local/', formData, {
+    timeout: 90000,
     headers: {
-      'Content-Type': 'multipart/form-data',
+      Accept: 'application/json',
     },
   });
 
@@ -223,10 +232,19 @@ async function uploadViaPresign(
     throw new Error('Invalid presign response');
   }
 
+  const uploadHeaders: Record<string, string> = {
+    ...(presignData.upload.headers || {}),
+  };
+
+  if (!uploadHeaders['Content-Type'] && !uploadHeaders['content-type']) {
+    uploadHeaders['Content-Type'] = contentType;
+  }
+
   await uploadToSignedUrl(
     presignData.upload.url,
     presignData.upload.method || 'PUT',
     blob,
+    uploadHeaders,
   );
 
   const completeResponse = await apiClient.post<UploadedMedia>('/media/complete/', {
@@ -242,7 +260,9 @@ function shouldFallbackToLocalUpload(error: any): boolean {
 
   return (
     detail.includes('use_s3 is disabled') ||
-    detail.includes('use /api/v1/media/upload-local/') ||
+    detail.includes('s3 is disabled') ||
+    detail.includes('/media/upload-local') ||
+    detail.includes('upload-local') ||
     status === 404 ||
     status === 405
   );

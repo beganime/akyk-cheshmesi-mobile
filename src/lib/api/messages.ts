@@ -1,7 +1,7 @@
 import { apiClient } from '@/src/lib/api/client';
 import type { CursorPaginatedMessagesResponse, MessageItem } from '@/src/types/message';
 
-type SendMessagePayload = {
+export type SendMessagePayload = {
   text?: string;
   client_uuid: string;
   message_type?: 'text' | 'sticker' | 'image' | 'video' | 'file' | 'audio' | 'system';
@@ -32,6 +32,14 @@ export async function fetchChatMessages(
 ): Promise<CursorPaginatedMessagesResponse> {
   const url = nextUrl || `/chats/${chatUuid}/messages/`;
   const response = await apiClient.get(url);
+  return response.data;
+}
+
+export async function fetchChatMessageDetail(
+  chatUuid: string,
+  messageUuid: string,
+): Promise<MessageItem> {
+  const response = await apiClient.get(`/chats/${chatUuid}/messages/${messageUuid}/`);
   return response.data;
 }
 

@@ -53,7 +53,7 @@ function setAuthorizationHeader(config: RetryableRequestConfig, token: string) {
 
 const refreshClient = axios.create({
   baseURL: ENV.API_BASE_URL,
-  timeout: 20000,
+  timeout: 30000,
   headers: {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -110,7 +110,7 @@ async function refreshAccessToken(): Promise<string | null> {
 
 export const apiClient = axios.create({
   baseURL: ENV.API_BASE_URL,
-  timeout: 20000,
+  timeout: 90000,
   headers: {
     Accept: 'application/json',
     'Content-Type': 'application/json',
