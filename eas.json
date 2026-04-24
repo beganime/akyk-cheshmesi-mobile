@@ -7,18 +7,28 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "channel": "development"
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://akyl-cheshmesi.ru/api/v1",
+        "EXPO_PUBLIC_WS_BASE_URL": "wss://akyl-cheshmesi.ru/ws",
+        "EXPO_PUBLIC_CALL_WS_BASE_URL": "wss://akyl-cheshmesi.ru/ws/calls",
+        "EXPO_PUBLIC_CALL_ICE_SERVERS": "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302,turn:turn.akyl-cheshmesi.ru:3478?transport=udp,turn:turn.akyl-cheshmesi.ru:3478?transport=tcp,turns:turn.akyl-cheshmesi.ru:5349?transport=tcp",
+        "EXPO_PUBLIC_CALL_TURN_USERNAME": "akylturn",
+        "EXPO_PUBLIC_CALL_TURN_CREDENTIAL": "akylTurn_2026_X9pLq7VnA4sK2mR8"
+      }
     },
     "preview": {
       "distribution": "internal",
-      "channel": "preview"
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
-      "autoIncrement": true,
-      "channel": "production"
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
-  },
-  "submit": {
-    "production": {}
   }
 }

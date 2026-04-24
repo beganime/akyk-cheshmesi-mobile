@@ -26,6 +26,12 @@ import {
   extractMessageFromRealtimeEvent,
   isMessageEvent,
 } from '@/src/lib/realtime/events';
+import {
+  getCallRealtimePayload,
+  isCallInviteRealtimeEvent,
+  isCallLifecycleRealtimeEvent,
+} from '@/src/lib/calls/realtime';
+import { useCallStore } from '@/src/state/call';
 
 const queryClient = new QueryClient();
 
@@ -56,6 +62,11 @@ export default function RootLayout() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const hydrated = useAuthStore((s) => s.hydrated);
   const userUuid = useAuthStore((s) => s.user?.uuid);
+
+  const loadCall = useCallStore((s) => s.loadCall);
+  const remoteEnded = useCallStore((s) => s.remoteEnded);
+  const currentCallUuid = useCallStore((s) => s.currentCall?.uuid);
+
   const [appReady, setAppReady] = useState(false);
 
   const extractChatUuidFromNotification = (
@@ -201,6 +212,45 @@ export default function RootLayout() {
       unsubscribe();
     };
   }, [accessToken, userUuid]);
+
+  useEffect(() => {
+    if (!accessToken || !userUuid) return;
+
+    const unsubscribe = realtimeClient.subscribe((event) => {
+      if (isCallInviteRealtimeEvent(event)) {
+        const payload = getCallRealtimePayload(event);
+
+        if (!payload.callUuid) return;
+        if (payload.initiatedByUuid && payload.initiatedByUuid === userUuid) {
+          return;
+        }
+
+        void loadCall(payload.callUuid, 'incoming').then((call) => {
+          if (!call) return;
+
+          router.push({
+            pathname: '/(app)/call/[callUuid]',
+            params: { callUuid: call.uuid },
+          });
+        });
+
+        return;
+      }
+
+      if (isCallLifecycleRealtimeEvent(event)) {
+        const payload = getCallRealtimePayload(event);
+        if (!payload.callUuid) return;
+
+        if (currentCallUuid && currentCallUuid === payload.callUuid) {
+          void remoteEnded(payload.callUuid);
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [accessToken, userUuid, loadCall, remoteEnded, router, currentCallUuid]);
 
   if (!appReady) {
     return (
