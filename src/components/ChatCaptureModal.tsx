@@ -155,9 +155,9 @@ export function ChatCaptureModal({
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY,
         (status) => {
-          if (status.isLoaded) {
-            setAudioDurationMs(status.durationMillis || 0);
-          }
+          setAudioDurationMs(
+            typeof status.durationMillis === 'number' ? status.durationMillis : 0,
+          );
         },
         200,
       );

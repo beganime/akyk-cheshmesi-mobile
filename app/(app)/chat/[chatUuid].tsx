@@ -1436,10 +1436,10 @@ export default function ChatScreen() {
 
       audioStatusIntervalRef.current = setInterval(async () => {
         try {
-          const status = await recording.getStatusAsync();
-          if (status.isLoaded) {
-            setAudioDurationMs(status.durationMillis || 0);
-          }
+          const status = await recording.getStatusAsync();          
+            setAudioDurationMs(
+              typeof status.durationMillis === 'number' ? status.durationMillis : 0,
+            );
         } catch (error) {
           console.error('audio status poll error:', error);
         }

@@ -5,6 +5,27 @@ import type {
   CallSession,
 } from '@/src/types/calls';
 
+type PaginatedCallsResponse = {
+  count?: number;
+  next?: string | null;
+  previous?: string | null;
+  results?: CallSession[];
+};
+
+function normalizeCallsResponse(
+  data: CallSession[] | PaginatedCallsResponse | null | undefined,
+) {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (data && Array.isArray(data.results)) {
+    return data.results;
+  }
+
+  return [];
+}
+
 export async function createChatCall(
   chatUuid: string,
   payload: CallCreatePayload,
@@ -20,6 +41,7 @@ export async function createChatCall(
 export async function fetchCalls(params?: {
   chatUuid?: string;
   status?: string;
+  pageSize?: number;
 }): Promise<CallSession[]> {
   const search = new URLSearchParams();
 
@@ -31,9 +53,16 @@ export async function fetchCalls(params?: {
     search.set('status', params.status);
   }
 
+  if (params?.pageSize) {
+    search.set('page_size', String(params.pageSize));
+  }
+
   const suffix = search.toString() ? `?${search.toString()}` : '';
-  const response = await apiClient.get<CallSession[]>(`/calls/${suffix}`);
-  return response.data;
+  const response = await apiClient.get<CallSession[] | PaginatedCallsResponse>(
+    `/calls/${suffix}`,
+  );
+
+  return normalizeCallsResponse(response.data);
 }
 
 export async function fetchCallDetail(callUuid: string): Promise<CallSession> {

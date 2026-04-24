@@ -201,7 +201,7 @@ export default function ChatUserProfileScreen() {
       const created = await startOutgoing(chatUuid, callType);
 
       router.push({
-        pathname: '/(app)/call/[callUuid]',
+        pathname: '/(app)/call/[callUuid]' as any,
         params: { callUuid: created.uuid },
       });
     } catch (error) {

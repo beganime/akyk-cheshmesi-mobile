@@ -1,22 +1,38 @@
 import { PropsWithChildren } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import {
+  Platform,
+  StyleProp,
+  StyleSheet,
+  View,
+  ViewStyle,
+} from 'react-native';
 import { BlurView } from 'expo-blur';
 
 import { useTheme } from '@/src/theme/ThemeProvider';
 
-export function GlassCard({ children }: PropsWithChildren) {
+type GlassCardProps = PropsWithChildren<{
+  style?: StyleProp<ViewStyle>;
+}>;
+
+export function GlassCard({ children, style }: GlassCardProps) {
   const { theme } = useTheme();
 
   if (Platform.OS === 'web') {
     return (
       <View
         style={[
-          styles.webCard,
+          styles.base,
           {
             backgroundColor: theme.colors.card,
             borderColor: theme.colors.borderStrong,
             shadowColor: theme.colors.shadow,
           },
+          {
+            boxShadow: '0 14px 30px rgba(0,0,0,0.12)' as any,
+            backdropFilter: 'blur(24px)' as any,
+            WebkitBackdropFilter: 'blur(24px)' as any,
+          } as any,
+          style,
         ]}
       >
         {children}
@@ -29,12 +45,13 @@ export function GlassCard({ children }: PropsWithChildren) {
       intensity={42}
       tint={theme.blurTint}
       style={[
-        styles.card,
+        styles.base,
         {
           backgroundColor: theme.colors.card,
           borderColor: theme.colors.borderStrong,
           shadowColor: theme.colors.shadow,
         },
+        style,
       ]}
     >
       {children}
@@ -43,7 +60,7 @@ export function GlassCard({ children }: PropsWithChildren) {
 }
 
 const styles = StyleSheet.create({
-  card: {
+  base: {
     padding: 16,
     borderRadius: 28,
     borderWidth: 1,
@@ -52,13 +69,5 @@ const styles = StyleSheet.create({
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 12 },
     elevation: 9,
-  },
-  webCard: {
-    padding: 16,
-    borderRadius: 28,
-    borderWidth: 1,
-    boxShadow: '0 14px 30px rgba(0,0,0,0.12)' as any,
-    backdropFilter: 'blur(24px)' as any,
-    WebkitBackdropFilter: 'blur(24px)' as any,
   },
 });

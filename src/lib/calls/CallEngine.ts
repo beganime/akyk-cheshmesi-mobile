@@ -12,6 +12,7 @@ import {
 import { ENV } from '@/src/config/env';
 import {
   acceptCall,
+  cancelCall,
   createChatCall,
   endCall,
   rejectCall,
@@ -145,8 +146,10 @@ class CallEngine {
       iceCandidatePoolSize: 10,
     });
 
-    pc.onicecandidate = (event) => {
-      if (!event.candidate || !this.state.call) {
+    const pcAny = pc as any;
+
+    pcAny.onicecandidate = (event: any) => {
+      if (!event?.candidate || !this.state.call) {
         return;
       }
 
@@ -159,13 +162,12 @@ class CallEngine {
           candidate: event.candidate.candidate,
           sdpMid: event.candidate.sdpMid,
           sdpMLineIndex: event.candidate.sdpMLineIndex,
-          usernameFragment: (event.candidate as any).usernameFragment ?? null,
         },
       });
     };
 
-    pc.ontrack = (event) => {
-      const firstStream = event.streams?.[0] ?? null;
+    pcAny.ontrack = (event: any) => {
+      const firstStream = event?.streams?.[0] ?? null;
       if (!firstStream) {
         return;
       }
@@ -175,16 +177,30 @@ class CallEngine {
       });
     };
 
-    pc.onconnectionstatechange = () => {
-      const state = pc.connectionState;
-      if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+    pcAny.onconnectionstatechange = () => {
+      const state = pcAny.connectionState;
+
+      if (state === 'connected') {
         this.setState({
-          status: state === 'closed' ? 'ended' : this.state.status,
+          status: 'joined',
+        });
+      }
+
+      if (state === 'failed' || state === 'disconnected') {
+        this.setState({
+          status: 'error',
+          error: 'Соединение звонка прервано',
+        });
+      }
+
+      if (state === 'closed') {
+        this.setState({
+          status: 'ended',
         });
       }
     };
 
-    pc.onnegotiationneeded = async () => {
+    pcAny.onnegotiationneeded = async () => {
       if (!this.joined) {
         return;
       }
@@ -245,12 +261,7 @@ class CallEngine {
 
       ws.onmessage = async (event) => {
         try {
-          const parsed = JSON.parse(event.data) as CallSocketEvent & {
-            call_uuid?: string;
-            room_key?: string;
-            candidate?: any;
-          };
-
+          const parsed = JSON.parse(event.data) as CallSocketEvent;
           await this.handleSocketEvent(parsed);
         } catch (error) {
           console.error('CallEngine socket parse error:', error);
@@ -259,13 +270,14 @@ class CallEngine {
     });
   }
 
-  private async waitForJoin(ws: WebSocket, call: CallSession): Promise<JoinSocketResponse> {
+  private async waitForJoin(
+    ws: WebSocket,
+    call: CallSession,
+  ): Promise<JoinSocketResponse> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('Таймаут входа в комнату звонка'));
       }, 15000);
-
-      const originalHandler = ws.onmessage;
 
       ws.onmessage = async (event) => {
         try {
@@ -276,19 +288,19 @@ class CallEngine {
           if (parsed.type === 'joined_call') {
             clearTimeout(timeout);
             this.joined = true;
-            resolve({
-              peerId: parsed.peer_id ?? null,
-            });
 
             ws.onmessage = async (nextEvent) => {
               try {
-                const nextParsed = JSON.parse(nextEvent.data);
-                await this.handleSocketEvent(nextParsed as CallSocketEvent);
+                const nextParsed = JSON.parse(nextEvent.data) as CallSocketEvent;
+                await this.handleSocketEvent(nextParsed);
               } catch (error) {
                 console.error('CallEngine socket event error:', error);
               }
             };
 
+            resolve({
+              peerId: parsed.peer_id ?? null,
+            });
             return;
           }
 
@@ -300,10 +312,6 @@ class CallEngine {
               ),
             );
             return;
-          }
-
-          if (originalHandler) {
-            await originalHandler(event as any);
           }
         } catch (error) {
           clearTimeout(timeout);
@@ -391,10 +399,7 @@ class CallEngine {
 
         const polite = true;
 
-        if (
-          !polite &&
-          (this.makingOffer || this.pc.signalingState !== 'stable')
-        ) {
+        if (!polite && (this.makingOffer || (this.pc as any).signalingState !== 'stable')) {
           this.ignoreOffer = true;
           return;
         }
@@ -437,8 +442,7 @@ class CallEngine {
               candidate: event.candidate.candidate,
               sdpMid: event.candidate.sdpMid ?? undefined,
               sdpMLineIndex: event.candidate.sdpMLineIndex ?? undefined,
-              usernameFragment: event.candidate.usernameFragment ?? undefined,
-            }),
+            } as any),
           );
         } catch (error) {
           console.error('addIceCandidate error:', error);
@@ -523,13 +527,18 @@ class CallEngine {
 
     const ws = await this.connectSocket();
     await this.waitForJoin(ws, accepted);
-    await this.createAndSendOffer();
 
     return accepted;
   }
 
   async rejectIncoming(callUuid: string) {
     await rejectCall(callUuid);
+    await this.cleanup(false);
+  }
+
+  async cancelOutgoing(callUuid: string) {
+    await cancelCall(callUuid);
+    await this.cleanup(true);
   }
 
   async endCurrent() {

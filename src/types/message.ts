@@ -36,8 +36,10 @@ export type MessageItem = {
   created_at?: string | null;
   updated_at?: string | null;
 
-  local_status?: 'pending' | 'sent' | 'failed';
+  local_status?: 'pending' | 'sent' | 'failed' | string;
 };
+
+export type MessageListItem = MessageItem;
 
 export type CursorPaginatedMessagesResponse = {
   next: string | null;

@@ -9,6 +9,8 @@ export type UserProfile = {
   bio: string | null;
   is_email_verified: boolean;
   registration_completed: boolean;
+  is_admin?: boolean;
+  is_staff?: boolean;
 };
 
 export type AuthTokens = {
@@ -52,4 +54,6 @@ export type UserShort = {
   email?: string | null;
   avatar?: string | null;
   bio?: string | null;
+  is_admin?: boolean;
+  is_staff?: boolean;
 };

@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 import { apiClient } from '@/src/lib/api/client';
 import { ENV } from '@/src/config/env';
 
@@ -48,4 +50,17 @@ export async function deletePushToken(payload: DeletePushTokenPayload) {
     data: payload,
   });
   return response.data;
+}
+
+export async function syncExpoPushToken(token: string) {
+  const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web';
+  const provider = Platform.OS === 'ios' ? 'apns' : 'fcm';
+
+  return registerPushToken({
+    token,
+    provider,
+    platform,
+    device_id: `${platform}-expo-device`,
+    device_name: 'Akyl Cheshmesi Mobile',
+  });
 }
