@@ -17,7 +17,10 @@ import { GlassCard } from '@/src/components/GlassCard';
 import { SearchInput } from '@/src/components/SearchInput';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { fetchChats, createDirectChat } from '@/src/lib/api/chats';
+import { ensureCallPermissions } from '@/src/lib/calls/permissions';
 import { useAuthStore } from '@/src/state/auth';
+import { useCallStore } from '@/src/state/call';
+import type { CallType } from '@/src/types/calls';
 import type { ChatListItem, ChatMember } from '@/src/types/chat';
 
 type ContactUser = {
@@ -86,7 +89,10 @@ function normalizeMemberUser(member?: ChatMember | null): ContactUser | null {
 function buildContactsFromChats(chats: ChatListItem[], currentUserUuid?: string | null): ContactItem[] {
   const map = new Map<string, ContactItem>();
 
-  const upsert = (user: ContactUser, options: { chatUuid?: string | null; sourceChatUuid?: string | null }) => {
+  const upsert = (
+    user: ContactUser,
+    options: { chatUuid?: string | null; sourceChatUuid?: string | null },
+  ) => {
     if (!user?.uuid || user.uuid === currentUserUuid) {
       return;
     }
@@ -161,10 +167,11 @@ function buildContactsFromChats(chats: ChatListItem[], currentUserUuid?: string 
 export default function ContactsScreen() {
   const { theme } = useTheme();
   const currentUserUuid = useAuthStore((s) => s.user?.uuid);
+  const startOutgoing = useCallStore((s) => s.startOutgoing);
 
   const [items, setItems] = useState<ContactItem[]>([]);
   const [expandedUuid, setExpandedUuid] = useState<string | null>(null);
-  const [openingUuid, setOpeningUuid] = useState<string | null>(null);
+  const [actionUuid, setActionUuid] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
@@ -221,30 +228,91 @@ export default function ContactsScreen() {
     });
   }, [items, search]);
 
+  const ensureDirectChat = async (item: ContactItem) => {
+    if (item.chat_uuid) {
+      return item.chat_uuid;
+    }
+
+    const createdChat = await createDirectChat(item.user_uuid);
+
+    if (!createdChat?.uuid) {
+      throw new Error('Не удалось создать direct chat');
+    }
+
+    setItems((prev) =>
+      prev.map((entry) =>
+        entry.user_uuid === item.user_uuid
+          ? {
+              ...entry,
+              chat_uuid: createdChat.uuid,
+            }
+          : entry,
+      ),
+    );
+
+    return createdChat.uuid;
+  };
+
   const openContactChat = async (item: ContactItem) => {
     try {
-      setOpeningUuid(item.user_uuid);
+      setActionUuid(item.user_uuid);
 
-      if (item.chat_uuid) {
-        router.push({
-          pathname: '/(app)/chat/[chatUuid]',
-          params: { chatUuid: item.chat_uuid },
-        });
-        return;
-      }
+      const chatUuid = await ensureDirectChat(item);
 
-      const createdChat = await createDirectChat(item.user_uuid);
-
-      if (createdChat?.uuid) {
-        router.push({
-          pathname: '/(app)/chat/[chatUuid]',
-          params: { chatUuid: createdChat.uuid },
-        });
-      }
+      router.push({
+        pathname: '/(app)/chat/[chatUuid]',
+        params: { chatUuid },
+      });
     } catch (error) {
       console.error('openContactChat error:', error);
     } finally {
-      setOpeningUuid(null);
+      setActionUuid(null);
+    }
+  };
+
+  const openContactProfile = async (item: ContactItem) => {
+    try {
+      setActionUuid(item.user_uuid);
+
+      const chatUuid = await ensureDirectChat(item);
+
+      router.push({
+        pathname: '/(app)/chat-user/[userUuid]',
+        params: {
+          userUuid: item.user_uuid,
+          chatUuid,
+          fullName: fullName(item),
+          username: item.username || '',
+          bio: '',
+        },
+      });
+    } catch (error) {
+      console.error('openContactProfile error:', error);
+    } finally {
+      setActionUuid(null);
+    }
+  };
+
+  const startContactCall = async (item: ContactItem, callType: CallType) => {
+    try {
+      setActionUuid(item.user_uuid);
+
+      const allowed = await ensureCallPermissions(callType);
+      if (!allowed) {
+        return;
+      }
+
+      const chatUuid = await ensureDirectChat(item);
+      const created = await startOutgoing(chatUuid, callType);
+
+      router.push({
+        pathname: '/(app)/call/[callUuid]',
+        params: { callUuid: created.uuid },
+      });
+    } catch (error) {
+      console.error('startContactCall error:', error);
+    } finally {
+      setActionUuid(null);
     }
   };
 
@@ -287,6 +355,7 @@ export default function ContactsScreen() {
           const isExpanded = expandedUuid === item.user_uuid;
           const name = fullName(item);
           const isStaff = Boolean(item.is_admin || item.is_staff);
+          const isBusy = actionUuid === item.user_uuid;
 
           return (
             <Pressable
@@ -340,15 +409,51 @@ export default function ContactsScreen() {
                           Статус: {isStaff ? 'Персонал' : 'Пользователь'}
                         </Text>
 
-                        <Pressable
-                          onPress={() => void openContactChat(item)}
-                          disabled={openingUuid === item.user_uuid}
-                          style={[styles.openChatBtn, { backgroundColor: theme.colors.primary }]}
-                        >
-                          <Text style={styles.openChatText}>
-                            {openingUuid === item.user_uuid ? 'Открытие...' : 'Открыть чат'}
-                          </Text>
-                        </Pressable>
+                        <View style={styles.actionsGrid}>
+                          <Pressable
+                            onPress={() => void openContactProfile(item)}
+                            disabled={isBusy}
+                            style={[styles.secondaryButton, { backgroundColor: theme.colors.card }]}
+                          >
+                            <Ionicons name="person-outline" size={16} color={theme.colors.text} />
+                            <Text style={[styles.secondaryButtonText, { color: theme.colors.text }]}>
+                              Профиль
+                            </Text>
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => void openContactChat(item)}
+                            disabled={isBusy}
+                            style={[styles.secondaryButton, { backgroundColor: theme.colors.card }]}
+                          >
+                            <Ionicons name="chatbubble-ellipses-outline" size={16} color={theme.colors.text} />
+                            <Text style={[styles.secondaryButtonText, { color: theme.colors.text }]}>
+                              Чат
+                            </Text>
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => void startContactCall(item, 'audio')}
+                            disabled={isBusy}
+                            style={[styles.primaryButton, { backgroundColor: '#10B981' }]}
+                          >
+                            <Ionicons name="call-outline" size={16} color="#FFFFFF" />
+                            <Text style={styles.primaryButtonText}>
+                              {isBusy ? '...' : 'Аудио'}
+                            </Text>
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => void startContactCall(item, 'video')}
+                            disabled={isBusy}
+                            style={[styles.primaryButton, { backgroundColor: '#3B82F6' }]}
+                          >
+                            <Ionicons name="videocam-outline" size={16} color="#FFFFFF" />
+                            <Text style={styles.primaryButtonText}>
+                              {isBusy ? '...' : 'Видео'}
+                            </Text>
+                          </Pressable>
+                        </View>
                       </View>
                     ) : null}
                   </View>
@@ -428,20 +533,6 @@ const styles = StyleSheet.create({
   detailText: {
     fontSize: 14,
   },
-  openChatBtn: {
-    marginTop: 10,
-    height: 40,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-    alignSelf: 'flex-start',
-  },
-  openChatText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
   avatarImage: {
     width: 52,
     height: 52,
@@ -455,5 +546,38 @@ const styles = StyleSheet.create({
   },
   emptySub: {
     fontSize: 14,
+  },
+  actionsGrid: {
+    marginTop: 12,
+    gap: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  secondaryButton: {
+    height: 40,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  secondaryButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  primaryButton: {
+    height: 40,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

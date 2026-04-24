@@ -40,6 +40,7 @@ export default function AppLayout() {
       <Stack.Screen name="profile-edit" />
       <Stack.Screen name="chat/[chatUuid]" />
       <Stack.Screen name="chat-user/[userUuid]" />
+      <Stack.Screen name="call/[callUuid]" />
     </Stack>
   );
 }
