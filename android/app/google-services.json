@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "235592862137",
+    "project_id": "akylcheshmesi-push",
+    "storage_bucket": "akylcheshmesi-push.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:235592862137:android:3ecd60fedd7f03ed4b4e68",
+        "android_client_info": {
+          "package_name": "com.akylchat.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB-HU6suhwaFLFyncYbk7ugZ48a_N6dxVU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

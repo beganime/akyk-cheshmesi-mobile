@@ -1,3 +1,5 @@
+import 'expo-dev-client';
+
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
@@ -56,8 +58,12 @@ export default function RootLayout() {
   const userUuid = useAuthStore((s) => s.user?.uuid);
   const [appReady, setAppReady] = useState(false);
 
-  const extractChatUuidFromNotification = (response: Notifications.NotificationResponse) => {
-    const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+  const extractChatUuidFromNotification = (
+    response: Notifications.NotificationResponse,
+  ) => {
+    const data = response.notification.request.content.data as
+      | Record<string, unknown>
+      | undefined;
     const chatUuid = data?.chat_uuid;
     return typeof chatUuid === 'string' && chatUuid.trim() ? chatUuid : null;
   };
@@ -71,7 +77,7 @@ export default function RootLayout() {
     const unsubscribeTokens = subscribeSessionTokensChanged(
       ({ accessToken, refreshToken }) => {
         void setTokens({ accessToken, refreshToken });
-      }
+      },
     );
 
     return () => {
@@ -104,14 +110,16 @@ export default function RootLayout() {
   }, [bootstrap]);
 
   useEffect(() => {
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const chatUuid = extractChatUuidFromNotification(response);
-      if (!chatUuid) return;
-      router.push({
-        pathname: '/(app)/chat/[chatUuid]',
-        params: { chatUuid },
-      });
-    });
+    const subscription = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        const chatUuid = extractChatUuidFromNotification(response);
+        if (!chatUuid) return;
+        router.push({
+          pathname: '/(app)/chat/[chatUuid]',
+          params: { chatUuid },
+        });
+      },
+    );
 
     Notifications.getLastNotificationResponseAsync()
       .then((response) => {
@@ -162,7 +170,9 @@ export default function RootLayout() {
       const message = extractMessageFromRealtimeEvent(event);
       if (!message) return;
       if (message.is_own_message) return;
-      if (message.sender?.uuid && userUuid && message.sender.uuid === userUuid) return;
+      if (message.sender?.uuid && userUuid && message.sender.uuid === userUuid) {
+        return;
+      }
 
       const chatUuid = extractChatUuidFromRealtimeEvent(event);
       if (!chatUuid) return;
