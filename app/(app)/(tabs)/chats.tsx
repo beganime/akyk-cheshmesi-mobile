@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   FlatList,
   Modal,
@@ -22,6 +23,8 @@ import { fetchChats, createDirectChat } from '@/src/lib/api/chats';
 import { searchUsers, UserShort } from '@/src/lib/api/contacts';
 import { realtimeClient } from '@/src/lib/realtime/socket';
 import { isMessageEvent } from '@/src/lib/realtime/events';
+import { useCallStore } from '@/src/state/call';
+import type { CallType } from '@/src/types/calls';
 import type { ChatListItem } from '@/src/types/chat';
 import {
   getLocalChatPreference,
@@ -35,8 +38,10 @@ type ChatTab = 'all' | 'pinned' | 'archive';
 type DecoratedChat = ChatListItem & {
   effectivePinned: boolean;
   effectiveArchived: boolean;
+  effectiveHidden: boolean;
   localPinned: boolean;
   localArchived: boolean;
+  localHidden: boolean;
 };
 
 const chatTabs: Array<{ key: ChatTab; label: string }> = [
@@ -113,8 +118,10 @@ function getDecoratedChats(
       ...item,
       localPinned: Boolean(local.isPinned),
       localArchived: Boolean(local.isArchived),
+      localHidden: Boolean(local.isHidden),
       effectivePinned: serverPinned || Boolean(local.isPinned),
       effectiveArchived: serverArchived || Boolean(local.isArchived),
+      effectiveHidden: Boolean(local.isHidden),
     };
   });
 }
@@ -146,6 +153,7 @@ function sortChats(items: DecoratedChat[]) {
 
 export default function ChatsScreen() {
   const { theme } = useTheme();
+  const startOutgoing = useCallStore((state) => state.startOutgoing);
 
   const [data, setData] = useState<ChatListItem[]>([]);
   const [people, setPeople] = useState<UserShort[]>([]);
@@ -155,6 +163,7 @@ export default function ChatsScreen() {
   const [search, setSearch] = useState('');
   const [searchingPeople, setSearchingPeople] = useState(false);
   const [creatingFor, setCreatingFor] = useState<string | null>(null);
+  const [callingKey, setCallingKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ChatTab>('all');
   const [selectedChat, setSelectedChat] = useState<DecoratedChat | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
@@ -249,24 +258,28 @@ export default function ChatsScreen() {
     return getDecoratedChats(data, localPreferences);
   }, [data, localPreferences]);
 
+  const visibleDecoratedChats = useMemo(() => {
+    return decoratedChats.filter((item) => !item.effectiveHidden);
+  }, [decoratedChats]);
+
   const tabCounts = useMemo(() => {
-    const allCount = decoratedChats.filter((item) => !item.effectiveArchived).length;
-    const pinnedCount = decoratedChats.filter(
+    const allCount = visibleDecoratedChats.filter((item) => !item.effectiveArchived).length;
+    const pinnedCount = visibleDecoratedChats.filter(
       (item) => item.effectivePinned && !item.effectiveArchived,
     ).length;
-    const archiveCount = decoratedChats.filter((item) => item.effectiveArchived).length;
+    const archiveCount = visibleDecoratedChats.filter((item) => item.effectiveArchived).length;
 
     return {
       all: allCount,
       pinned: pinnedCount,
       archive: archiveCount,
     };
-  }, [decoratedChats]);
+  }, [visibleDecoratedChats]);
 
   const filteredChats = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    const byTab = decoratedChats.filter((item) => {
+    const byTab = visibleDecoratedChats.filter((item) => {
       if (activeTab === 'pinned') {
         return item.effectivePinned && !item.effectiveArchived;
       }
@@ -287,7 +300,7 @@ export default function ChatsScreen() {
       : byTab;
 
     return sortChats(bySearch);
-  }, [activeTab, decoratedChats, search]);
+  }, [activeTab, visibleDecoratedChats, search]);
 
   const startDirectChat = async (user: UserShort) => {
     try {
@@ -317,6 +330,36 @@ export default function ChatsScreen() {
       pathname: '/(app)/chat/[chatUuid]',
       params: { chatUuid: item.uuid },
     });
+  };
+
+  const startCall = async (item: ChatListItem, callType: CallType) => {
+    if (!item.uuid) {
+      return;
+    }
+
+    const nextCallingKey = `${item.uuid}:${callType}`;
+
+    try {
+      setCallingKey(nextCallingKey);
+
+      const call = await startOutgoing(item.uuid, callType);
+
+      if (call?.uuid) {
+        router.push({
+          pathname: '/(app)/call/[callUuid]',
+          params: { callUuid: call.uuid },
+        });
+      }
+    } catch (error: any) {
+      console.error('startCall error:', error);
+
+      Alert.alert(
+        'Звонок не запущен',
+        error?.message || 'Не удалось начать звонок. Проверь сборку Android/iOS и WebSocket.',
+      );
+    } finally {
+      setCallingKey(null);
+    }
   };
 
   const openChatMenu = (item: DecoratedChat) => {
@@ -366,6 +409,45 @@ export default function ChatsScreen() {
         : null,
     );
     setMenuVisible(false);
+  };
+
+  const hideSelectedChat = () => {
+    if (!selectedChat?.uuid) {
+      return;
+    }
+
+    const chatUuid = selectedChat.uuid;
+    const title = chatTitle(selectedChat);
+
+    Alert.alert(
+      'Скрыть чат?',
+      `Чат «${title}» будет скрыт только на этом устройстве. Сообщения на сервере не удаляются.`,
+      [
+        {
+          text: 'Отмена',
+          style: 'cancel',
+        },
+        {
+          text: 'Скрыть',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const next = await patchChatListPreference(chatUuid, {
+                isHidden: true,
+                isArchived: true,
+              });
+
+              setLocalPreferences(next);
+              setData((current) => current.filter((item) => item.uuid !== chatUuid));
+              setSelectedChat(null);
+              setMenuVisible(false);
+            } catch (error) {
+              console.error('hideSelectedChat error:', error);
+            }
+          },
+        },
+      ],
+    );
   };
 
   if (loading) {
@@ -468,7 +550,11 @@ export default function ChatsScreen() {
                       <GlassCard key={item.uuid}>
                         <View style={styles.personRow}>
                           {item.avatar ? (
-                            <ExpoImage source={{ uri: item.avatar }} style={styles.avatarImage} contentFit="cover" />
+                            <ExpoImage
+                              source={{ uri: item.avatar }}
+                              style={styles.avatarImage}
+                              contentFit="cover"
+                            />
                           ) : (
                             <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
                               <Text style={styles.avatarText}>
@@ -540,13 +626,20 @@ export default function ChatsScreen() {
         renderItem={({ item }) => {
           const unread = Number(item.unread_count ?? 0) || 0;
           const isStaff = Boolean(item.peer_user?.is_admin || item.peer_user?.is_staff);
+          const audioCalling = callingKey === `${item.uuid}:audio`;
+          const videoCalling = callingKey === `${item.uuid}:video`;
+          const callDisabled = Boolean(callingKey);
 
           return (
             <Pressable onPress={() => openChat(item)} onLongPress={() => openChatMenu(item)}>
               <GlassCard>
                 <View style={styles.chatRow}>
                   {item.peer_user?.avatar ? (
-                    <ExpoImage source={{ uri: item.peer_user.avatar }} style={styles.avatarImage} contentFit="cover" />
+                    <ExpoImage
+                      source={{ uri: item.peer_user.avatar }}
+                      style={styles.avatarImage}
+                      contentFit="cover"
+                    />
                   ) : (
                     <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
                       <Text style={styles.avatarText}>
@@ -555,7 +648,7 @@ export default function ChatsScreen() {
                     </View>
                   )}
 
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.chatTextBlock}>
                     <View style={styles.titleRow}>
                       <View style={styles.titleInline}>
                         <Text
@@ -588,7 +681,47 @@ export default function ChatsScreen() {
                     </Text>
                   </View>
 
-                  <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
+                  <View style={styles.chatActions}>
+                    <Pressable
+                      onPress={() => void startCall(item, 'audio')}
+                      disabled={callDisabled}
+                      hitSlop={8}
+                      style={({ pressed }) => [
+                        styles.callIconButton,
+                        {
+                          backgroundColor: theme.colors.primarySoft,
+                          opacity: callDisabled && !audioCalling ? 0.45 : pressed ? 0.72 : 1,
+                        },
+                      ]}
+                    >
+                      {audioCalling ? (
+                        <ActivityIndicator size="small" color={theme.colors.primary} />
+                      ) : (
+                        <Ionicons name="call" size={18} color={theme.colors.primary} />
+                      )}
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => void startCall(item, 'video')}
+                      disabled={callDisabled}
+                      hitSlop={8}
+                      style={({ pressed }) => [
+                        styles.callIconButton,
+                        {
+                          backgroundColor: theme.colors.primarySoft,
+                          opacity: callDisabled && !videoCalling ? 0.45 : pressed ? 0.72 : 1,
+                        },
+                      ]}
+                    >
+                      {videoCalling ? (
+                        <ActivityIndicator size="small" color={theme.colors.primary} />
+                      ) : (
+                        <Ionicons name="videocam" size={18} color={theme.colors.primary} />
+                      )}
+                    </Pressable>
+
+                    <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
+                  </View>
                 </View>
               </GlassCard>
             </Pressable>
@@ -638,10 +771,24 @@ export default function ChatsScreen() {
                 </Text>
               </Pressable>
 
+              <Pressable
+                onPress={hideSelectedChat}
+                style={[
+                  styles.sheetItem,
+                  styles.destructiveSheetItem,
+                  { borderColor: 'rgba(239,68,68,0.32)' },
+                ]}
+              >
+                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                <Text style={[styles.sheetItemText, { color: '#EF4444' }]}>
+                  Удалить / скрыть чат
+                </Text>
+              </Pressable>
+
               {selectedChat ? (
                 <Text style={[styles.sheetHint, { color: theme.colors.muted }]}>
-                  Долгое нажатие по чату открывает локальные действия. Серверные закреп/архив из
-                  настроек самого чата тоже продолжают работать.
+                  Скрытие работает локально на этом устройстве. Сообщения и сам чат на сервере не
+                  удаляются.
                 </Text>
               ) : null}
             </GlassCard>
@@ -727,6 +874,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  chatTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  chatActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  callIconButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   avatar: {
     width: 52,
     height: 52,
@@ -751,6 +914,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     flex: 1,
+    minWidth: 0,
   },
   title: {
     fontSize: 16,
@@ -814,6 +978,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  destructiveSheetItem: {
+    backgroundColor: 'rgba(239,68,68,0.06)',
   },
   sheetItemText: {
     fontSize: 15,

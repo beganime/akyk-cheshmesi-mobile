@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export type LocalChatPreference = {
   isPinned?: boolean;
   isArchived?: boolean;
+  isHidden?: boolean;
   updatedAt?: string;
 };
 
