@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import { getDb } from '@/src/lib/db';
 import type { ChatListItem } from '@/src/types/chat';
-import type { MessageListItem } from '@/src/types/message';
+import type { MessageItem } from '@/src/types/message';
 
 const WEB_CHATS_KEY = 'akyl_cache_chats_v1';
 const WEB_MESSAGES_PREFIX = 'akyl_cache_messages_v1:';
@@ -21,11 +21,12 @@ function getChatSortTs(item: ChatListItem) {
   return new Date(source).getTime() || Date.now();
 }
 
-function getMessageSortTs(item: MessageListItem) {
-  return new Date(item.created_at).getTime() || Date.now();
+function getMessageSortTs(item: MessageItem) {
+  const source = item.created_at || new Date().toISOString();
+  return new Date(source).getTime() || Date.now();
 }
 
-function normalizeMessage(item: MessageListItem): MessageListItem {
+function normalizeMessage(item: MessageItem): MessageItem {
   return {
     ...item,
     attachments: item.attachments ?? [],
@@ -45,8 +46,8 @@ function dedupeChats(items: ChatListItem[]) {
   );
 }
 
-function dedupeMessages(items: MessageListItem[]) {
-  const map = new Map<string, MessageListItem>();
+function dedupeMessages(items: MessageItem[]) {
+  const map = new Map<string, MessageItem>();
 
   for (const item of items) {
     const key = item.uuid || item.client_uuid || `${item.created_at}-${item.text}`;
@@ -74,7 +75,9 @@ export async function readCachedChats(): Promise<ChatListItem[]> {
   );
 
   return dedupeChats(
-    rows.map((row) => safeJsonParse<ChatListItem>(row.payload_json, {} as ChatListItem))
+    rows.map((row: { payload_json: string }) =>
+      safeJsonParse<ChatListItem>(row.payload_json, {} as ChatListItem)
+    )
   );
 }
 
@@ -106,10 +109,10 @@ export async function upsertChats(chats: ChatListItem[]): Promise<void> {
   }
 }
 
-export async function readCachedMessages(chatUuid: string): Promise<MessageListItem[]> {
+export async function readCachedMessages(chatUuid: string): Promise<MessageItem[]> {
   if (Platform.OS === 'web') {
     const raw = window.localStorage.getItem(webMessagesKey(chatUuid));
-    return dedupeMessages(safeJsonParse<MessageListItem[]>(raw, []));
+    return dedupeMessages(safeJsonParse<MessageItem[]>(raw, []));
   }
 
   const db = await getDb();
@@ -124,22 +127,21 @@ export async function readCachedMessages(chatUuid: string): Promise<MessageListI
   );
 
   return dedupeMessages(
-    rows.map((row) =>
-      safeJsonParse<MessageListItem>(row.payload_json, {} as MessageListItem)
+    rows.map((row: { payload_json: string }) =>
+      safeJsonParse<MessageItem>(row.payload_json, {} as MessageItem)
     )
   );
 }
 
 export async function upsertMessages(
   chatUuid: string,
-  messages: MessageListItem[]
+  messages: MessageItem[]
 ): Promise<void> {
   if (!messages.length) return;
 
   const normalized = dedupeMessages(
     messages.map((item) => ({
       ...item,
-      chat_uuid: chatUuid,
       local_status: item.local_status ?? 'sent',
     }))
   );
@@ -184,12 +186,11 @@ export async function upsertMessages(
 
 export async function insertPendingMessage(
   chatUuid: string,
-  message: MessageListItem
+  message: MessageItem
 ): Promise<void> {
   await upsertMessages(chatUuid, [
     {
       ...message,
-      chat_uuid: chatUuid,
       local_status: 'pending',
     },
   ]);
@@ -198,7 +199,7 @@ export async function insertPendingMessage(
 export async function replacePendingMessage(
   chatUuid: string,
   clientUuid: string,
-  serverMessage: MessageListItem
+  serverMessage: MessageItem
 ): Promise<void> {
   if (Platform.OS === 'web') {
     const current = await readCachedMessages(chatUuid);
@@ -206,7 +207,6 @@ export async function replacePendingMessage(
     const merged = dedupeMessages([
       {
         ...serverMessage,
-        chat_uuid: chatUuid,
         local_status: 'sent',
       },
       ...filtered,
@@ -227,7 +227,6 @@ export async function replacePendingMessage(
   await upsertMessages(chatUuid, [
     {
       ...serverMessage,
-      chat_uuid: chatUuid,
       local_status: 'sent',
     },
   ]);
@@ -264,7 +263,7 @@ export async function markPendingMessageFailed(
   );
 
   for (const row of rows) {
-    const parsed = safeJsonParse<MessageListItem>(row.payload_json, {} as MessageListItem);
+    const parsed = safeJsonParse<MessageItem>(row.payload_json, {} as MessageItem);
 
     await db.runAsync(
       `

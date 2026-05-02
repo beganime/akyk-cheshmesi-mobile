@@ -2,6 +2,8 @@ import { Platform } from 'react-native';
 
 import { apiClient } from '@/src/lib/api/client';
 
+import { optimizePickedMediaForUpload } from '@/src/lib/media/optimize';
+
 export type PickedMediaAsset = {
   uri: string;
   fileName?: string | null;
@@ -268,19 +270,43 @@ function shouldFallbackToLocalUpload(error: any): boolean {
   );
 }
 
-export async function uploadPickedMedia(
-  asset: PickedMediaAsset,
-  options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean },
-): Promise<UploadedMedia> {
-  try {
-    return await uploadViaPresign(asset, options);
-  } catch (error: any) {
-    if (shouldFallbackToLocalUpload(error)) {
-      return await uploadLocal(asset, options);
-    }
 
-    throw error;
-  }
+export async function uploadPickedMedia(
+
+  asset: PickedMediaAsset,
+
+  options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean },
+
+): Promise<UploadedMedia> {
+
+  const optimizedAsset = await optimizePickedMediaForUpload(asset, {
+
+    filenamePrefix: options.filenamePrefix,
+
+    fallbackContentType: options.fallbackContentType,
+
+  });
+
+  
+
+  try {
+
+    return await uploadViaPresign(optimizedAsset, options);
+
+  } catch (error: any) {
+
+    if (shouldFallbackToLocalUpload(error)) {
+
+      return await uploadLocal(optimizedAsset, options);
+
+    }
+
+  
+
+    throw error;
+
+  }
+
 }
 
 export async function uploadPickedImage(asset: PickedMediaAsset): Promise<UploadedMedia> {
