@@ -16,7 +16,8 @@ import {
 type RetryableRequestConfig = {
   _retry?: boolean;
   url?: string;
-  headers?: Record<string, string>;
+  headers?: any;
+  data?: unknown;
 };
 
 type RefreshResponse = {
@@ -48,7 +49,29 @@ function setAuthorizationHeader(config: RetryableRequestConfig, token: string) {
     config.headers = {};
   }
 
+  if (typeof config.headers.set === 'function') {
+    config.headers.set('Authorization', `Bearer ${token}`);
+    return;
+  }
+
   config.headers.Authorization = `Bearer ${token}`;
+}
+
+function isFormDataPayload(value: unknown): boolean {
+  return typeof FormData !== 'undefined' && value instanceof FormData;
+}
+
+function removeContentTypeHeader(headers: any) {
+  if (!headers) return;
+
+  if (typeof headers.delete === 'function') {
+    headers.delete('Content-Type');
+    headers.delete('content-type');
+    return;
+  }
+
+  delete headers['Content-Type'];
+  delete headers['content-type'];
 }
 
 const refreshClient = axios.create({
@@ -120,6 +143,10 @@ export const apiClient = axios.create({
 apiClient.interceptors.request.use(async (config) => {
   const requestConfig = config as typeof config & RetryableRequestConfig;
   const token = await getAccessToken();
+
+  if (isFormDataPayload(requestConfig.data)) {
+    removeContentTypeHeader(requestConfig.headers);
+  }
 
   if (token) {
     setAuthorizationHeader(requestConfig, token);
