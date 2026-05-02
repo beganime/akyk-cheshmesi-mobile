@@ -1,8 +1,8 @@
 import { Platform } from 'react-native';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { Video as VideoCompressor } from 'react-native-compressor';
 
 import type { PickedMediaAsset } from '@/src/lib/api/media';
+import { compressVideo } from '@/src/lib/media/videoCompressor';
 
 type OptimizeOptions = {
   fallbackContentType: string;
@@ -101,7 +101,7 @@ async function optimizeVideo(
   }
 
   try {
-    const compressedUri = await VideoCompressor.compress(asset.uri, {
+    const compressedUri = await compressVideo(asset.uri, {
       compressionMethod: 'manual',
       maxSize: VIDEO_MAX_SIZE,
       bitrate: VIDEO_BITRATE,

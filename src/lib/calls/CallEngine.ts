@@ -1,4 +1,5 @@
-import InCallManager from 'react-native-incall-manager';
+import { Platform } from 'react-native';
+import InCallManager from '@/src/lib/calls/incall';
 import NetInfo from '@react-native-community/netinfo';
 import {
   mediaDevices,
@@ -8,7 +9,7 @@ import {
   registerGlobals,
   type MediaStream,
   type MediaStreamTrack,
-} from 'react-native-webrtc';
+} from '@/src/lib/calls/webrtc';
 
 import { ENV } from '@/src/config/env';
 import {
@@ -77,6 +78,12 @@ function createInitialState(): CallEngineState {
   };
 }
 
+function assertNativeCallsSupported() {
+  if (Platform.OS === 'web') {
+    throw new Error('Звонки доступны только в Android/iOS приложении');
+  }
+}
+
 class CallEngine {
   private state: CallEngineState = createInitialState();
   private listeners = new Set<Listener>();
@@ -133,6 +140,8 @@ class CallEngine {
   }
 
   private async createLocalStream(callType: CallType) {
+    assertNativeCallsSupported();
+
     const profile =
       callType === 'video'
         ? await getCurrentCallVideoProfile()
@@ -213,10 +222,12 @@ class CallEngine {
   }
 
   private async createPeerConnection(callType: CallType) {
+    assertNativeCallsSupported();
+
     const pc = new RTCPeerConnection({
       iceServers: ENV.CALL_ICE_SERVERS as any,
       iceCandidatePoolSize: 10,
-    });
+    } as any);
 
     const pcAny = pc as any;
 
@@ -282,7 +293,7 @@ class CallEngine {
 
     const localStream = await this.createLocalStream(callType);
 
-    localStream.getTracks().forEach((track) => {
+    localStream.getTracks().forEach((track: MediaStreamTrack) => {
       pc.addTrack(track, localStream);
     });
 
@@ -307,6 +318,8 @@ class CallEngine {
   }
 
   private async connectSocket(): Promise<WebSocket> {
+    assertNativeCallsSupported();
+
     const token = await getAccessToken();
     if (!token) {
       throw new Error('Нет access token для звонка');
@@ -459,7 +472,7 @@ class CallEngine {
           new RTCSessionDescription({
             type: 'answer',
             sdp: event.sdp,
-          }),
+          }) as any,
         );
 
         this.setState({
@@ -486,7 +499,7 @@ class CallEngine {
           new RTCSessionDescription({
             type: 'offer',
             sdp: event.sdp,
-          }),
+          }) as any,
         );
 
         const answer = await this.pc.createAnswer();
@@ -518,7 +531,7 @@ class CallEngine {
               candidate: event.candidate.candidate,
               sdpMid: event.candidate.sdpMid ?? undefined,
               sdpMLineIndex: event.candidate.sdpMLineIndex ?? undefined,
-            } as any),
+            } as any) as any,
           );
         } catch (error) {
           console.error('addIceCandidate error:', error);
@@ -544,6 +557,16 @@ class CallEngine {
   }
 
   async startOutgoing(chatUuid: string, callType: CallType) {
+    try {
+      assertNativeCallsSupported();
+    } catch (error: any) {
+      this.setState({
+        status: 'error',
+        error: error?.message || 'Звонки доступны только в Android/iOS приложении',
+      });
+      throw error;
+    }
+
     await this.cleanup(false);
 
     this.setState({
@@ -578,6 +601,16 @@ class CallEngine {
   }
 
   async acceptIncoming(call: CallSession) {
+    try {
+      assertNativeCallsSupported();
+    } catch (error: any) {
+      this.setState({
+        status: 'error',
+        error: error?.message || 'Звонки доступны только в Android/iOS приложении',
+      });
+      throw error;
+    }
+
     await this.cleanup(false);
 
     this.setState({
@@ -716,7 +749,7 @@ class CallEngine {
     }
 
     if (this.state.localStream) {
-      this.state.localStream.getTracks().forEach((track) => {
+      this.state.localStream.getTracks().forEach((track: MediaStreamTrack) => {
         try {
           track.stop();
         } catch {
@@ -726,7 +759,7 @@ class CallEngine {
     }
 
     if (this.state.remoteStream) {
-      this.state.remoteStream.getTracks().forEach((track) => {
+      this.state.remoteStream.getTracks().forEach((track: MediaStreamTrack) => {
         try {
           track.stop();
         } catch {

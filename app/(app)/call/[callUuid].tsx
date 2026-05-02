@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -9,8 +10,8 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { RTCView } from 'react-native-webrtc';
 
+import { RTCView } from '@/src/lib/calls/webrtc';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { useAuthStore } from '@/src/state/auth';
 import { useCallStore } from '@/src/state/call';
@@ -99,6 +100,7 @@ export default function CallScreen() {
   const isVideo = callType === 'video';
 
   const callStatusText = useMemo(() => {
+    if (Platform.OS === 'web') return 'Звонки доступны только в Android/iOS приложении';
     if (phase === 'incoming') return 'Входящий звонок';
     if (phase === 'outgoing') return 'Соединение...';
     if (phase === 'active') return 'Вызов активен';
@@ -179,7 +181,9 @@ export default function CallScreen() {
 
             <Text style={styles.peerName}>{peerName}</Text>
             <Text style={styles.peerSub}>
-              {phase === 'incoming'
+              {Platform.OS === 'web'
+                ? 'В браузере звонки отключены. Проверь Android/iOS build.'
+                : phase === 'incoming'
                 ? 'Хочет связаться с тобой'
                 : phase === 'outgoing'
                 ? 'Ожидаем ответ...'
@@ -212,7 +216,20 @@ export default function CallScreen() {
       </View>
 
       <View style={styles.bottomPanel}>
-        {phase === 'incoming' ? (
+        {Platform.OS === 'web' ? (
+          <View style={styles.incomingActions}>
+            <Pressable
+              onPress={() => void handleClose()}
+              style={({ pressed }) => [
+                styles.singleCloseButton,
+                { backgroundColor: '#334155' },
+                pressed && { opacity: 0.75 },
+              ]}
+            >
+              <Text style={styles.singleCloseText}>Назад</Text>
+            </Pressable>
+          </View>
+        ) : phase === 'incoming' ? (
           <View style={styles.incomingActions}>
             <Pressable
               onPress={() => void handleReject()}
@@ -373,11 +390,14 @@ const styles = StyleSheet.create({
   topCenter: {
     alignItems: 'center',
     justifyContent: 'center',
+    flex: 1,
+    paddingHorizontal: 10,
   },
   topStatus: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
+    textAlign: 'center',
   },
   topDuration: {
     color: 'rgba(255,255,255,0.72)',
