@@ -21,18 +21,30 @@ export class RTCPeerConnection {
 }
 
 export class RTCIceCandidate {
-  constructor(public candidate: any) {}
+  candidate: any;
+
+  constructor(candidate: any) {
+    this.candidate = candidate;
+  }
 }
 
 export class RTCSessionDescription {
-  constructor(public description: any) {}
+  description: any;
+
+  constructor(description: any) {
+    this.description = description;
+  }
 }
 
 export function RTCView() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.text}>Видео доступно только в мобильном приложении</Text>
-    </View>
+  return React.createElement(
+    View,
+    { style: styles.container },
+    React.createElement(
+      Text,
+      { style: styles.text },
+      'Видео доступно только в мобильном приложении',
+    ),
   );
 }
 
