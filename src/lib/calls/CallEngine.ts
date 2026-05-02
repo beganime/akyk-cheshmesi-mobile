@@ -1,4 +1,5 @@
 import InCallManager from 'react-native-incall-manager';
+import NetInfo from '@react-native-community/netinfo';
 import {
   mediaDevices,
   RTCPeerConnection,
@@ -18,6 +19,11 @@ import {
   rejectCall,
 } from '@/src/lib/api/calls';
 import { getAccessToken } from '@/src/lib/storage/secure';
+import {
+  getCurrentCallVideoProfile,
+  profileFromNetInfoState,
+  type CallVideoProfile,
+} from '@/src/lib/calls/networkQuality';
 import type {
   CallSession,
   CallSocketEvent,
@@ -82,6 +88,9 @@ class CallEngine {
   private makingOffer = false;
   private ignoreOffer = false;
 
+  private videoProfile: CallVideoProfile | null = null;
+  private networkUnsubscribe: (() => void) | null = null;
+
   constructor() {
     try {
       registerGlobals();
@@ -124,20 +133,83 @@ class CallEngine {
   }
 
   private async createLocalStream(callType: CallType) {
+    const profile =
+      callType === 'video'
+        ? await getCurrentCallVideoProfile()
+        : null;
+
+    this.videoProfile = profile;
+
     const stream = await mediaDevices.getUserMedia({
-      audio: true,
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      } as any,
       video:
-        callType === 'video'
+        callType === 'video' && profile
           ? {
               facingMode: 'user',
-              width: 640,
-              height: 360,
-              frameRate: 24,
+              width: profile.width,
+              height: profile.height,
+              frameRate: profile.frameRate,
             }
           : false,
     });
 
     return stream;
+  }
+
+  private async applyVideoBitrate(profile: CallVideoProfile | null = this.videoProfile) {
+    if (!this.pc || !profile) return;
+
+    try {
+      const pcAny = this.pc as any;
+      const senders = typeof pcAny.getSenders === 'function' ? pcAny.getSenders() : [];
+      const videoSender = senders.find((sender: any) => sender?.track?.kind === 'video');
+
+      if (!videoSender || typeof videoSender.getParameters !== 'function') {
+        return;
+      }
+
+      const parameters = videoSender.getParameters();
+      parameters.encodings = parameters.encodings?.length ? parameters.encodings : [{}];
+      parameters.encodings[0] = {
+        ...parameters.encodings[0],
+        maxBitrate: profile.maxVideoBitrate,
+      };
+
+      await videoSender.setParameters(parameters);
+    } catch (error) {
+      console.warn('applyVideoBitrate failed:', error);
+    }
+  }
+
+  private startNetworkAdaptation(callType: CallType) {
+    if (callType !== 'video') return;
+
+    if (this.networkUnsubscribe) {
+      this.networkUnsubscribe();
+      this.networkUnsubscribe = null;
+    }
+
+    this.networkUnsubscribe = NetInfo.addEventListener((state) => {
+      const nextProfile = profileFromNetInfoState(state);
+
+      if (this.videoProfile?.label === nextProfile.label) {
+        return;
+      }
+
+      this.videoProfile = nextProfile;
+      void this.applyVideoBitrate(nextProfile);
+    });
+  }
+
+  private stopNetworkAdaptation() {
+    if (this.networkUnsubscribe) {
+      this.networkUnsubscribe();
+      this.networkUnsubscribe = null;
+    }
   }
 
   private async createPeerConnection(callType: CallType) {
@@ -215,6 +287,10 @@ class CallEngine {
     });
 
     this.pc = pc;
+
+    await this.applyVideoBitrate();
+    this.startNetworkAdaptation(callType);
+
     this.setState({
       localStream,
       callType,
@@ -614,6 +690,9 @@ class CallEngine {
   }
 
   async cleanup(markEnded: boolean) {
+    this.stopNetworkAdaptation();
+    this.videoProfile = null;
+
     this.joined = false;
     this.ignoreOffer = false;
     this.makingOffer = false;
