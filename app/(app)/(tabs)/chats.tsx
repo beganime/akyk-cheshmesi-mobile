@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   AppState,
   FlatList,
   Modal,
+  PanResponder,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -23,6 +25,7 @@ import { fetchChats, createDirectChat } from '@/src/lib/api/chats';
 import { searchUsers, UserShort } from '@/src/lib/api/contacts';
 import { realtimeClient } from '@/src/lib/realtime/socket';
 import { isMessageEvent } from '@/src/lib/realtime/events';
+import { ensureCallPermissions } from '@/src/lib/calls/permissions';
 import { useCallStore } from '@/src/state/call';
 import type { CallType } from '@/src/types/calls';
 import type { ChatListItem } from '@/src/types/chat';
@@ -43,6 +46,17 @@ type DecoratedChat = ChatListItem & {
   localArchived: boolean;
   localHidden: boolean;
 };
+
+type ChatRowProps = {
+  item: DecoratedChat;
+  theme: any;
+  callingKey: string | null;
+  onOpenChat: (item: ChatListItem) => void;
+  onOpenMenu: (item: DecoratedChat) => void;
+  onOpenCallChooser: (item: DecoratedChat) => void;
+};
+
+const SWIPE_ACTION_WIDTH = 104;
 
 const chatTabs: Array<{ key: ChatTab; label: string }> = [
   { key: 'all', label: 'Все' },
@@ -151,6 +165,175 @@ function sortChats(items: DecoratedChat[]) {
   });
 }
 
+function ChatRow({
+  item,
+  theme,
+  callingKey,
+  onOpenChat,
+  onOpenMenu,
+  onOpenCallChooser,
+}: ChatRowProps) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const [opened, setOpened] = useState(false);
+
+  const unread = Number(item.unread_count ?? 0) || 0;
+  const isStaff = Boolean(item.peer_user?.is_admin || item.peer_user?.is_staff);
+  const isCallingThisChat =
+    callingKey === `${item.uuid}:audio` || callingKey === `${item.uuid}:video`;
+
+  const openSwipe = useCallback(() => {
+    Animated.spring(translateX, {
+      toValue: -SWIPE_ACTION_WIDTH,
+      useNativeDriver: true,
+      speed: 18,
+      bounciness: 4,
+    }).start(() => setOpened(true));
+  }, [translateX]);
+
+  const closeSwipe = useCallback(() => {
+    Animated.spring(translateX, {
+      toValue: 0,
+      useNativeDriver: true,
+      speed: 18,
+      bounciness: 4,
+    }).start(() => setOpened(false));
+  }, [translateX]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) => {
+          return Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy);
+        },
+        onPanResponderMove: (_, gesture) => {
+          const base = opened ? -SWIPE_ACTION_WIDTH : 0;
+          const nextValue = Math.max(-SWIPE_ACTION_WIDTH, Math.min(0, base + gesture.dx));
+          translateX.setValue(nextValue);
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (gesture.dx < -36 || (opened && gesture.dx < 28)) {
+            openSwipe();
+          } else {
+            closeSwipe();
+          }
+        },
+        onPanResponderTerminate: () => {
+          closeSwipe();
+        },
+      }),
+    [closeSwipe, openSwipe, opened, translateX],
+  );
+
+  const handleCallPress = () => {
+    closeSwipe();
+    onOpenCallChooser(item);
+  };
+
+  const handleOpenChat = () => {
+    if (opened) {
+      closeSwipe();
+      return;
+    }
+
+    onOpenChat(item);
+  };
+
+  return (
+    <View style={styles.swipeContainer}>
+      <View style={styles.hiddenActionWrap}>
+        <Pressable
+          onPress={handleCallPress}
+          disabled={Boolean(callingKey)}
+          style={({ pressed }) => [
+            styles.hiddenCallButton,
+            {
+              backgroundColor: theme.colors.primary,
+              opacity: callingKey && !isCallingThisChat ? 0.5 : pressed ? 0.78 : 1,
+            },
+          ]}
+        >
+          {isCallingThisChat ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Ionicons name="call" size={20} color="#FFFFFF" />
+          )}
+          <Text style={styles.hiddenCallText}>
+            {isCallingThisChat ? 'Звоню...' : 'Позвонить'}
+          </Text>
+        </Pressable>
+      </View>
+
+      <Animated.View
+        style={[
+          styles.swipeForeground,
+          {
+            transform: [{ translateX }],
+          },
+        ]}
+        {...panResponder.panHandlers}
+      >
+        <Pressable onPress={handleOpenChat} onLongPress={() => onOpenMenu(item)}>
+          <GlassCard>
+            <View style={styles.chatRow}>
+              {item.peer_user?.avatar ? (
+                <ExpoImage
+                  source={{ uri: item.peer_user.avatar }}
+                  style={styles.avatarImage}
+                  contentFit="cover"
+                />
+              ) : (
+                <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
+                  <Text style={styles.avatarText}>
+                    {chatTitle(item).slice(0, 1).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.chatTextBlock}>
+                <View style={styles.titleRow}>
+                  <View style={styles.titleInline}>
+                    <Text
+                      style={[styles.title, { color: theme.colors.text }]}
+                      numberOfLines={1}
+                    >
+                      {chatTitle(item)}
+                    </Text>
+
+                    {isStaff ? <Ionicons name="star" size={14} color="#3B82F6" /> : null}
+
+                    {item.effectivePinned ? (
+                      <Ionicons name="bookmark" size={14} color={theme.colors.primary} />
+                    ) : null}
+
+                    {item.effectiveArchived ? (
+                      <Ionicons name="archive" size={14} color={theme.colors.muted} />
+                    ) : null}
+                  </View>
+
+                  {unread > 0 ? (
+                    <View style={[styles.badge, { backgroundColor: theme.colors.primary }]}>
+                      <Text style={styles.badgeText}>{unread}</Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <Text style={[styles.subtitle, { color: theme.colors.muted }]} numberOfLines={1}>
+                  {buildPreview(item)}
+                </Text>
+
+              </View>
+
+              <View style={styles.chatActions}>
+                <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
+              </View>
+            </View>
+          </GlassCard>
+        </Pressable>
+      </Animated.View>
+    </View>
+  );
+}
+
 export default function ChatsScreen() {
   const { theme } = useTheme();
   const startOutgoing = useCallStore((state) => state.startOutgoing);
@@ -167,6 +350,7 @@ export default function ChatsScreen() {
   const [activeTab, setActiveTab] = useState<ChatTab>('all');
   const [selectedChat, setSelectedChat] = useState<DecoratedChat | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [callChooserChat, setCallChooserChat] = useState<DecoratedChat | null>(null);
 
   const hydrateLocalPreferences = useCallback(async () => {
     const loaded = await loadChatListPreferences();
@@ -320,6 +504,7 @@ export default function ChatsScreen() {
       }
     } catch (error) {
       console.error('createDirectChat error:', error);
+      Alert.alert('Ошибка', 'Не удалось создать чат');
     } finally {
       setCreatingFor(null);
     }
@@ -332,6 +517,10 @@ export default function ChatsScreen() {
     });
   };
 
+  const openCallChooser = (item: DecoratedChat) => {
+    setCallChooserChat(item);
+  };
+
   const startCall = async (item: ChatListItem, callType: CallType) => {
     if (!item.uuid) {
       return;
@@ -342,7 +531,13 @@ export default function ChatsScreen() {
     try {
       setCallingKey(nextCallingKey);
 
+      const allowed = await ensureCallPermissions(callType);
+      if (!allowed) {
+        return;
+      }
+
       const call = await startOutgoing(item.uuid, callType);
+      setCallChooserChat(null);
 
       if (call?.uuid) {
         router.push({
@@ -355,7 +550,7 @@ export default function ChatsScreen() {
 
       Alert.alert(
         'Звонок не запущен',
-        error?.message || 'Не удалось начать звонок. Проверь сборку Android/iOS и WebSocket.',
+        error?.message || 'Не удалось начать звонок. Проверь Android/iOS build и WebSocket.',
       );
     } finally {
       setCallingKey(null);
@@ -623,110 +818,16 @@ export default function ChatsScreen() {
             </Text>
           </GlassCard>
         }
-        renderItem={({ item }) => {
-          const unread = Number(item.unread_count ?? 0) || 0;
-          const isStaff = Boolean(item.peer_user?.is_admin || item.peer_user?.is_staff);
-          const audioCalling = callingKey === `${item.uuid}:audio`;
-          const videoCalling = callingKey === `${item.uuid}:video`;
-          const callDisabled = Boolean(callingKey);
-
-          return (
-            <Pressable onPress={() => openChat(item)} onLongPress={() => openChatMenu(item)}>
-              <GlassCard>
-                <View style={styles.chatRow}>
-                  {item.peer_user?.avatar ? (
-                    <ExpoImage
-                      source={{ uri: item.peer_user.avatar }}
-                      style={styles.avatarImage}
-                      contentFit="cover"
-                    />
-                  ) : (
-                    <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
-                      <Text style={styles.avatarText}>
-                        {chatTitle(item).slice(0, 1).toUpperCase()}
-                      </Text>
-                    </View>
-                  )}
-
-                  <View style={styles.chatTextBlock}>
-                    <View style={styles.titleRow}>
-                      <View style={styles.titleInline}>
-                        <Text
-                          style={[styles.title, { color: theme.colors.text }]}
-                          numberOfLines={1}
-                        >
-                          {chatTitle(item)}
-                        </Text>
-
-                        {isStaff ? <Ionicons name="star" size={14} color="#3B82F6" /> : null}
-
-                        {item.effectivePinned ? (
-                          <Ionicons name="bookmark" size={14} color={theme.colors.primary} />
-                        ) : null}
-
-                        {item.effectiveArchived ? (
-                          <Ionicons name="archive" size={14} color={theme.colors.muted} />
-                        ) : null}
-                      </View>
-
-                      {unread > 0 ? (
-                        <View style={[styles.badge, { backgroundColor: theme.colors.primary }]}>
-                          <Text style={styles.badgeText}>{unread}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-
-                    <Text style={[styles.subtitle, { color: theme.colors.muted }]} numberOfLines={1}>
-                      {buildPreview(item)}
-                    </Text>
-                  </View>
-
-                  <View style={styles.chatActions}>
-                    <Pressable
-                      onPress={() => void startCall(item, 'audio')}
-                      disabled={callDisabled}
-                      hitSlop={8}
-                      style={({ pressed }) => [
-                        styles.callIconButton,
-                        {
-                          backgroundColor: theme.colors.primarySoft,
-                          opacity: callDisabled && !audioCalling ? 0.45 : pressed ? 0.72 : 1,
-                        },
-                      ]}
-                    >
-                      {audioCalling ? (
-                        <ActivityIndicator size="small" color={theme.colors.primary} />
-                      ) : (
-                        <Ionicons name="call" size={18} color={theme.colors.primary} />
-                      )}
-                    </Pressable>
-
-                    <Pressable
-                      onPress={() => void startCall(item, 'video')}
-                      disabled={callDisabled}
-                      hitSlop={8}
-                      style={({ pressed }) => [
-                        styles.callIconButton,
-                        {
-                          backgroundColor: theme.colors.primarySoft,
-                          opacity: callDisabled && !videoCalling ? 0.45 : pressed ? 0.72 : 1,
-                        },
-                      ]}
-                    >
-                      {videoCalling ? (
-                        <ActivityIndicator size="small" color={theme.colors.primary} />
-                      ) : (
-                        <Ionicons name="videocam" size={18} color={theme.colors.primary} />
-                      )}
-                    </Pressable>
-
-                    <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
-                  </View>
-                </View>
-              </GlassCard>
-            </Pressable>
-          );
-        }}
+        renderItem={({ item }) => (
+          <ChatRow
+            item={item}
+            theme={theme}
+            callingKey={callingKey}
+            onOpenChat={openChat}
+            onOpenMenu={openChatMenu}
+            onOpenCallChooser={openCallChooser}
+          />
+        )}
       />
 
       <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
@@ -791,6 +892,80 @@ export default function ChatsScreen() {
                   удаляются.
                 </Text>
               ) : null}
+            </GlassCard>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(callChooserChat)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCallChooserChat(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setCallChooserChat(null)} />
+
+          <View style={styles.bottomSheetWrap}>
+            <GlassCard>
+              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
+                Позвонить
+              </Text>
+
+              <Text style={[styles.sheetSub, { color: theme.colors.muted }]}>
+                {callChooserChat ? chatTitle(callChooserChat) : ''}
+              </Text>
+
+              <Pressable
+                onPress={() =>
+                  callChooserChat
+                    ? void startCall(callChooserChat, 'audio')
+                    : undefined
+                }
+                disabled={!callChooserChat || Boolean(callingKey)}
+                style={({ pressed }) => [
+                  styles.callChoice,
+                  {
+                    backgroundColor: '#10B981',
+                    opacity: pressed ? 0.8 : callingKey ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <Ionicons name="call" size={20} color="#FFFFFF" />
+                <Text style={styles.callChoiceText}>
+                  {callingKey === `${callChooserChat?.uuid}:audio` ? 'Запускаю...' : 'Аудио звонок'}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  callChooserChat
+                    ? void startCall(callChooserChat, 'video')
+                    : undefined
+                }
+                disabled={!callChooserChat || Boolean(callingKey)}
+                style={({ pressed }) => [
+                  styles.callChoice,
+                  {
+                    backgroundColor: '#3B82F6',
+                    opacity: pressed ? 0.8 : callingKey ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <Ionicons name="videocam" size={20} color="#FFFFFF" />
+                <Text style={styles.callChoiceText}>
+                  {callingKey === `${callChooserChat?.uuid}:video` ? 'Запускаю...' : 'Видео звонок'}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setCallChooserChat(null)}
+                style={[styles.cancelChoice, { backgroundColor: theme.colors.card }]}
+              >
+                <Text style={[styles.cancelChoiceText, { color: theme.colors.text }]}>
+                  Отмена
+                </Text>
+              </Pressable>
             </GlassCard>
           </View>
         </View>
@@ -864,6 +1039,36 @@ const styles = StyleSheet.create({
   helperText: {
     fontSize: 14,
   },
+  swipeContainer: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 24,
+  },
+  hiddenActionWrap: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: SWIPE_ACTION_WIDTH,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hiddenCallButton: {
+    width: 92,
+    minHeight: 62,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  hiddenCallText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  swipeForeground: {
+    borderRadius: 24,
+  },
   personRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -883,13 +1088,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7,
   },
-  callIconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   avatar: {
     width: 52,
     height: 52,
@@ -901,6 +1099,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '800',
+  },
+  avatarImage: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#E5E7EB',
   },
   titleRow: {
     flexDirection: 'row',
@@ -923,6 +1127,10 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 13,
+  },
+  swipeHint: {
+    fontSize: 11,
+    marginTop: 4,
   },
   badge: {
     minWidth: 22,
@@ -965,9 +1173,13 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   sheetTitle: {
-    fontSize: 17,
+    fontSize: 19,
     fontWeight: '800',
-    marginBottom: 12,
+    marginBottom: 4,
+  },
+  sheetSub: {
+    fontSize: 14,
+    marginBottom: 14,
   },
   sheetItem: {
     minHeight: 50,
@@ -986,15 +1198,35 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  avatarImage: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#E5E7EB',
-  },
   sheetHint: {
     fontSize: 12,
     lineHeight: 18,
     marginTop: 4,
+  },
+  callChoice: {
+    minHeight: 54,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  callChoiceText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  cancelChoice: {
+    minHeight: 50,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  cancelChoiceText: {
+    fontSize: 15,
+    fontWeight: '800',
   },
 });

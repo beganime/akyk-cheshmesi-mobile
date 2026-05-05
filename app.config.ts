@@ -6,7 +6,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   slug: 'akyl-cheshmesi',
   owner: 'aga_sila',
   scheme: 'akylchat',
-  version: '1.0.2',
+  version: '1.0.5',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
   icon: './assets/images/icon.png',
@@ -103,7 +103,5 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       projectId: '1d056ce0-1890-4429-97f7-31e739a1e023',
     },
   },
-  runtimeVersion: {
-    policy: 'appVersion',
-  },
+  runtimeVersion: '1.0.5'
 });

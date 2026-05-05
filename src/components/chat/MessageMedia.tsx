@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import { Audio, ResizeMode, Video } from 'expo-av';
 
-import type { MessageAttachment, MessageItem } from '@/src/types/message';
+import type { MessageItem } from '@/src/types/message';
 import { downloadAndShareRemoteFile } from '@/src/lib/media/download';
 
 type Props = {
@@ -55,12 +55,17 @@ function formatDuration(millis?: number | null) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+function getVideoNote(message: MessageItem) {
+  const meta = message.metadata as Record<string, unknown> | null | undefined;
+  return Boolean(meta?.is_video_note || meta?.shape === 'circle');
+}
+
 export function MessageMedia({ message, isOwn, theme }: Props) {
   const attachment = useMemo(() => getAttachmentByKind(message), [message]);
   const soundRef = useRef<Audio.Sound | null>(null);
 
   const [imageVisible, setImageVisible] = useState(false);
-  const [videoVisible, setVideoVisible] = useState(false);
+  const [videoPlaying, setVideoPlaying] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioPositionMillis, setAudioPositionMillis] = useState(0);
@@ -81,8 +86,8 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
   if (!attachment?.file_url) {
     return null;
   }
-  const fileUrl = attachment.file_url;
 
+  const fileUrl = attachment.file_url;
   const mediaKind = String(attachment.media_kind || '').toLowerCase();
   const contentType = String(attachment.content_type || '').toLowerCase();
 
@@ -103,9 +108,7 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
 
   const textColor = isOwn ? '#FFFFFF' : theme.colors.text;
   const metaColor = isOwn ? 'rgba(255,255,255,0.82)' : theme.colors.muted;
-  const videoNote = Boolean(
-    (message.metadata as Record<string, unknown> | null | undefined)?.is_video_note,
-  );
+  const videoNote = getVideoNote(message);
 
   const openFile = async () => {
     try {
@@ -158,7 +161,7 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
 
         const { sound } = await Audio.Sound.createAsync(
           { uri: fileUrl },
-          { shouldPlay: true },
+          { shouldPlay: true, progressUpdateIntervalMillis: 180 },
           (status: any) => {
             if (!status?.isLoaded) {
               return;
@@ -171,6 +174,7 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
             if (status.didJustFinish) {
               setAudioPlaying(false);
               setAudioPositionMillis(0);
+              void soundRef.current?.setPositionAsync(0).catch(() => undefined);
             }
           },
         );
@@ -188,6 +192,9 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
       if (status.isPlaying) {
         await soundRef.current.pauseAsync();
       } else {
+        if (status.positionMillis >= status.durationMillis) {
+          await soundRef.current.setPositionAsync(0);
+        }
         await soundRef.current.playAsync();
       }
     } catch (error) {
@@ -248,57 +255,40 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
 
   if (isVideo) {
     return (
-      <>
+      <View style={[styles.videoWrap, videoNote ? styles.videoNoteWrap : null]}>
+        <Video
+          style={[styles.video, videoNote ? styles.videoNote : null]}
+          source={{ uri: attachment.file_url }}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay={videoPlaying}
+          isLooping={false}
+          useNativeControls={false}
+          onPlaybackStatusUpdate={(status: any) => {
+            if (!status?.isLoaded) return;
+            setVideoPlaying(Boolean(status.isPlaying));
+            if (status.didJustFinish) {
+              setVideoPlaying(false);
+            }
+          }}
+        />
+
         <Pressable
-          style={[styles.videoWrap, videoNote ? styles.videoNoteWrap : null]}
-          onPress={() => setVideoVisible(true)}
+          onPress={() => setVideoPlaying((current) => !current)}
+          style={styles.videoOverlay}
         >
-          <Video
-            style={[styles.video, videoNote ? styles.videoNote : null]}
-            source={{ uri: attachment.file_url }}
-            resizeMode={ResizeMode.COVER}
-            isMuted
-            shouldPlay={false}
-            useNativeControls={false}
-          />
-
-          <View style={styles.videoOverlay}>
-            <View style={styles.playCircle}>
-              <Ionicons name="play" size={18} color="#FFFFFF" />
-            </View>
+          <View style={[styles.playCircle, videoNote ? styles.playCircleVideoNote : null]}>
+            <Ionicons name={videoPlaying ? 'pause' : 'play'} size={20} color="#FFFFFF" />
           </View>
-
-          {videoNote ? <View style={styles.videoNoteEdgeProgress} /> : null}
         </Pressable>
 
-        <Modal
-          visible={videoVisible}
-          animationType="slide"
-          onRequestClose={() => setVideoVisible(false)}
-        >
-          <View style={styles.fullscreenVideoRoot}>
-            <Video
-              style={styles.fullscreenVideo}
-              source={{ uri: attachment.file_url }}
-              resizeMode={ResizeMode.CONTAIN}
-              useNativeControls
-              shouldPlay
-            />
-
-            <Pressable style={styles.closeButton} onPress={() => setVideoVisible(false)}>
-              <Ionicons name="close" size={20} color="#FFFFFF" />
-            </Pressable>
-
-            <Pressable style={styles.downloadButton} onPress={() => void handleDownload()}>
-              {downloadLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Ionicons name="download-outline" size={18} color="#FFFFFF" />
-              )}
-            </Pressable>
-          </View>
-        </Modal>
-      </>
+        <Pressable style={styles.videoDownloadButton} onPress={() => void handleDownload()}>
+          {downloadLoading ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Ionicons name="download-outline" size={15} color="#FFFFFF" />
+          )}
+        </Pressable>
+      </View>
     );
   }
 
@@ -311,8 +301,8 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
         style={[
           styles.audioWrap,
           {
-            backgroundColor: isOwn ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.03)',
-            borderColor: isOwn ? 'rgba(255,255,255,0.14)' : theme.colors.border,
+            backgroundColor: isOwn ? 'rgba(99,102,241,0.92)' : theme.colors.cardStrong,
+            borderColor: isOwn ? 'rgba(255,255,255,0.16)' : theme.colors.borderStrong,
           },
         ]}
       >
@@ -320,26 +310,33 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
           {audioLoading ? (
             <ActivityIndicator size="small" color={textColor} />
           ) : (
-            <Ionicons name={audioPlaying ? 'pause' : 'play'} size={18} color={textColor} />
+            <Ionicons name={audioPlaying ? 'pause' : 'play'} size={20} color={textColor} />
           )}
         </Pressable>
 
-        <View style={styles.audioContent}>
-          <View
-            style={[
-              styles.audioProgressTrack,
-              { backgroundColor: isOwn ? 'rgba(255,255,255,0.16)' : theme.colors.border },
-            ]}
-          >
-            <View
-              style={[
-                styles.audioProgressValue,
-                {
-                  width: `${progress * 100}%`,
-                  backgroundColor: isOwn ? '#FFFFFF' : theme.colors.primary,
-                },
-              ]}
-            />
+        <View style={styles.audioWaveArea}>
+          <View style={styles.fakeWaveRow}>
+            {Array.from({ length: 24 }).map((_, index) => {
+              const active = index / 24 <= progress;
+              const height = 8 + ((index * 7) % 18);
+
+              return (
+                <View
+                  key={index}
+                  style={[
+                    styles.fakeWaveBar,
+                    {
+                      height,
+                      backgroundColor: active
+                        ? textColor
+                        : isOwn
+                          ? 'rgba(255,255,255,0.26)'
+                          : theme.colors.borderStrong,
+                    },
+                  ]}
+                />
+              );
+            })}
           </View>
 
           <Text style={[styles.audioTime, { color: metaColor }]}>
@@ -381,10 +378,11 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
 
 const styles = StyleSheet.create({
   imageWrap: {
-    width: 220,
-    height: 220,
-    borderRadius: 18,
+    width: 224,
+    height: 224,
+    borderRadius: 22,
     overflow: 'hidden',
+    backgroundColor: '#111827',
   },
   image: {
     width: '100%',
@@ -402,21 +400,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
   },
   videoWrap: {
-    width: 220,
-    height: 220,
-    borderRadius: 18,
+    width: 224,
+    height: 224,
+    borderRadius: 22,
     overflow: 'hidden',
     backgroundColor: '#000',
   },
   videoNoteWrap: {
-    borderRadius: 110,
+    width: 224,
+    height: 224,
+    borderRadius: 112,
   },
   video: {
     width: '100%',
     height: '100%',
   },
   videoNote: {
-    borderRadius: 110,
+    borderRadius: 112,
   },
   videoOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -424,54 +424,68 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   playCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: 'rgba(0,0,0,0.52)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  videoNoteEdgeProgress: {
+  playCircleVideoNote: {
+    backgroundColor: 'rgba(0,0,0,0.38)',
+  },
+  videoDownloadButton: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 4,
-    backgroundColor: 'rgba(255,255,255,0.35)',
+    right: 10,
+    bottom: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.44)',
   },
   audioWrap: {
-    width: 240,
-    minHeight: 58,
-    borderRadius: 18,
+    width: 254,
+    minHeight: 68,
+    borderRadius: 24,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    gap: 10,
+    paddingHorizontal: 12,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 6,
   },
   audioButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
   },
-  audioContent: {
+  audioWaveArea: {
     flex: 1,
+    minWidth: 0,
   },
-  audioProgressTrack: {
-    height: 6,
-    borderRadius: 999,
-    overflow: 'hidden',
-    marginBottom: 8,
+  fakeWaveRow: {
+    height: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginBottom: 4,
   },
-  audioProgressValue: {
-    height: '100%',
+  fakeWaveBar: {
+    width: 3,
     borderRadius: 999,
   },
   audioTime: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '700',
   },
   fileWrap: {
     width: 240,
@@ -508,15 +522,6 @@ const styles = StyleSheet.create({
   fullImage: {
     width: '100%',
     height: '82%',
-  },
-  fullscreenVideoRoot: {
-    flex: 1,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-  },
-  fullscreenVideo: {
-    width: '100%',
-    height: '100%',
   },
   closeButton: {
     position: 'absolute',

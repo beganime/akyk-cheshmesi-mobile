@@ -125,7 +125,26 @@ async function assetToBlob(asset: PickedMediaAsset): Promise<Blob | File> {
   }
 
   const response = await fetch(asset.uri);
+
+  if (!response.ok) {
+    throw new Error(`Не удалось прочитать файл: ${response.status}`);
+  }
+
   return await response.blob();
+}
+
+function buildWebFileFromBlob(
+  blob: Blob | File,
+  filename: string,
+  contentType: string,
+): Blob | File {
+  if (typeof File !== 'undefined' && !(blob instanceof File)) {
+    return new File([blob], filename, {
+      type: contentType || blob.type || 'application/octet-stream',
+    });
+  }
+
+  return blob;
 }
 
 async function uploadToSignedUrl(
@@ -173,6 +192,35 @@ async function uploadToSignedUrl(
   });
 }
 
+async function appendFileToFormData(
+  formData: FormData,
+  asset: PickedMediaAsset,
+  options: {
+    filenamePrefix: string;
+    fallbackContentType: string;
+  },
+) {
+  const filename = buildSafeFilename(asset, options.filenamePrefix);
+  const contentType = buildContentType(asset, options.fallbackContentType);
+
+  if (Platform.OS === 'web') {
+    const blob = await assetToBlob(asset);
+    const file = buildWebFileFromBlob(blob, filename, contentType);
+
+    formData.append('file', file, filename);
+    return;
+  }
+
+  formData.append(
+    'file',
+    {
+      uri: asset.uri,
+      name: filename,
+      type: contentType || 'application/octet-stream',
+    } as any,
+  );
+}
+
 async function uploadLocal(
   asset: PickedMediaAsset,
   options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean },
@@ -180,18 +228,10 @@ async function uploadLocal(
   const formData = new FormData();
   const durationSeconds = normalizeDurationSeconds(asset.duration);
 
-  if (Platform.OS === 'web' && asset.file) {
-    formData.append('file', asset.file);
-  } else {
-    formData.append(
-      'file',
-      {
-        uri: asset.uri,
-        name: buildSafeFilename(asset, options.filenamePrefix),
-        type: buildContentType(asset, options.fallbackContentType),
-      } as any,
-    );
-  }
+  await appendFileToFormData(formData, asset, {
+    filenamePrefix: options.filenamePrefix,
+    fallbackContentType: options.fallbackContentType,
+  });
 
   formData.append('is_public', String(Boolean(options.isPublic)));
 

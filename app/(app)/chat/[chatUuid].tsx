@@ -33,6 +33,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { useCallStore } from '@/src/state/call';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { GlassCard } from '@/src/components/GlassCard';
 import {
@@ -87,10 +88,8 @@ import {
   saveChatAppearanceForChat,
 } from '@/src/lib/chatAppearance';
 import { addLocalContact, isLocalContact } from '@/src/lib/local/localContacts';
-import { blockUserLocal, isUserBlocked } from '@/src/lib/local/blockedUsers'
+import { blockUserLocal, isUserBlocked } from '@/src/lib/local/blockedUsers';
 import { realtimeClient } from '@/src/lib/realtime/socket';
-import { useCallStore } from '@/src/state/call';
-import type { CallType } from '@/src/types/calls';
 import {
   extractChatUuidFromRealtimeEvent,
   extractMessageFromRealtimeEvent,
@@ -401,7 +400,6 @@ export default function ChatScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { chatUuid } = useLocalSearchParams<{ chatUuid: string }>();
-  const startOutgoing = useCallStore((state) => state.startOutgoing);
 
   const cameraRef = useRef<any>(null);
   const [audioPermission, requestAudioPermission] = Audio.usePermissions();
@@ -410,6 +408,9 @@ export default function ChatScreen() {
 
   const listRef = useRef<FlatList<MessageItem>>(null);
   const isNearBottomRef = useRef(true);
+  const audioPressStartedAtRef = useRef<number | null>(null);
+
+  const startOutgoing = useCallStore((state) => state.startOutgoing);
 
   const [chat, setChat] = useState<ChatListItem | null>(null);
   const [messages, setMessages] = useState<MessageItem[]>([]);
@@ -422,6 +423,7 @@ export default function ChatScreen() {
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [loadingStickers, setLoadingStickers] = useState(false);
   const [sending, setSending] = useState(false);
+  const [callingKey, setCallingKey] = useState<string | null>(null);
 
   const [appearance, setAppearance] = useState(DEFAULT_CHAT_APPEARANCE);
   const [appearanceVisible, setAppearanceVisible] = useState(false);
@@ -456,12 +458,8 @@ export default function ChatScreen() {
   const [cameraFacing, setCameraFacing] = useState<CameraType>('front');
   const [cameraTorch, setCameraTorch] = useState(false);
   const [captureBusy, setCaptureBusy] = useState(false);
-  const [callingKey, setCallingKey] = useState<CallType | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const audioStatusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const audioRecordingRef = useRef<Audio.Recording | null>(null);
-  const audioHoldActiveRef = useRef(false);
-  const suppressNextRecorderPressRef = useRef(false);
 
   const [reportType, setReportType] = useState<'user' | 'chat'>('chat');
   const [reportReason, setReportReason] = useState<ComplaintReason>('other');
@@ -488,8 +486,8 @@ export default function ChatScreen() {
       return 'arrow-up';
     }
 
-    return captureMode === 'audio' ? 'mic-outline' : 'videocam-outline';
-  }, [draft, captureMode]);
+    return audioRecording ? 'mic' : 'mic-outline';
+  }, [draft, audioRecording]);
 
   const canSend = draft.trim().length > 0;
 
@@ -1274,34 +1272,6 @@ export default function ChatScreen() {
     return currentChat?.peer_user?.avatar || currentChat?.avatar || null;
   };
 
-  const startCall = async (callType: CallType) => {
-    if (!chatUuid || callingKey) return;
-
-    try {
-      setCallingKey(callType);
-
-      const call = await startOutgoing(chatUuid, callType);
-
-      if (call?.uuid) {
-        router.push({
-          pathname: '/(app)/call/[callUuid]',
-          params: { callUuid: call.uuid },
-        });
-      }
-    } catch (error: any) {
-      console.error('startCall error:', error);
-      Alert.alert(
-        'Звонок не запущен',
-        getApiErrorMessage(
-          error,
-          'Не удалось начать звонок. Проверь Android/iOS сборку и WebSocket.',
-        ),
-      );
-    } finally {
-      setCallingKey(null);
-    }
-  };
-
   const getPickedMediaKind = (
     asset: PickedMediaAsset & { type?: string | null }
   ): 'image' | 'video' => {
@@ -1318,6 +1288,7 @@ export default function ChatScreen() {
   const sendMediaMessage = async (
     mediaType: 'audio' | 'video',
     asset: PickedMediaAsset,
+    metadata?: Record<string, unknown>,
   ) => {
     if (!chatUuid) return;
 
@@ -1335,7 +1306,7 @@ export default function ChatScreen() {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       local_status: 'pending',
-      metadata: mediaType === 'video' ? { is_video_note: true } : {},
+      metadata: metadata || {},
       attachments: [
         {
           uuid: `local-attachment-${clientUuid}`,
@@ -1370,7 +1341,7 @@ export default function ChatScreen() {
         message_type: mediaType,
         text: '',
         attachment_uuids: [uploaded.uuid],
-        ...(mediaType === 'video' ? { metadata: { is_video_note: true } } : {}),
+        ...(metadata ? { metadata } : {}),
         ...(optimisticReply?.uuid ? { reply_to_uuid: optimisticReply.uuid } : {}),
       });
 
@@ -1417,28 +1388,30 @@ export default function ChatScreen() {
   };
 
   const handleCapturedMedia = async (asset: PickedMediaAsset) => {
-    await sendMediaMessage(captureMode, asset);
+    await sendMediaMessage(
+      captureMode,
+      asset,
+      captureMode === 'video'
+        ? {
+            is_video_note: true,
+            aspect_ratio: '1:1',
+            shape: 'circle',
+          }
+        : undefined,
+    );
   };
 
   const closeCaptureSafely = async () => {
     if (captureBusy) return;
 
     try {
-      const activeRecording = audioRecordingRef.current || audioRecording;
-
-      if (activeRecording) {
-        await activeRecording.stopAndUnloadAsync().catch(() => null);
+      if (audioRecording) {
+        await audioRecording.stopAndUnloadAsync().catch(() => null);
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: false,
           playsInSilentModeIOS: true,
         }).catch(() => null);
-        audioRecordingRef.current = null;
         setAudioRecording(null);
-      }
-
-      if (audioStatusIntervalRef.current) {
-        clearInterval(audioStatusIntervalRef.current);
-        audioStatusIntervalRef.current = null;
       }
 
       if (videoRecording) {
@@ -1454,10 +1427,6 @@ export default function ChatScreen() {
   };
 
   const startAudioRecording = async () => {
-    if (audioRecordingRef.current || audioRecording) {
-      return;
-    }
-
     try {
       setCaptureBusy(true);
 
@@ -1479,24 +1448,23 @@ export default function ChatScreen() {
       await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       await recording.startAsync();
 
-      audioRecordingRef.current = recording;
-      setAudioRecording(recording);
-      setAudioDurationMs(0);
-
       if (audioStatusIntervalRef.current) {
         clearInterval(audioStatusIntervalRef.current);
       }
 
       audioStatusIntervalRef.current = setInterval(async () => {
         try {
-          const status = await recording.getStatusAsync();
-          setAudioDurationMs(
-            typeof status.durationMillis === 'number' ? status.durationMillis : 0,
-          );
+          const status = await recording.getStatusAsync();          
+            setAudioDurationMs(
+              typeof status.durationMillis === 'number' ? status.durationMillis : 0,
+            );
         } catch (error) {
           console.error('audio status poll error:', error);
         }
-      }, 150);
+      }, 200);
+
+      setAudioDurationMs(0);
+      setAudioRecording(recording);
     } catch (error) {
       console.error('startAudioRecording error:', error);
       Alert.alert('Ошибка', 'Не удалось начать запись голосового сообщения');
@@ -1506,8 +1474,7 @@ export default function ChatScreen() {
   };
 
   const stopAudioRecordingAndSend = async () => {
-    const activeRecording = audioRecordingRef.current || audioRecording;
-    if (!activeRecording) return;
+    if (!audioRecording) return;
 
     try {
       setCaptureBusy(true);
@@ -1517,33 +1484,33 @@ export default function ChatScreen() {
         audioStatusIntervalRef.current = null;
       }
 
-      const statusBeforeStop = await activeRecording.getStatusAsync().catch(() => null);
-      await activeRecording.stopAndUnloadAsync();
-      const statusAfterStop = await activeRecording.getStatusAsync().catch(() => null);
+      const statusBeforeStop = await audioRecording.getStatusAsync().catch(() => null);
+      await audioRecording.stopAndUnloadAsync();
+      const statusAfterStop = await audioRecording.getStatusAsync().catch(() => null);
 
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
       });
 
-      const uri = activeRecording.getURI();
+      const uri = audioRecording.getURI();
       const durationMillis =
         Number((statusAfterStop as any)?.durationMillis || 0) ||
         Number((statusBeforeStop as any)?.durationMillis || 0) ||
         audioDurationMs ||
-        0;
+        1000;
       const durationSeconds = Math.max(1, Math.ceil(durationMillis / 1000));
 
-      audioRecordingRef.current = null;
       setAudioRecording(null);
 
-      if (!uri) {
-        Alert.alert('Ошибка', 'Не удалось получить аудиофайл');
+      if (durationMillis < 650) {
+        setAudioDurationMs(0);
+        setCaptureVisible(false);
         return;
       }
 
-      if (durationMillis < 600) {
-        setAudioDurationMs(0);
+      if (!uri) {
+        Alert.alert('Ошибка', 'Не удалось получить аудиофайл');
         return;
       }
 
@@ -1562,22 +1529,6 @@ export default function ChatScreen() {
     } finally {
       setCaptureBusy(false);
     }
-  };
-
-  const startHoldAudioRecording = async () => {
-    if (canSend || captureBusy || audioRecordingRef.current || audioRecording) return;
-
-    suppressNextRecorderPressRef.current = true;
-    audioHoldActiveRef.current = true;
-    setCaptureMode('audio');
-    await startAudioRecording();
-  };
-
-  const stopHoldAudioRecordingAndSend = async () => {
-    if (!audioHoldActiveRef.current) return;
-
-    audioHoldActiveRef.current = false;
-    await stopAudioRecordingAndSend();
   };
 
   const ensureVideoPermissions = async () => {
@@ -1735,7 +1686,6 @@ export default function ChatScreen() {
         message_type: messageType,
         text: '',
         attachment_uuids: [uploaded.uuid],
-        ...(mediaType === 'video' ? { metadata: { is_video_note: true } } : {}),
         ...(optimisticReply?.uuid ? { reply_to_uuid: optimisticReply.uuid } : {}),
       });
 
@@ -1971,36 +1921,78 @@ export default function ChatScreen() {
     }
   };
 
-  const handleRecorderPress = () => {
-    if (suppressNextRecorderPressRef.current) {
-      suppressNextRecorderPressRef.current = false;
+  const handleAudioPressIn = () => {
+    if (canSend || captureBusy || audioRecording) {
       return;
     }
 
+    if (composerPanelVisible) {
+      closeComposerPanel();
+    }
+
+    audioPressStartedAtRef.current = Date.now();
+    setCaptureMode('audio');
+    void startAudioRecording();
+  };
+
+  const handleAudioPressOut = () => {
     if (canSend) {
       void handleSend();
       return;
     }
 
-    if (composerPanelVisible) {
-      closeComposerPanel();
+    if (!audioRecording) {
+      audioPressStartedAtRef.current = null;
+      return;
     }
 
-    animateLayout();
-    setCaptureMode('audio');
-    setCaptureVisible(true);
+    void stopAudioRecordingAndSend();
   };
 
   const openVideoNoteRecorder = () => {
-    if (canSend || captureBusy) return;
+    if (canSend || captureBusy) {
+      return;
+    }
 
     if (composerPanelVisible) {
       closeComposerPanel();
     }
 
-    animateLayout();
     setCaptureMode('video');
     setCaptureVisible(true);
+  };
+
+
+  const startChatCall = async (callType: CallType) => {
+    if (!chatUuid || callingKey) {
+      return;
+    }
+
+    try {
+      setCallingKey(callType);
+
+      const allowed = await ensureCallPermissions(callType);
+      if (!allowed) {
+        return;
+      }
+
+      const created = await startOutgoing(chatUuid, callType);
+
+      if (created?.uuid) {
+        router.push({
+          pathname: '/(app)/call/[callUuid]',
+          params: { callUuid: created.uuid },
+        });
+      }
+    } catch (error: any) {
+      console.error('startChatCall error:', error);
+      Alert.alert(
+        'Звонок не запущен',
+        error?.message || 'Не удалось начать звонок. Проверь Android/iOS build и WebSocket.',
+      );
+    } finally {
+      setCallingKey(null);
+    }
   };
 
   const renderMessage = ({ item }: { item: MessageItem }) => {
@@ -2008,9 +2000,117 @@ export default function ChatScreen() {
     const metaColor = isOwn ? 'rgba(255,255,255,0.82)' : theme.colors.muted;
     const stickerImage = getStickerImage(item);
     const stickerEmoji = getStickerEmoji(item);
-    const isMediaMessage = ['image', 'video', 'audio', 'file'].includes(item.message_type);
-    const isPureVisualMedia =
-      (item.message_type === 'image' || item.message_type === 'video') && !item.text?.trim();
+    const isMediaMessage =
+      item.message_type === 'image' ||
+      item.message_type === 'video' ||
+      item.message_type === 'audio' ||
+      item.message_type === 'file';
+
+    const renderMeta = () => (
+      <View style={styles.metaRow}>
+        {item.is_edited ? (
+          <Text
+            style={[
+              styles.metaEditedText,
+              {
+                color: metaColor,
+              },
+            ]}
+          >
+            изменено
+          </Text>
+        ) : null}
+
+        <Text
+          style={[
+            styles.metaText,
+            {
+              color: metaColor,
+            },
+          ]}
+        >
+          {formatTime(item.created_at)}
+        </Text>
+
+        {isOwn ? <MessageStatusIcon message={item} color={metaColor} /> : null}
+      </View>
+    );
+
+    if (isMediaMessage && !stickerImage) {
+      return (
+        <View
+          style={[
+            styles.messageRow,
+            {
+              justifyContent: isOwn ? 'flex-end' : 'flex-start',
+            },
+          ]}
+        >
+          <Pressable
+            onLongPress={() => handleOpenActionMenu(item)}
+            style={[
+              styles.mediaMessageShell,
+              {
+                alignSelf: isOwn ? 'flex-end' : 'flex-start',
+              },
+            ]}
+          >
+            {!!item.reply_to?.text && (
+              <View
+                style={[
+                  styles.replyBox,
+                  styles.mediaReplyBox,
+                  {
+                    borderColor: isOwn ? 'rgba(255,255,255,0.24)' : theme.colors.borderStrong,
+                    backgroundColor: isOwn ? 'rgba(0,0,0,0.16)' : theme.colors.cardStrong,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.replyText,
+                    {
+                      color: isOwn ? 'rgba(255,255,255,0.84)' : theme.colors.muted,
+                    },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {item.reply_to.text}
+                </Text>
+              </View>
+            )}
+
+            <MessageMedia message={item} isOwn={isOwn} theme={theme} />
+
+            {!!item.text?.trim() && (
+              <Text
+                style={[
+                  styles.mediaCaptionText,
+                  {
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.cardStrong,
+                  },
+                ]}
+              >
+                {item.text}
+              </Text>
+            )}
+
+            <View
+              style={[
+                styles.mediaMetaPill,
+                {
+                  alignSelf: isOwn ? 'flex-end' : 'flex-start',
+                  backgroundColor: isOwn ? 'rgba(0,0,0,0.32)' : theme.colors.cardStrong,
+                },
+              ]}
+            >
+              {renderMeta()}
+            </View>
+          </Pressable>
+        </View>
+      );
+    }
 
     return (
       <View
@@ -2031,8 +2131,6 @@ export default function ChatScreen() {
           style={[
             styles.bubble,
             buildBubbleStyle(theme, appearance, isOwn),
-            isPureVisualMedia ? styles.mediaOnlyBubble : null,
-            isMediaMessage && !item.text?.trim() ? styles.compactMediaBubble : null,
             {
               alignSelf: isOwn ? 'flex-end' : 'flex-start',
             },
@@ -2081,26 +2179,6 @@ export default function ChatScreen() {
                 </Text>
               )}
             </View>
-          ) : item.message_type === 'image' ||
-              item.message_type === 'video' ||
-              item.message_type === 'audio' ||
-              item.message_type === 'file' ? (
-            <View style={styles.imageMessageWrap}>
-              <MessageMedia message={item} isOwn={isOwn} theme={theme} />
-              {!!item.text?.trim() && (
-                <Text
-                  style={[
-                    styles.messageText,
-                    {
-                      color: isOwn ? '#FFFFFF' : theme.colors.text,
-                      marginTop: 8,
-                    },
-                  ]}
-                >
-                  {item.text}
-                </Text>
-              )}
-            </View>
           ) : (
             <Text
               style={[
@@ -2114,33 +2192,7 @@ export default function ChatScreen() {
             </Text>
           )}
 
-          <View style={styles.metaRow}>
-            {item.is_edited ? (
-              <Text
-                style={[
-                  styles.metaEditedText,
-                  {
-                    color: metaColor,
-                  },
-                ]}
-              >
-                изменено
-              </Text>
-            ) : null}
-
-            <Text
-              style={[
-                styles.metaText,
-                {
-                  color: metaColor,
-                },
-              ]}
-            >
-              {formatTime(item.created_at)}
-            </Text>
-
-            {isOwn ? <MessageStatusIcon message={item} color={metaColor} /> : null}
-          </View>
+          {renderMeta()}
         </Pressable>
       </View>
     );
@@ -2159,8 +2211,8 @@ export default function ChatScreen() {
     <SafeAreaView style={[styles.container, buildChatBackgroundStyle(theme, appearance)]}>
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
         {appearance.backgroundImageUri ? (
           <ExpoImage
@@ -2236,43 +2288,43 @@ export default function ChatScreen() {
             </View>
           </Pressable>
 
-          <Pressable
-            onPress={() => void startCall('audio')}
-            disabled={Boolean(callingKey)}
-            style={[
-              styles.headerButton,
-              {
-                borderColor: theme.colors.borderStrong,
-                backgroundColor: theme.colors.cardStrong,
-                opacity: callingKey && callingKey !== 'audio' ? 0.45 : 1,
-              },
-            ]}
-          >
-            {callingKey === 'audio' ? (
-              <ActivityIndicator size="small" color={theme.colors.primary} />
-            ) : (
-              <Ionicons name="call" size={18} color={theme.colors.text} />
-            )}
-          </Pressable>
+          <View style={styles.headerCallGroup}>
+            <Pressable
+              onPress={() => void startChatCall('audio')}
+              disabled={Boolean(callingKey)}
+              style={[
+                styles.headerCallButton,
+                {
+                  backgroundColor: callingKey === 'audio' ? theme.colors.primary : theme.colors.primarySoft,
+                  opacity: callingKey && callingKey !== 'audio' ? 0.55 : 1,
+                },
+              ]}
+            >
+              {callingKey === 'audio' ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons name="call" size={18} color={theme.colors.primary} />
+              )}
+            </Pressable>
 
-          <Pressable
-            onPress={() => void startCall('video')}
-            disabled={Boolean(callingKey)}
-            style={[
-              styles.headerButton,
-              {
-                borderColor: theme.colors.borderStrong,
-                backgroundColor: theme.colors.cardStrong,
-                opacity: callingKey && callingKey !== 'video' ? 0.45 : 1,
-              },
-            ]}
-          >
-            {callingKey === 'video' ? (
-              <ActivityIndicator size="small" color={theme.colors.primary} />
-            ) : (
-              <Ionicons name="videocam" size={18} color={theme.colors.text} />
-            )}
-          </Pressable>
+            <Pressable
+              onPress={() => void startChatCall('video')}
+              disabled={Boolean(callingKey)}
+              style={[
+                styles.headerCallButton,
+                {
+                  backgroundColor: callingKey === 'video' ? theme.colors.primary : theme.colors.primarySoft,
+                  opacity: callingKey && callingKey !== 'video' ? 0.55 : 1,
+                },
+              ]}
+            >
+              {callingKey === 'video' ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons name="videocam" size={18} color={theme.colors.primary} />
+              )}
+            </Pressable>
+          </View>
 
           <Pressable
             onPress={() => setSettingsVisible(true)}
@@ -2319,8 +2371,8 @@ export default function ChatScreen() {
             styles.listContent,
             {
               paddingBottom:
-                Math.max(insets.bottom, 14) +
-                (composerPanelVisible ? 336 : 126),
+                Math.max(insets.bottom, 16) +
+                (composerPanelVisible ? 364 : 158),
             },
           ]}
           ListHeaderComponent={
@@ -2368,7 +2420,7 @@ export default function ChatScreen() {
                 backgroundColor: theme.colors.primary,
                 bottom:
                   Math.max(insets.bottom, 12) +
-                  (composerPanelVisible ? 340 : 126),
+                  (composerPanelVisible ? 368 : 158),
               },
             ]}
           >
@@ -2382,7 +2434,7 @@ export default function ChatScreen() {
             {
               borderTopColor: theme.colors.borderStrong,
               backgroundColor: theme.colors.background,
-              paddingBottom: Math.max(insets.bottom, 10),
+              paddingBottom: Math.max(insets.bottom, 12),
             },
           ]}
         >
@@ -2461,8 +2513,9 @@ export default function ChatScreen() {
                   },
                 ]}
                 multiline
+                scrollEnabled
                 maxLength={4000}
-                textAlignVertical="center"
+                textAlignVertical="top"
               />
             </View>
 
@@ -2473,53 +2526,48 @@ export default function ChatScreen() {
                 { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
               ]}
             >
-              <Ionicons name="images-outline" size={18} color={theme.colors.text} />
+              <Ionicons name="images-outline" size={19} color={theme.colors.text} />
             </Pressable>
 
             {!canSend ? (
               <Pressable
                 onPress={openVideoNoteRecorder}
-                disabled={captureBusy}
                 style={[
                   styles.toolButton,
                   { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
                 ]}
               >
-                <Ionicons name="videocam-outline" size={18} color={theme.colors.text} />
+                <Ionicons name="radio-button-on-outline" size={19} color={theme.colors.text} />
               </Pressable>
             ) : null}
 
             <Pressable
-              onPress={handleRecorderPress}
-              onPressIn={() => {
-                if (!canSend) {
-                  void startHoldAudioRecording();
-                }
-              }}
-              onPressOut={() => {
-                if (!canSend) {
-                  void stopHoldAudioRecordingAndSend();
+              onPressIn={handleAudioPressIn}
+              onPressOut={handleAudioPressOut}
+              onPress={() => {
+                if (canSend) {
+                  void handleSend();
                 }
               }}
               style={[
                 styles.primaryActionButton,
                 {
-                  backgroundColor: canSend ? theme.colors.primary : theme.colors.cardStrong,
-                  borderColor: canSend ? 'transparent' : theme.colors.borderStrong,
+                  backgroundColor: canSend || audioRecording ? theme.colors.primary : theme.colors.cardStrong,
+                  borderColor: canSend || audioRecording ? 'transparent' : theme.colors.borderStrong,
                 },
               ]}
             >
               <Ionicons
                 name={composerActionIcon as any}
                 size={20}
-                color={canSend ? '#FFFFFF' : theme.colors.text}
+                color={canSend || audioRecording ? '#FFFFFF' : theme.colors.text}
               />
             </Pressable>
           </View>
 
           {!canSend ? (
             <Text style={[styles.captureHint, { color: theme.colors.muted }]}>
-              Удерживай микрофон — запись начнётся сразу, отпусти — отправится. Камера рядом — видео-кружок.
+              Удерживай микрофон — голосовое отправится после отпускания. Кнопка рядом — видео-кружок. Фото и видео из галереи отправляются одной кнопкой.
             </Text>
           ) : null}
 
@@ -3536,6 +3584,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  headerCallGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+
+  headerCallButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   headerCenter: {
     flex: 1,
     flexDirection: 'row',
@@ -3622,21 +3684,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
 
-  mediaOnlyBubble: {
-    backgroundColor: 'transparent',
-    borderColor: 'transparent',
-    borderWidth: 0,
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-    minWidth: 0,
-  },
-
-  compactMediaBubble: {
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-    overflow: 'hidden',
-  },
-
   replyBox: {
     borderLeftWidth: 3,
     paddingLeft: 10,
@@ -3657,6 +3704,38 @@ const styles = StyleSheet.create({
 
   imageMessageWrap: {
     width: 220,
+  },
+
+  mediaMessageShell: {
+    maxWidth: '86%',
+    minWidth: 78,
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+
+  mediaReplyBox: {
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingRight: 10,
+    marginBottom: 8,
+  },
+
+  mediaCaptionText: {
+    marginTop: 8,
+    borderRadius: 16,
+    overflow: 'hidden',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+
+  mediaMetaPill: {
+    marginTop: 6,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
   },
 
   imageMessage: {
@@ -3718,6 +3797,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     paddingHorizontal: 12,
     paddingTop: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: -6 },
+    elevation: 12,
   },
 
   replyComposer: {
@@ -3779,11 +3863,11 @@ const styles = StyleSheet.create({
   composer: {
     flex: 1,
     minHeight: 50,
-    maxHeight: 128,
+    maxHeight: 136,
     borderRadius: 22,
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 9,
     justifyContent: 'center',
   },
 
@@ -3791,7 +3875,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
     minHeight: 28,
-    maxHeight: 108,
+    maxHeight: 112,
+    paddingTop: 0,
+    paddingBottom: 0,
   },
 
   primaryActionButton: {
@@ -3801,6 +3887,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.10,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
 
   captureHint: {
@@ -4084,9 +4175,9 @@ const styles = StyleSheet.create({
   },
 
   cameraCircleOuter: {
-    width: 280,
-    height: 280,
-    borderRadius: 140,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -4094,9 +4185,9 @@ const styles = StyleSheet.create({
   },
 
   cameraCircleInner: {
-    width: 268,
-    height: 268,
-    borderRadius: 134,
+    width: 286,
+    height: 286,
+    borderRadius: 143,
     overflow: 'hidden',
     backgroundColor: '#000000',
   },
