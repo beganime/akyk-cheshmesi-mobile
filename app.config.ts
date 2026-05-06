@@ -63,6 +63,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     package: 'com.akylchat.app',
     googleServicesFile: './google-services.json',
+    versionCode: 3,
     adaptiveIcon: {
       foregroundImage: './assets/images/adaptive-icon.png',
       backgroundColor: '#0B1020',
