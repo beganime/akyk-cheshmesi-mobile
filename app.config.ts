@@ -6,7 +6,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   slug: 'akyl-cheshmesi',
   owner: 'aga_sila',
   scheme: 'akylchat',
-  version: '1.0.5',
+  version: '1.0.6',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
   icon: './assets/images/icon.png',
@@ -63,7 +63,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     package: 'com.akylchat.app',
     googleServicesFile: './google-services.json',
-    versionCode: 3,
+    version: '1.0.6',
+    versionCode: 10,
     adaptiveIcon: {
       foregroundImage: './assets/images/adaptive-icon.png',
       backgroundColor: '#0B1020',
@@ -104,5 +105,5 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       projectId: '1d056ce0-1890-4429-97f7-31e739a1e023',
     },
   },
-  runtimeVersion: '1.0.5'
+  runtimeVersion: '1.0.6'
 });
