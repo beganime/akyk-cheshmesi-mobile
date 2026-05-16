@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 
 import { apiClient } from '@/src/lib/api/client';
 import { optimizePickedMediaForUpload } from '@/src/lib/media/optimize';
@@ -147,7 +148,7 @@ function buildWebFileFromBlob(
   return blob;
 }
 
-async function uploadToSignedUrl(
+async function uploadBlobToSignedUrl(
   url: string,
   method: string,
   body: Blob | File,
@@ -190,6 +191,61 @@ async function uploadToSignedUrl(
     xhr.timeout = 90000;
     xhr.send(body as any);
   });
+}
+
+async function getNativeFileSize(uri: string): Promise<number | undefined> {
+  try {
+    const info = await FileSystem.getInfoAsync(uri, { size: true } as any);
+    const size = Number((info as any)?.size || 0);
+
+    if ((info as any)?.exists && Number.isFinite(size) && size > 0) {
+      return size;
+    }
+  } catch (error) {
+    console.warn('getNativeFileSize failed:', error);
+  }
+
+  return undefined;
+}
+
+async function getAssetUploadSize(asset: PickedMediaAsset): Promise<number | undefined> {
+  const explicitSize = Number(asset.fileSize || 0);
+
+  if (Number.isFinite(explicitSize) && explicitSize > 0) {
+    return explicitSize;
+  }
+
+  if (Platform.OS !== 'web') {
+    return await getNativeFileSize(asset.uri);
+  }
+
+  try {
+    const blob = await assetToBlob(asset);
+    const blobSize = Number(blob.size || 0);
+
+    return Number.isFinite(blobSize) && blobSize > 0 ? blobSize : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function uploadFileUriToSignedUrl(
+  url: string,
+  method: string,
+  fileUri: string,
+  headers?: Record<string, string>,
+): Promise<void> {
+  const result = await FileSystem.uploadAsync(url, fileUri, {
+    httpMethod: (method || 'PUT') as any,
+    headers: headers || {},
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+  });
+
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(
+      `S3 upload failed with status ${result.status}${result.body ? `: ${result.body}` : ''}`,
+    );
+  }
 }
 
 async function appendFileToFormData(
@@ -253,16 +309,15 @@ async function uploadViaPresign(
   asset: PickedMediaAsset,
   options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean },
 ): Promise<UploadedMedia> {
-  const blob = await assetToBlob(asset);
-
   const filename = buildSafeFilename(asset, options.filenamePrefix);
   const contentType = buildContentType(asset, options.fallbackContentType);
   const durationSeconds = normalizeDurationSeconds(asset.duration);
+  const uploadSize = await getAssetUploadSize(asset);
 
   const presignResponse = await apiClient.post<MediaPresignResponse>('/media/presign/', {
     filename,
     content_type: contentType,
-    size: asset.fileSize || blob.size,
+    ...(uploadSize ? { size: uploadSize } : {}),
     is_public: Boolean(options.isPublic),
     ...(durationSeconds ? { duration_seconds: durationSeconds } : {}),
   });
@@ -281,12 +336,23 @@ async function uploadViaPresign(
     uploadHeaders['Content-Type'] = contentType;
   }
 
-  await uploadToSignedUrl(
-    presignData.upload.url,
-    presignData.upload.method || 'PUT',
-    blob,
-    uploadHeaders,
-  );
+  if (Platform.OS === 'web') {
+    const blob = await assetToBlob(asset);
+
+    await uploadBlobToSignedUrl(
+      presignData.upload.url,
+      presignData.upload.method || 'PUT',
+      blob,
+      uploadHeaders,
+    );
+  } else {
+    await uploadFileUriToSignedUrl(
+      presignData.upload.url,
+      presignData.upload.method || 'PUT',
+      asset.uri,
+      uploadHeaders,
+    );
+  }
 
   const completeResponse = await apiClient.post<UploadedMedia>('/media/complete/', {
     media_uuid: presignData.media.uuid,
@@ -298,10 +364,13 @@ async function uploadViaPresign(
 function shouldFallbackToLocalUpload(error: any): boolean {
   const status = Number(error?.response?.status || 0);
   const detail = extractBackendDetail(error).toLowerCase();
+  const message = String(error?.message || '').toLowerCase();
 
   return (
     detail.includes('use_s3 is disabled') ||
     detail.includes('s3 is disabled') ||
+    detail.includes('s3 upload failed') ||
+    message.includes('s3 upload failed') ||
     detail.includes('/media/upload-local') ||
     detail.includes('upload-local') ||
     status === 404 ||

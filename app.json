@@ -39,6 +39,12 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Разрешите Akyl Cheshmesi доступ к фото и видео, чтобы отправлять медиа в чат."
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Разрешите Akyl Cheshmesi использовать камеру для видео-звонков и видео-сообщений.",
@@ -57,7 +63,9 @@
         "UIBackgroundModes": ["remote-notification"],
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Разрешите Akyl Cheshmesi использовать камеру для видео-звонков.",
-        "NSMicrophoneUsageDescription": "Разрешите Akyl Cheshmesi использовать микрофон для звонков и голосовых сообщений."
+        "NSMicrophoneUsageDescription": "Разрешите Akyl Cheshmesi использовать микрофон для звонков и голосовых сообщений.",
+        "NSPhotoLibraryUsageDescription": "Разрешите Akyl Cheshmesi доступ к фото и видео, чтобы отправлять медиа в чат.",
+        "NSPhotoLibraryAddUsageDescription": "Разрешите Akyl Cheshmesi сохранять медиафайлы при необходимости."
       }
     },
 
@@ -78,7 +86,10 @@
         "CAMERA",
         "MODIFY_AUDIO_SETTINGS",
         "WAKE_LOCK",
-        "FOREGROUND_SERVICE"
+        "FOREGROUND_SERVICE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "READ_EXTERNAL_STORAGE"
       ]
     },
 

@@ -44,7 +44,6 @@ import {
 } from '@/src/lib/api/chats';
 import { fetchPresence } from '@/src/lib/api/presence';
 import { createComplaint, ComplaintReason } from '@/src/lib/api/complaints';
-import { apiClient } from '@/src/lib/api/client';
 import type { PickedMediaAsset } from '@/src/lib/api/media';
 import { uploadPickedMedia } from '@/src/lib/api/media';
 import {
@@ -133,7 +132,6 @@ function formatSecondsRemaining(ms: number) {
   return `00:${String(seconds).padStart(2, '0')}`;
 }
 
-
 function normalizeUploadMimeType(mimeType?: string | null, fallback?: string): string {
   const value = String(mimeType || fallback || '').trim().toLowerCase();
 
@@ -155,52 +153,6 @@ function buildUploadFilename(
   }
 
   return `${fallbackPrefix}-${Date.now()}${fallbackExtension}`;
-}
-
-async function assetUriToBlob(asset: PickedMediaAsset): Promise<Blob | File> {
-  if (Platform.OS === 'web' && asset.file) {
-    return asset.file;
-  }
-
-  const response = await fetch(asset.uri);
-  return await response.blob();
-}
-
-async function uploadBlobToSignedUrl(
-  url: string,
-  method: string,
-  body: Blob | File,
-  headers: Record<string, string>,
-): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open(method || 'PUT', url);
-
-    Object.entries(headers).forEach(([key, value]) => {
-      xhr.setRequestHeader(key, value);
-    });
-
-    xhr.onload = () => {
-      const status = xhr.status || 0;
-
-      if (status >= 200 && status < 300) {
-        resolve();
-        return;
-      }
-
-      reject(
-        new Error(
-          `S3 upload failed with status ${status}${xhr.responseText ? `: ${xhr.responseText}` : ''}`,
-        ),
-      );
-    };
-
-    xhr.onerror = () => reject(new Error('S3 upload network error'));
-    xhr.ontimeout = () => reject(new Error('S3 upload timeout'));
-    xhr.timeout = 60000;
-
-    xhr.send(body as any);
-  });
 }
 
 async function uploadChatAsset(
@@ -234,6 +186,7 @@ async function uploadChatAsset(
     uuid: uploaded.uuid,
   };
 }
+
 function animateLayout() {
   LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 }
@@ -409,6 +362,10 @@ export default function ChatScreen() {
   const listRef = useRef<FlatList<MessageItem>>(null);
   const isNearBottomRef = useRef(true);
   const audioPressStartedAtRef = useRef<number | null>(null);
+  const sendLockRef = useRef(false);
+  const audioRecordingRef = useRef<Audio.Recording | null>(null);
+  const audioStartPromiseRef = useRef<Promise<Audio.Recording | null> | null>(null);
+  const videoStartedAtRef = useRef<number | null>(null);
 
   const startOutgoing = useCallStore((state) => state.startOutgoing);
 
@@ -551,6 +508,7 @@ export default function ChatScreen() {
             } catch (error) {
               console.error('auto stop video recording error:', error);
             }
+
             return VIDEO_MAX_DURATION_SECONDS * 1000;
           }
 
@@ -603,6 +561,7 @@ export default function ChatScreen() {
       const data = await fetchChatDetail(chatUuid);
       setChat(data);
       await saveCachedChatDetail(chatUuid, data);
+
       if (data.chat_type !== 'group' && data.peer_user?.uuid) {
         const presenceData = await fetchPresence(data.peer_user.uuid);
         setPresence(presenceData);
@@ -713,7 +672,6 @@ export default function ChatScreen() {
     animateLayout();
     setComposerPanelVisible(false);
   };
-
   const loadEarlierMessages = async () => {
     try {
       if (!chatUuid || !nextUrl || loadingEarlier) return;
@@ -758,7 +716,6 @@ export default function ChatScreen() {
     void loadInitialMessages();
   }, [hydrateFromCache, loadChat, loadInitialMessages]);
 
-
   useEffect(() => {
     let mounted = true;
 
@@ -799,6 +756,7 @@ export default function ChatScreen() {
       mounted = false;
     };
   }, [chat?.peer_user?.uuid]);
+
   useFocusEffect(
     useCallback(() => {
       void refreshChat();
@@ -869,6 +827,7 @@ export default function ChatScreen() {
       unsubscribe();
     };
   }, [chatUuid, refreshChat, refreshMessagesSilent]);
+
   useEffect(() => {
     void syncReadState();
   }, [latestIncomingMessage?.uuid]);
@@ -1036,12 +995,14 @@ export default function ChatScreen() {
 
   const handleShowMessageInfo = () => {
     if (!selectedMessage) return;
+
     const sentAt = selectedMessage.created_at
       ? new Date(selectedMessage.created_at).toLocaleString()
       : 'Нет данных';
     const editedAt = selectedMessage.edited_at
       ? new Date(selectedMessage.edited_at).toLocaleString()
       : 'Не редактировалось';
+
     Alert.alert(
       'Информация о сообщении',
       `Отправлено: ${sentAt}\nИзменено: ${editedAt}\nСтатус: ${selectedMessage.delivery_status || 'sent'}`,
@@ -1065,10 +1026,12 @@ export default function ChatScreen() {
 
   const updateAppearance = async (patch: Partial<typeof appearance>) => {
     if (!chatUuid) return;
+
     const next = {
       ...appearance,
       ...patch,
     };
+
     setAppearance(next);
     await saveChatAppearanceForChat(next, chatUuid);
   };
@@ -1079,7 +1042,9 @@ export default function ChatScreen() {
       quality: 0.9,
       allowsEditing: false,
     });
+
     if (result.canceled || !result.assets?.[0]) return;
+
     await updateAppearance({
       backgroundImageUri: result.assets[0].uri,
       backgroundPreset: 'plain',
@@ -1273,7 +1238,7 @@ export default function ChatScreen() {
   };
 
   const getPickedMediaKind = (
-    asset: PickedMediaAsset & { type?: string | null }
+    asset: PickedMediaAsset & { type?: string | null },
   ): 'image' | 'video' => {
     const explicitType = String((asset as any)?.type || '').toLowerCase();
     const mimeType = String(asset.mimeType || '').toLowerCase();
@@ -1319,6 +1284,7 @@ export default function ChatScreen() {
     };
 
     animateLayout();
+
     setMessages((current) => {
       const next = [...current, optimisticMessage];
       void saveCachedChatMessages(chatUuid, next);
@@ -1405,14 +1371,20 @@ export default function ChatScreen() {
     if (captureBusy) return;
 
     try {
-      if (audioRecording) {
-        await audioRecording.stopAndUnloadAsync().catch(() => null);
+      const recording = audioRecordingRef.current || audioRecording;
+
+      if (recording) {
+        await recording.stopAndUnloadAsync().catch(() => null);
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: false,
           playsInSilentModeIOS: true,
         }).catch(() => null);
+
+        audioRecordingRef.current = null;
         setAudioRecording(null);
       }
+
+      audioStartPromiseRef.current = null;
 
       if (videoRecording) {
         cameraRef.current?.stopRecording?.();
@@ -1426,7 +1398,11 @@ export default function ChatScreen() {
     }
   };
 
-  const startAudioRecording = async () => {
+  const startAudioRecording = async (): Promise<Audio.Recording | null> => {
+    if (audioRecordingRef.current) {
+      return audioRecordingRef.current;
+    }
+
     try {
       setCaptureBusy(true);
 
@@ -1436,7 +1412,7 @@ export default function ChatScreen() {
 
       if (!permission?.granted) {
         Alert.alert('Нет доступа', 'Разреши микрофон для записи голосовых сообщений.');
-        return;
+        return null;
       }
 
       await Audio.setAudioModeAsync({
@@ -1454,46 +1430,68 @@ export default function ChatScreen() {
 
       audioStatusIntervalRef.current = setInterval(async () => {
         try {
-          const status = await recording.getStatusAsync();          
-            setAudioDurationMs(
-              typeof status.durationMillis === 'number' ? status.durationMillis : 0,
-            );
+          const status = await recording.getStatusAsync();
+
+          setAudioDurationMs(
+            typeof status.durationMillis === 'number' ? status.durationMillis : 0,
+          );
         } catch (error) {
           console.error('audio status poll error:', error);
         }
       }, 200);
 
       setAudioDurationMs(0);
+      audioRecordingRef.current = recording;
       setAudioRecording(recording);
+
+      return recording;
     } catch (error) {
       console.error('startAudioRecording error:', error);
       Alert.alert('Ошибка', 'Не удалось начать запись голосового сообщения');
+      return null;
     } finally {
       setCaptureBusy(false);
     }
   };
 
-  const stopAudioRecordingAndSend = async () => {
-    if (!audioRecording) return;
+  const beginAudioRecording = () => {
+    if (captureBusy || audioRecordingRef.current || audioStartPromiseRef.current) {
+      return;
+    }
+
+    const promise = startAudioRecording();
+    audioStartPromiseRef.current = promise;
+
+    promise.finally(() => {
+      if (audioStartPromiseRef.current === promise) {
+        audioStartPromiseRef.current = null;
+      }
+    });
+  };
+
+  const stopAudioRecordingAndSend = async (recordingParam?: Audio.Recording | null) => {
+    const recording = recordingParam || audioRecordingRef.current || audioRecording;
+    if (!recording) return;
 
     try {
       setCaptureBusy(true);
+      audioStartPromiseRef.current = null;
 
       if (audioStatusIntervalRef.current) {
         clearInterval(audioStatusIntervalRef.current);
         audioStatusIntervalRef.current = null;
       }
 
-      const statusBeforeStop = await audioRecording.getStatusAsync().catch(() => null);
-      await audioRecording.stopAndUnloadAsync();
-      const statusAfterStop = await audioRecording.getStatusAsync().catch(() => null);
+      const statusBeforeStop = await recording.getStatusAsync().catch(() => null);
+      await recording.stopAndUnloadAsync();
+      const statusAfterStop = await recording.getStatusAsync().catch(() => null);
 
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
       });
 
-      const uri = audioRecording.getURI();
+      const uri = recording.getURI();
       const durationMillis =
         Number((statusAfterStop as any)?.durationMillis || 0) ||
         Number((statusBeforeStop as any)?.durationMillis || 0) ||
@@ -1501,6 +1499,7 @@ export default function ChatScreen() {
         1000;
       const durationSeconds = Math.max(1, Math.ceil(durationMillis / 1000));
 
+      audioRecordingRef.current = null;
       setAudioRecording(null);
 
       if (durationMillis < 650) {
@@ -1567,6 +1566,7 @@ export default function ChatScreen() {
         return;
       }
 
+      videoStartedAtRef.current = Date.now();
       setVideoDurationMs(0);
       setVideoRecording(true);
 
@@ -1578,7 +1578,14 @@ export default function ChatScreen() {
         codec: Platform.OS === 'ios' ? 'avc1' : undefined,
       });
 
-      const durationSeconds = Math.max(1, Math.ceil((videoDurationMs || 1000) / 1000));
+      const startedAt = videoStartedAtRef.current || Date.now();
+      const elapsedMs = Math.max(1000, Date.now() - startedAt);
+      const durationSeconds = Math.max(
+        1,
+        Math.ceil(Math.min(elapsedMs, VIDEO_MAX_DURATION_SECONDS * 1000) / 1000),
+      );
+
+      videoStartedAtRef.current = null;
       setVideoRecording(false);
 
       if (!result?.uri) {
@@ -1614,8 +1621,18 @@ export default function ChatScreen() {
 
   const handlePickMediaFromGallery = async () => {
     let pickedKind: 'image' | 'video' = 'image';
+    let clientUuid: string | null = null;
 
     try {
+      if (Platform.OS !== 'web') {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+        if (!permission.granted) {
+          Alert.alert('Нет доступа', 'Разреши доступ к фото и видео, чтобы отправлять медиа в чат.');
+          return;
+        }
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.All,
         quality: 0.72,
@@ -1634,7 +1651,7 @@ export default function ChatScreen() {
       const filenamePrefix = messageType === 'video' ? 'video' : 'photo';
       const fallbackContentType = messageType === 'video' ? 'video/mp4' : 'image/jpeg';
 
-      const clientUuid = generateUUIDv4();
+      clientUuid = generateUUIDv4();
       const optimisticReply = buildReplyPayload(replyTo);
 
       const optimisticMessage: MessageItem = {
@@ -1662,6 +1679,7 @@ export default function ChatScreen() {
       };
 
       animateLayout();
+
       setMessages((current) => {
         const next = [...current, optimisticMessage];
         void saveCachedChatMessages(chatUuid, next);
@@ -1704,6 +1722,23 @@ export default function ChatScreen() {
       });
     } catch (error) {
       console.error('handlePickMediaFromGallery error:', error);
+
+      if (chatUuid && clientUuid) {
+        setMessages((current) => {
+          const next = current.map((message) =>
+            message.client_uuid === clientUuid
+              ? {
+                  ...message,
+                  local_status: 'failed',
+                }
+              : message,
+          );
+
+          void saveCachedChatMessages(chatUuid, next);
+          return next;
+        });
+      }
+
       Alert.alert(
         'Ошибка',
         getApiErrorMessage(
@@ -1744,6 +1779,7 @@ export default function ChatScreen() {
       };
 
       animateLayout();
+
       setMessages((current) => {
         const next = [...current, optimisticMessage];
         void saveCachedChatMessages(chatUuid, next);
@@ -1790,7 +1826,9 @@ export default function ChatScreen() {
   const handleSend = async () => {
     const text = draft.trim();
 
-    if (!chatUuid || !text || sending) return;
+    if (!chatUuid || !text || sendLockRef.current) return;
+
+    sendLockRef.current = true;
 
     const clientUuid = generateUUIDv4();
     const optimisticReply = buildReplyPayload(replyTo);
@@ -1859,6 +1897,7 @@ export default function ChatScreen() {
         return next;
       });
     } finally {
+      sendLockRef.current = false;
       setSending(false);
     }
   };
@@ -1867,6 +1906,7 @@ export default function ChatScreen() {
     if (!chatUuid || !message.client_uuid || message.message_type !== 'text') return;
 
     animateLayout();
+
     setMessages((current) => {
       const next = current.map((item) =>
         item.client_uuid === message.client_uuid
@@ -1922,7 +1962,7 @@ export default function ChatScreen() {
   };
 
   const handleAudioPressIn = () => {
-    if (canSend || captureBusy || audioRecording) {
+    if (canSend || captureBusy || audioRecordingRef.current || audioStartPromiseRef.current) {
       return;
     }
 
@@ -1932,21 +1972,37 @@ export default function ChatScreen() {
 
     audioPressStartedAtRef.current = Date.now();
     setCaptureMode('audio');
-    void startAudioRecording();
+    beginAudioRecording();
   };
 
   const handleAudioPressOut = () => {
     if (canSend) {
-      void handleSend();
       return;
     }
 
-    if (!audioRecording) {
-      audioPressStartedAtRef.current = null;
-      return;
-    }
+    void (async () => {
+      const pendingStart = audioStartPromiseRef.current;
 
-    void stopAudioRecordingAndSend();
+      if (pendingStart) {
+        const recording = await pendingStart;
+        audioStartPromiseRef.current = null;
+
+        if (recording) {
+          await stopAudioRecordingAndSend(recording);
+        }
+
+        return;
+      }
+
+      const recording = audioRecordingRef.current;
+
+      if (!recording) {
+        audioPressStartedAtRef.current = null;
+        return;
+      }
+
+      await stopAudioRecordingAndSend(recording);
+    })();
   };
 
   const openVideoNoteRecorder = () => {
@@ -1962,6 +2018,24 @@ export default function ChatScreen() {
     setCaptureVisible(true);
   };
 
+  type CallType = 'audio' | 'video';
+
+  const ensureCallPermissions = async (callType: CallType) => {
+    if (callType === 'video') {
+      return await ensureVideoPermissions();
+    }
+
+    const permission = audioPermission?.granted
+      ? audioPermission
+      : await requestAudioPermission();
+
+    if (!permission?.granted) {
+      Alert.alert('Нет доступа', 'Разреши микрофон для аудио-звонков.');
+      return false;
+    }
+
+    return true;
+  };
 
   const startChatCall = async (callType: CallType) => {
     if (!chatUuid || callingKey) {
@@ -2197,10 +2271,10 @@ export default function ChatScreen() {
       </View>
     );
   };
-
   if (loadingChat || loadingMessages) {
     return (
-      <SafeAreaView style={[styles.container, buildChatBackgroundStyle(theme, appearance)]}>        <View style={styles.centered}>
+      <SafeAreaView style={[styles.container, buildChatBackgroundStyle(theme, appearance)]}>
+        <View style={styles.centered}>
           <ActivityIndicator color={theme.colors.primary} />
         </View>
       </SafeAreaView>
@@ -2221,6 +2295,7 @@ export default function ChatScreen() {
             contentFit={appearance.backgroundSizeMode === 'contain' ? 'contain' : 'cover'}
           />
         ) : null}
+
         {appearance.gradientPreset && appearance.gradientPreset !== 'none' ? (
           <LinearGradient
             colors={
@@ -2347,14 +2422,19 @@ export default function ChatScreen() {
                 onPress={() => void handleAddToContacts()}
                 style={[styles.quickActionBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}
               >
-                <Text style={[styles.quickActionText, { color: theme.colors.text }]}>Добавить в контакты</Text>
+                <Text style={[styles.quickActionText, { color: theme.colors.text }]}>
+                  Добавить в контакты
+                </Text>
               </Pressable>
             ) : null}
+
             <Pressable
               onPress={() => void handleBlockLocal()}
               style={[styles.quickActionBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}
             >
-              <Text style={[styles.quickActionText, { color: theme.colors.danger }]}>Заблокировать</Text>
+              <Text style={[styles.quickActionText, { color: theme.colors.danger }]}>
+                Заблокировать
+              </Text>
             </Pressable>
           </View>
         ) : null}
@@ -2807,12 +2887,15 @@ export default function ChatScreen() {
                 />
               </View>
 
-              <Text style={[styles.audioTitle, { color: theme.colors.text }]}>Голосовое сообщение</Text>
-              <Text style={[styles.audioTimer, { color: theme.colors.muted }]}> 
+              <Text style={[styles.audioTitle, { color: theme.colors.text }]}>
+                Голосовое сообщение
+              </Text>
+
+              <Text style={[styles.audioTimer, { color: theme.colors.muted }]}>
                 {formatMillis(audioDurationMs)}
               </Text>
 
-              <Text style={[styles.audioHint, { color: theme.colors.muted }]}> 
+              <Text style={[styles.audioHint, { color: theme.colors.muted }]}>
                 {audioRecording
                   ? 'Нажми “Отправить”, чтобы закончить и отправить запись'
                   : 'Нажми “Записать”, чтобы начать запись'}
@@ -2836,7 +2919,7 @@ export default function ChatScreen() {
 
                 {!audioRecording ? (
                   <Pressable
-                    onPress={() => void startAudioRecording()}
+                    onPress={beginAudioRecording}
                     disabled={captureBusy}
                     style={[
                       styles.primaryBtn,
@@ -2920,7 +3003,7 @@ export default function ChatScreen() {
                       },
                     ]}
                   />
-                  <Text style={[styles.videoPillText, { color: theme.colors.text }]}> 
+                  <Text style={[styles.videoPillText, { color: theme.colors.text }]}>
                     {videoRecording
                       ? formatSecondsRemaining(Math.max(0, VIDEO_MAX_DURATION_SECONDS * 1000 - videoDurationMs))
                       : 'Лимит 00:30'}
@@ -2970,8 +3053,10 @@ export default function ChatScreen() {
                 ) : (
                   <View style={styles.cameraFallback}>
                     <Ionicons name="videocam-outline" size={42} color={theme.colors.primary} />
-                    <Text style={[styles.cameraFallbackTitle, { color: theme.colors.text }]}>Нужен доступ</Text>
-                    <Text style={[styles.cameraFallbackText, { color: theme.colors.muted }]}> 
+                    <Text style={[styles.cameraFallbackTitle, { color: theme.colors.text }]}>
+                      Нужен доступ
+                    </Text>
+                    <Text style={[styles.cameraFallbackText, { color: theme.colors.muted }]}>
                       Разреши камеру и микрофон для записи видео-сообщений
                     </Text>
 
@@ -2990,7 +3075,7 @@ export default function ChatScreen() {
                 )}
               </View>
 
-              <Text style={[styles.videoCaption, { color: theme.colors.muted }]}> 
+              <Text style={[styles.videoCaption, { color: theme.colors.muted }]}>
                 Видео записывается в кружке, до 30 секунд, в лёгком качестве для меньшего веса.
               </Text>
 
@@ -3388,6 +3473,7 @@ export default function ChatScreen() {
       >
         <View style={styles.modalOverlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setAppearanceVisible(false)} />
+
           <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <GlassCard>
               <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
@@ -3434,6 +3520,7 @@ export default function ChatScreen() {
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.reportInput, { borderColor: theme.colors.borderStrong, color: theme.colors.text }]}
               />
+
               <TextInput
                 value={appearance.customOwnBubbleColor || ''}
                 onChangeText={(value) => void updateAppearance({ customOwnBubbleColor: value })}
@@ -3441,6 +3528,7 @@ export default function ChatScreen() {
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.reportInput, { borderColor: theme.colors.borderStrong, color: theme.colors.text }]}
               />
+
               <TextInput
                 value={appearance.customPeerBubbleColor || ''}
                 onChangeText={(value) => void updateAppearance({ customPeerBubbleColor: value })}
@@ -3555,6 +3643,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     borderBottomWidth: 1,
   },
+
   quickActionsBar: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -3562,6 +3651,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+
   quickActionBtn: {
     borderWidth: 1,
     borderRadius: 12,
@@ -3570,6 +3660,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   quickActionText: {
     fontSize: 12,
     fontWeight: '700',
