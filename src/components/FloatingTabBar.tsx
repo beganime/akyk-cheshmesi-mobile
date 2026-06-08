@@ -10,7 +10,7 @@ import { useTheme } from '@/src/theme/ThemeProvider';
 const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
   chats: 'chatbubbles-outline',
   contacts: 'people-outline',
-  ai: 'sparkles-outline',
+  stories: 'play-circle-outline',
   announcements: 'newspaper-outline',
   profile: 'person-outline',
 };
@@ -18,7 +18,7 @@ const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
 const activeIconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
   chats: 'chatbubbles',
   contacts: 'people',
-  ai: 'sparkles',
+  stories: 'play-circle',
   announcements: 'newspaper',
   profile: 'person',
 };

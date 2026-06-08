@@ -19,7 +19,15 @@ export type ReplyMessageShort = {
 export type MessageItem = {
   uuid: string;
   client_uuid?: string | null;
-  message_type: 'text' | 'system' | 'sticker' | 'image' | 'video' | 'file' | 'audio';
+  message_type:
+    | 'text'
+    | 'system'
+    | 'sticker'
+    | 'image'
+    | 'video'
+    | 'video_note'
+    | 'file'
+    | 'audio';
   text?: string | null;
   reply_to?: ReplyMessageShort | null;
   metadata?: Record<string, unknown> | null;

@@ -19,10 +19,7 @@ import { GlassCard } from '@/src/components/GlassCard';
 import { loginRequest } from '@/src/lib/api/auth';
 import { useAuthStore } from '@/src/state/auth';
 import { useTheme } from '@/src/theme/ThemeProvider';
-
-function getErrorMessage(error: any, fallback: string) {
-  return error?.response?.data?.detail || error?.message || fallback;
-}
+import { getApiErrorMessage } from '@/src/utils/apiErrors';
 
 export default function LoginScreen() {
   const { theme } = useTheme();
@@ -30,6 +27,7 @@ export default function LoginScreen() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const onLogin = async () => {
@@ -61,14 +59,14 @@ export default function LoginScreen() {
 
       router.replace('/(app)/(tabs)/chats');
     } catch (error: any) {
-      Alert.alert('Ошибка входа', getErrorMessage(error, 'Не удалось войти'));
+      Alert.alert('Ошибка входа', getApiErrorMessage(error, 'Не удалось войти'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <LinearGradient colors={['#0B1020', '#141B32', '#1A2545']} style={styles.gradient}>
+    <LinearGradient colors={theme.colors.heroGradient} style={styles.gradient}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -80,12 +78,14 @@ export default function LoginScreen() {
         >
           <View style={styles.hero}>
             <View style={[styles.logoCircle, { backgroundColor: theme.colors.primary }]}>
-              <Ionicons name="sparkles" size={28} color="#FFFFFF" />
+              <Ionicons name="paper-plane" size={28} color="#FFFFFF" />
             </View>
 
-            <Text style={styles.brandTitle}>Akyl Cheshmesi</Text>
-            <Text style={styles.brandSubtitle}>
-              Быстрый, безопасный и красивый мессенджер
+            <Text style={[styles.brandTitle, { color: theme.colors.text }]}>
+              Akyl Çeşmesi Messenger
+            </Text>
+            <Text style={[styles.brandSubtitle, { color: theme.colors.muted }]}>
+              Безопасное общение для своих
             </Text>
           </View>
 
@@ -136,7 +136,7 @@ export default function LoginScreen() {
                 placeholder="Пароль"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.input, { color: theme.colors.text }]}
-                secureTextEntry
+                secureTextEntry={!passwordVisible}
                 autoCapitalize="none"
                 autoCorrect={false}
                 autoComplete="password"
@@ -144,11 +144,22 @@ export default function LoginScreen() {
                 returnKeyType="done"
                 onSubmitEditing={() => void onLogin()}
               />
+              <Pressable
+                onPress={() => setPasswordVisible((value) => !value)}
+                hitSlop={10}
+                style={styles.eyeButton}
+              >
+                <Ionicons
+                  name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={theme.colors.muted}
+                />
+              </Pressable>
             </View>
 
             <Pressable onPress={() => void onLogin()} disabled={loading}>
               <LinearGradient
-                colors={['#4F6BFF', '#6E7BFF']}
+                colors={[theme.colors.primary, '#60BDF2']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={[styles.button, loading && styles.buttonDisabled]}
@@ -173,31 +184,6 @@ export default function LoginScreen() {
                 Нет аккаунта? Зарегистрироваться
               </Text>
             </Pressable>
-
-            <View style={styles.featuresRow}>
-              <View style={styles.featureItem}>
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={16}
-                  color={theme.colors.primary}
-                />
-                <Text style={[styles.featureText, { color: theme.colors.muted }]}>
-                  Защищённо
-                </Text>
-              </View>
-
-              <View style={styles.featureItem}>
-                <Ionicons name="flash-outline" size={16} color={theme.colors.primary} />
-                <Text style={[styles.featureText, { color: theme.colors.muted }]}>Быстро</Text>
-              </View>
-
-              <View style={styles.featureItem}>
-                <Ionicons name="sync-outline" size={16} color={theme.colors.primary} />
-                <Text style={[styles.featureText, { color: theme.colors.muted }]}>
-                  Синхронно
-                </Text>
-              </View>
-            </View>
           </GlassCard>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -232,13 +218,12 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   brandTitle: {
-    color: '#FFFFFF',
     fontSize: 30,
     fontWeight: '800',
     marginBottom: 6,
+    textAlign: 'center',
   },
   brandSubtitle: {
-    color: 'rgba(255,255,255,0.72)',
     fontSize: 15,
     textAlign: 'center',
     lineHeight: 21,
@@ -267,6 +252,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
   },
+  eyeButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   button: {
     minHeight: 54,
     borderRadius: 18,
@@ -291,23 +283,5 @@ const styles = StyleSheet.create({
   secondaryActionText: {
     fontSize: 14,
     fontWeight: '700',
-  },
-  featuresRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 18,
-    gap: 10,
-  },
-  featureItem: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  featureText: {
-    fontSize: 12,
-    fontWeight: '600',
   },
 });

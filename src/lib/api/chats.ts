@@ -15,10 +15,68 @@ export async function fetchChatDetail(chatUuid: string): Promise<ChatListItem> {
 }
 
 export async function createDirectChat(peerUuid: string) {
-  const response = await apiClient.post('/chats/direct/', {
+  const response = await apiClient.post('/chats/', {
+    type: 'private',
     peer_uuid: peerUuid,
+  }).catch(async () => {
+    return await apiClient.post('/chats/direct/', {
+      peer_uuid: peerUuid,
+    });
   });
 
+  return response.data;
+}
+
+export async function createGroupChat(payload: {
+  title: string;
+  description?: string;
+  member_uuids: string[];
+}) {
+  const response = await apiClient.post('/chats/', {
+    type: 'group',
+    title: payload.title,
+    description: payload.description || '',
+    member_uuids: payload.member_uuids,
+  }).catch(async () => {
+    return await apiClient.post('/chats/group/', {
+      title: payload.title,
+      description: payload.description || '',
+      member_uuids: payload.member_uuids,
+    });
+  });
+
+  return response.data;
+}
+
+export async function updateGroupChat(
+  chatUuid: string,
+  payload: { title?: string; description?: string; avatar_uuid?: string },
+) {
+  const response = await apiClient.patch(`/chats/${chatUuid}/`, payload);
+  return response.data;
+}
+
+export async function addGroupMembers(chatUuid: string, memberUuids: string[]) {
+  const response = await apiClient.post(`/chats/${chatUuid}/members/`, {
+    member_uuids: memberUuids,
+  });
+  return response.data;
+}
+
+export async function removeGroupMember(chatUuid: string, userUuid: string) {
+  const response = await apiClient.delete(`/chats/${chatUuid}/members/${userUuid}/`);
+  return response.data;
+}
+
+export async function promoteGroupAdmin(chatUuid: string, userUuid: string) {
+  const response = await apiClient.post(`/chats/${chatUuid}/admins/`, {
+    user_uuid: userUuid,
+  });
+  return response.data;
+}
+
+export async function leaveGroupChat(chatUuid: string) {
+  const response = await apiClient.post(`/chats/${chatUuid}/leave/`);
   return response.data;
 }
 

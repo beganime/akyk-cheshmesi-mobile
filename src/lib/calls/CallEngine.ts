@@ -149,7 +149,7 @@ class CallEngine {
 
     this.videoProfile = profile;
 
-    const stream = await mediaDevices.getUserMedia({
+    const stream = await (mediaDevices as any).getUserMedia({
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
@@ -291,7 +291,7 @@ class CallEngine {
       await this.createAndSendOffer();
     };
 
-    const localStream = await this.createLocalStream(callType);
+    const localStream = (await this.createLocalStream(callType)) as MediaStream;
 
     localStream.getTracks().forEach((track: MediaStreamTrack) => {
       pc.addTrack(track, localStream);
@@ -435,7 +435,7 @@ class CallEngine {
     this.makingOffer = true;
 
     try {
-      const offer = await this.pc.createOffer();
+      const offer = (await this.pc.createOffer()) as any;
       await this.pc.setLocalDescription(offer);
 
       this.sendSocketMessage({
@@ -502,7 +502,7 @@ class CallEngine {
           }) as any,
         );
 
-        const answer = await this.pc.createAnswer();
+        const answer = (await this.pc.createAnswer()) as any;
         await this.pc.setLocalDescription(answer);
 
         this.sendSocketMessage({

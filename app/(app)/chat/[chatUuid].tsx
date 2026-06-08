@@ -257,6 +257,7 @@ function getMessagePreviewText(message: MessageItem) {
   if (message.message_type === 'sticker') return 'Стикер';
   if (message.message_type === 'image') return 'Фото';
   if (message.message_type === 'video') return 'Видео';
+  if (message.message_type === 'video_note') return 'Видеокружок';
   if (message.message_type === 'audio') return 'Голосовое сообщение';
   if (message.message_type === 'file') return 'Файл';
 
@@ -786,6 +787,7 @@ export default function ChatScreen() {
         const needsFullFetch =
           incomingMessage.message_type === 'image' ||
           incomingMessage.message_type === 'video' ||
+          incomingMessage.message_type === 'video_note' ||
           incomingMessage.message_type === 'audio' ||
           incomingMessage.message_type === 'file' ||
           !Array.isArray(incomingMessage.attachments) ||
@@ -1251,7 +1253,7 @@ export default function ChatScreen() {
   };
 
   const sendMediaMessage = async (
-    mediaType: 'audio' | 'video',
+    mediaType: 'audio' | 'video' | 'video_note',
     asset: PickedMediaAsset,
     metadata?: Record<string, unknown>,
   ) => {
@@ -1278,7 +1280,7 @@ export default function ChatScreen() {
           file_url: asset.uri,
           content_type: mediaType === 'audio' ? 'audio/mp4' : 'video/mp4',
           original_name: asset.fileName || undefined,
-          media_kind: mediaType,
+          media_kind: mediaType === 'video_note' ? 'video' : mediaType,
         },
       ],
     };
@@ -1355,7 +1357,7 @@ export default function ChatScreen() {
 
   const handleCapturedMedia = async (asset: PickedMediaAsset) => {
     await sendMediaMessage(
-      captureMode,
+      captureMode === 'video' ? 'video_note' : 'audio',
       asset,
       captureMode === 'video'
         ? {
@@ -2077,6 +2079,7 @@ export default function ChatScreen() {
     const isMediaMessage =
       item.message_type === 'image' ||
       item.message_type === 'video' ||
+      item.message_type === 'video_note' ||
       item.message_type === 'audio' ||
       item.message_type === 'file';
 
@@ -2558,7 +2561,7 @@ export default function ChatScreen() {
               ]}
             >
               <Ionicons
-                name={composerPanelVisible ? 'chevron-down' : 'sparkles-outline'}
+                name={composerPanelVisible ? 'chevron-down' : 'happy-outline'}
                 size={19}
                 color={theme.colors.text}
               />
@@ -2676,7 +2679,7 @@ export default function ChatScreen() {
                     ]}
                   >
                     <Ionicons
-                      name="sparkles-outline"
+                      name="happy-outline"
                       size={16}
                       color={
                         composerPanelTab === 'stickers'

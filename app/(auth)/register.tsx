@@ -18,10 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { GlassCard } from '@/src/components/GlassCard';
 import { registerRequest } from '@/src/lib/api/auth';
 import { useTheme } from '@/src/theme/ThemeProvider';
-
-function getErrorMessage(error: any, fallback: string) {
-  return error?.response?.data?.detail || error?.message || fallback;
-}
+import { getApiErrorMessage } from '@/src/utils/apiErrors';
 
 export default function RegisterScreen() {
   const { theme } = useTheme();
@@ -49,14 +46,14 @@ export default function RegisterScreen() {
         },
       });
     } catch (error: any) {
-      Alert.alert('Ошибка регистрации', getErrorMessage(error, 'Не удалось отправить код'));
+      Alert.alert('Ошибка регистрации', getApiErrorMessage(error, 'Не удалось отправить код'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <LinearGradient colors={['#0B1020', '#141B32', '#1A2545']} style={styles.gradient}>
+    <LinearGradient colors={theme.colors.heroGradient} style={styles.gradient}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -71,8 +68,8 @@ export default function RegisterScreen() {
               <Ionicons name="person-add" size={28} color="#FFFFFF" />
             </View>
 
-            <Text style={styles.brandTitle}>Регистрация</Text>
-            <Text style={styles.brandSubtitle}>
+            <Text style={[styles.brandTitle, { color: theme.colors.text }]}>Регистрация</Text>
+            <Text style={[styles.brandSubtitle, { color: theme.colors.muted }]}>
               Создай аккаунт и получи код подтверждения на почту
             </Text>
           </View>
@@ -111,7 +108,7 @@ export default function RegisterScreen() {
 
             <Pressable onPress={() => void onRegister()} disabled={loading}>
               <LinearGradient
-                colors={['#4F6BFF', '#6E7BFF']}
+                colors={[theme.colors.primary, '#60BDF2']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={[styles.button, loading && styles.buttonDisabled]}
@@ -170,13 +167,11 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   brandTitle: {
-    color: '#FFFFFF',
     fontSize: 30,
     fontWeight: '800',
     marginBottom: 6,
   },
   brandSubtitle: {
-    color: 'rgba(255,255,255,0.72)',
     fontSize: 15,
     textAlign: 'center',
     lineHeight: 21,

@@ -18,7 +18,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="chats" options={{ title: 'Чаты' }} />
       <Tabs.Screen name="contacts" options={{ title: 'Контакты' }} />
-      <Tabs.Screen name="ai" options={{ title: 'ИИ' }} />
+      <Tabs.Screen name="stories" options={{ title: 'Stories' }} />
       <Tabs.Screen name="announcements" options={{ title: 'Новости' }} />
       <Tabs.Screen name="profile" options={{ title: 'Профиль' }} />
     </Tabs>

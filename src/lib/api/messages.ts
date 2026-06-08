@@ -4,7 +4,7 @@ import type { CursorPaginatedMessagesResponse, MessageItem } from '@/src/types/m
 export type SendMessagePayload = {
   text?: string;
   client_uuid: string;
-  message_type?: 'text' | 'sticker' | 'image' | 'video' | 'file' | 'audio' | 'system';
+  message_type?: 'text' | 'sticker' | 'image' | 'video' | 'video_note' | 'file' | 'audio' | 'system';
   reply_to_uuid?: string;
   attachment_uuids?: string[];
   metadata?: Record<string, unknown>;

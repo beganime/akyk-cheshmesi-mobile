@@ -9,8 +9,10 @@ import {
   PanResponder,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,8 +22,9 @@ import { Image as ExpoImage } from 'expo-image';
 
 import { GlassCard } from '@/src/components/GlassCard';
 import { SearchInput } from '@/src/components/SearchInput';
+import { StoriesStrip } from '@/src/components/stories/StoriesStrip';
 import { useTheme } from '@/src/theme/ThemeProvider';
-import { fetchChats, createDirectChat } from '@/src/lib/api/chats';
+import { fetchChats, createDirectChat, createGroupChat } from '@/src/lib/api/chats';
 import { searchUsers, UserShort } from '@/src/lib/api/contacts';
 import { realtimeClient } from '@/src/lib/realtime/socket';
 import { isMessageEvent } from '@/src/lib/realtime/events';
@@ -112,6 +115,7 @@ function buildPreview(item: ChatListItem) {
 
   if (type === 'image') return 'Фото';
   if (type === 'video') return 'Видео';
+  if (type === 'video_note') return 'Видеокружок';
   if (type === 'audio') return 'Голосовое сообщение';
   if (type === 'file') return 'Файл';
   if (type === 'sticker') return 'Стикер';
@@ -335,7 +339,7 @@ function ChatRow({
 }
 
 export default function ChatsScreen() {
-  const { theme } = useTheme();
+  const { theme, themeName, setThemeName } = useTheme();
   const startOutgoing = useCallStore((state) => state.startOutgoing);
 
   const [data, setData] = useState<ChatListItem[]>([]);
@@ -350,7 +354,15 @@ export default function ChatsScreen() {
   const [activeTab, setActiveTab] = useState<ChatTab>('all');
   const [selectedChat, setSelectedChat] = useState<DecoratedChat | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [mainMenuVisible, setMainMenuVisible] = useState(false);
   const [callChooserChat, setCallChooserChat] = useState<DecoratedChat | null>(null);
+  const [groupVisible, setGroupVisible] = useState(false);
+  const [groupTitle, setGroupTitle] = useState('');
+  const [groupSearch, setGroupSearch] = useState('');
+  const [groupPeople, setGroupPeople] = useState<UserShort[]>([]);
+  const [selectedGroupMembers, setSelectedGroupMembers] = useState<string[]>([]);
+  const [groupSearching, setGroupSearching] = useState(false);
+  const [groupCreating, setGroupCreating] = useState(false);
 
   const hydrateLocalPreferences = useCallback(async () => {
     const loaded = await loadChatListPreferences();
@@ -438,6 +450,31 @@ export default function ChatsScreen() {
     return () => clearTimeout(timer);
   }, [search]);
 
+  useEffect(() => {
+    const q = groupSearch.trim();
+
+    if (q.length < 2) {
+      setGroupPeople([]);
+      setGroupSearching(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setGroupSearching(true);
+        const results = await searchUsers(q);
+        setGroupPeople(Array.isArray(results) ? results : []);
+      } catch (error) {
+        console.error('group searchUsers error:', error);
+        setGroupPeople([]);
+      } finally {
+        setGroupSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [groupSearch]);
+
   const decoratedChats = useMemo(() => {
     return getDecoratedChats(data, localPreferences);
   }, [data, localPreferences]);
@@ -519,6 +556,72 @@ export default function ChatsScreen() {
 
   const openCallChooser = (item: DecoratedChat) => {
     setCallChooserChat(item);
+  };
+
+  const switchDayNight = async () => {
+    const nextTheme =
+      themeName === 'darkGradient' || themeName === 'darkOrange'
+        ? 'lightGradient'
+        : 'darkGradient';
+    await setThemeName(nextTheme);
+    setMainMenuVisible(false);
+  };
+
+  const openGroupCreator = () => {
+    setMainMenuVisible(false);
+    setGroupVisible(true);
+  };
+
+  const toggleGroupMember = (userUuid: string) => {
+    setSelectedGroupMembers((current) =>
+      current.includes(userUuid)
+        ? current.filter((item) => item !== userUuid)
+        : [...current, userUuid],
+    );
+  };
+
+  const submitGroup = async () => {
+    const title = groupTitle.trim();
+
+    if (!title) {
+      Alert.alert('Группа', 'Укажи название группы');
+      return;
+    }
+
+    if (!selectedGroupMembers.length) {
+      Alert.alert('Группа', 'Выбери хотя бы одного участника');
+      return;
+    }
+
+    try {
+      setGroupCreating(true);
+      const created = await createGroupChat({
+        title,
+        member_uuids: selectedGroupMembers,
+      });
+
+      setGroupTitle('');
+      setGroupSearch('');
+      setGroupPeople([]);
+      setSelectedGroupMembers([]);
+      setGroupVisible(false);
+      await loadChats({ silent: true });
+
+      if (created?.uuid) {
+        router.push({
+          pathname: '/(app)/chat/[chatUuid]',
+          params: { chatUuid: created.uuid },
+        });
+      }
+    } catch (error: any) {
+      console.error('submitGroup error:', error);
+      Alert.alert(
+        'Группа',
+        error?.response?.data?.detail || error?.message || 'Не удалось создать группу',
+      );
+    } finally {
+      setGroupCreating(false);
+    }
   };
 
   const startCall = async (item: ChatListItem, callType: CallType) => {
@@ -658,7 +761,19 @@ export default function ChatsScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={styles.header}>
-        <Text style={[styles.screenTitle, { color: theme.colors.text }]}>Чаты</Text>
+        <View style={styles.headerTop}>
+          <Text style={[styles.screenTitle, { color: theme.colors.text }]}>Чаты</Text>
+          <Pressable
+            onPress={() => setMainMenuVisible(true)}
+            style={({ pressed }) => [
+              styles.headerMenuButton,
+              { backgroundColor: theme.colors.cardStrong },
+              pressed && { opacity: 0.72 },
+            ]}
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color={theme.colors.text} />
+          </Pressable>
+        </View>
 
         <SearchInput
           value={search}
@@ -733,6 +848,8 @@ export default function ChatsScreen() {
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <>
+            <StoriesStrip compact />
+
             {search.trim().length >= 2 && (
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Люди</Text>
@@ -898,6 +1015,198 @@ export default function ChatsScreen() {
       </Modal>
 
       <Modal
+        visible={mainMenuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMainMenuVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setMainMenuVisible(false)} />
+
+          <View style={styles.topMenuWrap}>
+            <GlassCard>
+              <Pressable
+                onPress={() => {
+                  setActiveTab('pinned');
+                  setMainMenuVisible(false);
+                }}
+                style={styles.mainMenuItem}
+              >
+                <Ionicons name="star-outline" size={20} color={theme.colors.primary} />
+                <Text style={[styles.mainMenuText, { color: theme.colors.text }]}>Избранное</Text>
+              </Pressable>
+
+              <Pressable onPress={openGroupCreator} style={styles.mainMenuItem}>
+                <Ionicons name="people-circle-outline" size={20} color={theme.colors.primary} />
+                <Text style={[styles.mainMenuText, { color: theme.colors.text }]}>
+                  Создать группу
+                </Text>
+              </Pressable>
+
+              <Pressable onPress={() => void switchDayNight()} style={styles.mainMenuItem}>
+                <Ionicons
+                  name={
+                    themeName === 'darkGradient' || themeName === 'darkOrange'
+                      ? 'sunny-outline'
+                      : 'moon-outline'
+                  }
+                  size={20}
+                  color={theme.colors.primary}
+                />
+                <Text style={[styles.mainMenuText, { color: theme.colors.text }]}>
+                  Дневной / ночной режим
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setActiveTab('archive');
+                  setMainMenuVisible(false);
+                }}
+                style={styles.mainMenuItem}
+              >
+                <Ionicons name="archive-outline" size={20} color={theme.colors.primary} />
+                <Text style={[styles.mainMenuText, { color: theme.colors.text }]}>Архив</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setActiveTab('pinned');
+                  setMainMenuVisible(false);
+                }}
+                style={styles.mainMenuItem}
+              >
+                <Ionicons name="bookmark-outline" size={20} color={theme.colors.primary} />
+                <Text style={[styles.mainMenuText, { color: theme.colors.text }]}>
+                  Закреплённые
+                </Text>
+              </Pressable>
+            </GlassCard>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={groupVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setGroupVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setGroupVisible(false)} />
+
+          <View style={styles.bottomSheetWrap}>
+            <GlassCard>
+              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>Создать группу</Text>
+              <TextInput
+                value={groupTitle}
+                onChangeText={setGroupTitle}
+                placeholder="Название группы"
+                placeholderTextColor={theme.colors.muted}
+                style={[
+                  styles.groupInput,
+                  {
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.inputBackground,
+                    borderColor: theme.colors.borderStrong,
+                  },
+                ]}
+              />
+
+              <SearchInput
+                value={groupSearch}
+                onChangeText={setGroupSearch}
+                placeholder="Найти участников"
+              />
+
+              <ScrollView style={styles.groupPeopleList} contentContainerStyle={styles.groupPeopleContent}>
+                {groupSearching ? (
+                  <ActivityIndicator color={theme.colors.primary} />
+                ) : groupPeople.length ? (
+                  groupPeople.map((person) => {
+                    const selected = selectedGroupMembers.includes(person.uuid);
+                    const name = personName(person);
+
+                    return (
+                      <Pressable
+                        key={person.uuid}
+                        onPress={() => toggleGroupMember(person.uuid)}
+                        style={[
+                          styles.groupPersonRow,
+                          {
+                            backgroundColor: selected
+                              ? theme.colors.primarySoft
+                              : theme.colors.cardStrong,
+                          },
+                        ]}
+                      >
+                        {person.avatar ? (
+                          <ExpoImage
+                            source={{ uri: person.avatar }}
+                            style={styles.groupPersonAvatar}
+                            contentFit="cover"
+                          />
+                        ) : (
+                          <View
+                            style={[
+                              styles.groupPersonAvatar,
+                              { backgroundColor: theme.colors.primary },
+                            ]}
+                          >
+                            <Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text>
+                          </View>
+                        )}
+                        <View style={styles.groupPersonText}>
+                          <Text style={[styles.title, { color: theme.colors.text }]} numberOfLines={1}>
+                            {name}
+                          </Text>
+                          <Text style={[styles.subtitle, { color: theme.colors.muted }]} numberOfLines={1}>
+                            @{person.username || person.email || 'user'}
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                          size={22}
+                          color={selected ? theme.colors.primary : theme.colors.muted}
+                        />
+                      </Pressable>
+                    );
+                  })
+                ) : (
+                  <Text style={[styles.helperText, { color: theme.colors.muted }]}>
+                    Введи минимум 2 символа, чтобы найти участников.
+                  </Text>
+                )}
+              </ScrollView>
+
+              <Pressable
+                onPress={() => void submitGroup()}
+                disabled={groupCreating}
+                style={[
+                  styles.createGroupButton,
+                  {
+                    backgroundColor: theme.colors.primary,
+                    opacity: groupCreating ? 0.72 : 1,
+                  },
+                ]}
+              >
+                {groupCreating ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+                    <Text style={styles.createGroupButtonText}>
+                      Создать ({selectedGroupMembers.length})
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            </GlassCard>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={Boolean(callChooserChat)}
         transparent
         animationType="fade"
@@ -989,9 +1298,22 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
     gap: 10,
   },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
   screenTitle: {
     fontSize: 24,
     fontWeight: '800',
+  },
+  headerMenuButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tabsRow: {
     flexDirection: 'row',
@@ -1172,6 +1494,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: 16,
   },
+  topMenuWrap: {
+    position: 'absolute',
+    top: 82,
+    right: 12,
+    width: 260,
+  },
+  mainMenuItem: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 8,
+  },
+  mainMenuText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
   sheetTitle: {
     fontSize: 19,
     fontWeight: '800',
@@ -1226,6 +1565,54 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   cancelChoiceText: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  groupInput: {
+    minHeight: 50,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    marginBottom: 10,
+  },
+  groupPeopleList: {
+    maxHeight: 260,
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  groupPeopleContent: {
+    gap: 8,
+  },
+  groupPersonRow: {
+    minHeight: 58,
+    borderRadius: 18,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  groupPersonAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupPersonText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  createGroupButton: {
+    minHeight: 52,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  createGroupButtonText: {
+    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
   },

@@ -36,7 +36,9 @@ function getAttachmentByKind(message: MessageItem) {
     const contentType = String(item.content_type || '').toLowerCase();
 
     if (type === 'image') return mediaKind === 'image' || contentType.startsWith('image/');
-    if (type === 'video') return mediaKind === 'video' || contentType.startsWith('video/');
+    if (type === 'video' || type === 'video_note') {
+      return mediaKind === 'video' || contentType.startsWith('video/');
+    }
     if (type === 'audio') return mediaKind === 'audio' || contentType.startsWith('audio/');
     if (type === 'file') return true;
 
@@ -57,7 +59,7 @@ function formatDuration(millis?: number | null) {
 
 function getVideoNote(message: MessageItem) {
   const meta = message.metadata as Record<string, unknown> | null | undefined;
-  return Boolean(meta?.is_video_note || meta?.shape === 'circle');
+  return message.message_type === 'video_note' || Boolean(meta?.is_video_note || meta?.shape === 'circle');
 }
 
 export function MessageMedia({ message, isOwn, theme }: Props) {
@@ -98,6 +100,7 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
 
   const isVideo =
     message.message_type === 'video' ||
+    message.message_type === 'video_note' ||
     mediaKind === 'video' ||
     contentType.startsWith('video/');
 

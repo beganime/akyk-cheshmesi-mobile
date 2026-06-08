@@ -75,11 +75,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       } catch (error) {
         console.error('Bootstrap /users/me error:', error);
 
-        await clearTokens();
-
         set({
-          accessToken: null,
-          refreshToken: null,
+          accessToken: await getAccessToken(),
+          refreshToken: await getRefreshToken(),
           user: null,
           hydrated: true,
         });
