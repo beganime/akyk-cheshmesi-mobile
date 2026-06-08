@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Akyl Cheshmesi — Вход</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-400-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-500-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-600-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-700-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-800-normal.css">
+
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :root {
+    /* Тёмная тема (по умолчанию) */
+    --bg-deep: #020f12;
+    --bg-dark: #051c20;
+    --bg-surface: rgba(10, 40, 44, 0.55);
+    --primary: #10b981;
+    --primary-light: #34d399;
+    --accent: #f59e0b;
+    --accent-light: #fbbf24;
+    --neon-teal: #2dd4bf;
+    --text-primary: #f0fdf4;
+    --text-secondary: #a7c7bd;
+    --text-muted: #5f7a74;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-focus: rgba(16, 185, 129, 0.6);
+    --input-bg: rgba(255, 255, 255, 0.04);
+    --success: #10b981;
+    --error: #ef4444;
+    --shadow-color: rgba(16, 185, 129, 0.35);
+    --shadow-accent: rgba(245, 158, 11, 0.25);
+    --blob-opacity: 0.45;
+
+    --radius-sm: 12px;
+    --radius-md: 16px;
+    --radius-lg: 24px;
+  }
+
+  [data-theme="light"] {
+    /* Светлая тема */
+    --bg-deep: #f0fdf4;
+    --bg-dark: #ffffff;
+    --bg-surface: rgba(255, 255, 255, 0.7);
+    --primary: #059669;
+    --primary-light: #10b981;
+    --accent: #d97706;
+    --accent-light: #f59e0b;
+    --neon-teal: #14b8a6;
+    --text-primary: #064e3b;
+    --text-secondary: #065f46;
+    --text-muted: #6b7280;
+    --border: rgba(0, 0, 0, 0.1);
+    --border-focus: rgba(5, 150, 105, 0.5);
+    --input-bg: rgba(0, 0, 0, 0.03);
+    --success: #059669;
+    --error: #dc2626;
+    --shadow-color: rgba(5, 150, 105, 0.2);
+    --shadow-accent: rgba(217, 119, 6, 0.15);
+    --blob-opacity: 0.25;
+  }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    position: relative;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background 0.4s ease, color 0.4s ease;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(16, 185, 129, 0.18) 0%, transparent 40%),
+      radial-gradient(circle at 80% 80%, rgba(245, 158, 11, 0.12) 0%, transparent 45%),
+      radial-gradient(circle at 50% 50%, rgba(45, 212, 191, 0.10) 0%, transparent 60%);
+    z-index: 0;
+    pointer-events: none;
+    transition: background 0.4s ease;
+  }
+
+  [data-theme="light"] body::before {
+    background:
+      radial-gradient(circle at 20% 10%, rgba(16, 185, 129, 0.15) 0%, transparent 40%),
+      radial-gradient(circle at 80% 80%, rgba(245, 158, 11, 0.10) 0%, transparent 45%),
+      radial-gradient(circle at 50% 50%, rgba(20, 184, 166, 0.08) 0%, transparent 60%);
+  }
+
+  .phone {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    height: 100%;
+    max-height: 900px;
+    background: linear-gradient(165deg, #042024 0%, #073837 50%, #051c20 100%);
+    border-radius: 44px;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 2px var(--border),
+      0 50px 120px -20px var(--shadow-color),
+      0 30px 60px -30px var(--shadow-accent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    isolation: isolate;
+    transition: background 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease;
+  }
+
+  [data-theme="light"] .phone {
+    background: linear-gradient(165deg, #f0fdf4 0%, #ecfdf5 50%, #ffffff 100%);
+    box-shadow:
+      0 0 0 2px var(--border),
+      0 50px 120px -20px var(--shadow-color),
+      0 30px 60px -30px var(--shadow-accent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+
+  @media (max-width: 480px) {
+    body { padding: 0; }
+    .phone {
+      max-width: none;
+      max-height: none;
+      border-radius: 0;
+    }
+  }
+
+  .blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(70px);
+    opacity: var(--blob-opacity);
+    z-index: -1;
+    animation: float 18s infinite ease-in-out;
+    transition: opacity 0.4s ease;
+  }
+
+  .blob-1 {
+    width: 280px;
+    height: 280px;
+    background: radial-gradient(circle, #10b981, #047857);
+    top: -80px;
+    left: -60px;
+  }
+
+  .blob-2 {
+    width: 240px;
+    height: 240px;
+    background: radial-gradient(circle, #f59e0b, #b45309);
+    bottom: 60px;
+    right: -80px;
+    animation-delay: -6s;
+  }
+
+  .blob-3 {
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, #2dd4bf, #0d9488);
+    top: 40%;
+    left: 30%;
+    animation-delay: -12s;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(40px, -30px) scale(1.1); }
+    66% { transform: translate(-30px, 40px) scale(0.95); }
+  }
+
+  .grid-overlay {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+    z-index: -1;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+    transition: background-image 0.4s ease;
+  }
+
+  [data-theme="light"] .grid-overlay {
+    background-image:
+      linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px);
+  }
+
+  .scroll-container {
+    position: relative;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 48px 32px 40px;
+    scroll-behavior: smooth;
+  }
+
+  .scroll-container::-webkit-scrollbar { width: 4px; }
+  .scroll-container::-webkit-scrollbar-track { background: transparent; }
+  .scroll-container::-webkit-scrollbar-thumb {
+    background: var(--primary);
+    border-radius: 4px;
+    opacity: 0.4;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 40px;
+    animation: slideUp 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .logo-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 92px;
+    height: 92px;
+    margin-bottom: 20px;
+    position: relative;
+    animation: logoPulse 3s ease-in-out infinite;
+  }
+
+  .logo-wrap svg.square-logo {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 20px 40px rgba(16, 185, 129, 0.3));
+  }
+
+  @keyframes logoPulse {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
+
+  .app-title {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--text-primary) 0%, var(--primary-light) 50%, var(--accent) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 4px;
+    transition: background 0.4s ease;
+  }
+
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    animation: slideUp 0.7s 0.1s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  .input-group {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .input-icon {
+    position: absolute;
+    left: 18px;
+    width: 20px;
+    height: 20px;
+    color: var(--text-muted);
+    transition: color 0.3s ease;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .input {
+    width: 100%;
+    padding: 16px 18px 16px 50px;
+    background: var(--input-bg);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 500;
+    outline: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .input::placeholder {
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
+  .input:hover {
+    border-color: rgba(128, 128, 128, 0.3);
+    background: var(--input-bg);
+  }
+
+  .input:focus {
+    border-color: var(--primary);
+    background: var(--bg-surface);
+    box-shadow:
+      0 0 0 4px var(--border-focus),
+      0 0 20px rgba(16, 185, 129, 0.1);
+  }
+
+  .input-group:focus-within .input-icon {
+    color: var(--primary);
+  }
+
+  .toggle-password {
+    position: absolute;
+    right: 12px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 2;
+  }
+
+  .toggle-password:hover {
+    background: rgba(128, 128, 128, 0.1);
+    color: var(--primary);
+  }
+
+  .toggle-password svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .input[type="password"] ~ .toggle-password .eye-off,
+  .input[type="text"] ~ .toggle-password .eye-on {
+    display: none;
+  }
+
+  .form-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 4px;
+    gap: 12px;
+  }
+
+  .checkbox {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  .checkbox input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .checkmark {
+    position: relative;
+    width: 20px;
+    height: 20px;
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    background: var(--input-bg);
+    transition: all 0.25s ease;
+    flex-shrink: 0;
+  }
+
+  .checkmark::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 2px;
+    width: 5px;
+    height: 10px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) scale(0);
+    opacity: 0;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .checkbox input:checked + .checkmark {
+    background: linear-gradient(135deg, var(--primary), #047857);
+    border-color: transparent;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  }
+
+  .checkbox input:checked + .checkmark::after {
+    transform: rotate(45deg) scale(1);
+    opacity: 1;
+  }
+
+  .checkbox:hover .checkmark {
+    border-color: var(--primary);
+  }
+
+  .forgot-link {
+    font-size: 13px;
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s ease;
+  }
+
+  .forgot-link:hover {
+    color: var(--accent);
+  }
+
+  .btn-login {
+    position: relative;
+    width: 100%;
+    padding: 16px;
+    margin-top: 8px;
+    background: linear-gradient(135deg, var(--primary) 0%, #047857 50%, #065f46 100%);
+    background-size: 200% 200%;
+    background-position: 0% 50%;
+    color: white;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    overflow: hidden;
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow:
+      0 10px 30px -8px rgba(16, 185, 129, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    animation: slideUp 0.7s 0.2s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  .btn-login::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, var(--primary-light), var(--accent), var(--primary));
+    opacity: 0;
+    transition: opacity 0.35s ease;
+  }
+
+  .btn-login span {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-login:hover {
+    transform: translateY(-2px) scale(1.01);
+    background-position: 100% 50%;
+    box-shadow:
+      0 15px 40px -8px rgba(16, 185, 129, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+
+  .btn-login:hover::before {
+    opacity: 1;
+  }
+
+  .btn-login:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  .btn-login:disabled {
+    cursor: not-allowed;
+    opacity: 0.75;
+  }
+
+  .btn-login:disabled:hover {
+    transform: none;
+    background-position: 0% 50%;
+  }
+
+  .spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 24px 0 20px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    animation: slideUp 0.7s 0.3s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  .divider::before,
+  .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+  }
+
+  .register-wrap {
+    text-align: center;
+    animation: slideUp 0.7s 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  .register-text {
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+
+  .register-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+    margin-left: 4px;
+    transition: color 0.2s ease;
+    position: relative;
+  }
+
+  .register-link::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -2px;
+    height: 1px;
+    background: currentColor;
+    transform: scaleX(0);
+    transition: transform 0.3s ease;
+    transform-origin: right;
+  }
+
+  .register-link:hover {
+    color: var(--accent-light);
+  }
+
+  .register-link:hover::after {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+
+  .toast {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-150%);
+    padding: 14px 20px;
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    font-weight: 500;
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 1000;
+    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.3);
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    max-width: 90%;
+    white-space: nowrap;
+  }
+
+  .toast.show {
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .toast.success {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(4, 120, 87, 0.95));
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+
+  .toast.error {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.95));
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  .toast.info {
+    background: linear-gradient(135deg, rgba(20, 184, 166, 0.95), rgba(13, 148, 136, 0.95));
+    border: 1px solid rgba(20, 184, 166, 0.3);
+  }
+
+  .toast svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Переключатель темы */
+  .theme-toggle {
+    position: absolute;
+    top: 24px;
+    right: 24px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--input-bg);
+    border: 1.5px solid var(--border);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    z-index: 10;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .theme-toggle:hover {
+    background: var(--bg-surface);
+    color: var(--accent);
+    border-color: var(--accent);
+    transform: rotate(15deg) scale(1.05);
+  }
+
+  .theme-toggle svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .theme-toggle .icon-moon,
+  [data-theme="light"] .theme-toggle .icon-sun {
+    display: none;
+  }
+
+  [data-theme="light"] .theme-toggle .icon-moon {
+    display: block;
+  }
+
+  @media (max-width: 380px) {
+    .scroll-container {
+      padding: 40px 24px 32px;
+    }
+    .app-title {
+      font-size: 24px;
+    }
+    .logo-wrap {
+      width: 80px;
+      height: 80px;
+    }
+  }
+
+  @media (min-height: 800px) {
+    .scroll-container {
+      padding-top: 60px;
+    }
+    .header {
+      margin-bottom: 48px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="phone" role="application" aria-label="Экран авторизации Akyl Cheshmesi">
+
+  <!-- Переключатель темы -->
+  <button class="theme-toggle" id="themeToggle" aria-label="Переключить тему">
+    <!-- Иконка солнца (для тёмной темы) -->
+    <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="1" x2="12" y2="3"/>
+      <line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/>
+      <line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+    <!-- Иконка луны (для светлой темы) -->
+    <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  </button>
+
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+  <div class="grid-overlay"></div>
+
+  <div class="scroll-container">
+
+    <header class="header">
+      <div class="logo-wrap" aria-hidden="true">
+        <svg class="square-logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="sqGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#34d399"/>
+              <stop offset="50%" stop-color="#10b981"/>
+              <stop offset="100%" stop-color="#047857"/>
+            </linearGradient>
+            <linearGradient id="sqInner" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#fcd34d"/>
+              <stop offset="100%" stop-color="#f59e0b"/>
+            </linearGradient>
+            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="1.2" result="blur"/>
+              <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+
+          <rect x="6" y="6" width="88" height="88" rx="24" fill="url(#sqGrad)" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+          <rect x="16" y="16" width="68" height="68" rx="16" fill="none" stroke="url(#sqInner)" stroke-width="1.5" opacity="0.8"/>
+          <path d="M38 68 L50 34 L62 68 M42 58 H58"
+                stroke="white" stroke-width="5"
+                stroke-linecap="round" stroke-linejoin="round"
+                fill="none"
+                filter="url(#glow)"/>
+          <circle cx="50" cy="18" r="3" fill="url(#sqInner)"/>
+        </svg>
+      </div>
+      <h1 class="app-title">Akyl Cheshmesi</h1>
+    </header>
+
+    <form class="form" id="loginForm" novalidate>
+
+      <div class="input-group">
+        <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="4" width="20" height="16" rx="2"/>
+          <path d="M22 6l-10 7L2 6"/>
+        </svg>
+        <input
+          type="email"
+          class="input"
+          id="email"
+          placeholder="Email"
+          autocomplete="email"
+          required
+        >
+      </div>
+
+      <div class="input-group">
+        <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        <input
+          type="password"
+          class="input"
+          id="password"
+          placeholder="Пароль"
+          autocomplete="current-password"
+          required
+        >
+        <button type="button" class="toggle-password" id="togglePassword" aria-label="Показать или скрыть пароль">
+          <svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+            <line x1="1" y1="1" x2="23" y2="23"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="form-row">
+        <label class="checkbox">
+          <input type="checkbox" id="remember" checked>
+          <span class="checkmark"></span>
+          <span>Запомнить меня</span>
+        </label>
+        <a href="#" class="forgot-link" id="forgotLink">Забыли пароль?</a>
+      </div>
+
+      <button type="submit" class="btn-login" id="loginBtn">
+        <span id="btnContent">Войти</span>
+      </button>
+    </form>
+
+    <div class="divider">или</div>
+
+    <div class="register-wrap">
+      <span class="register-text">Нет аккаунта?</span>
+      <a href="#" class="register-link" id="registerLink">Зарегистрироваться</a>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast" role="alert" aria-live="polite">
+  <svg id="toastIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>
+  <span id="toastText"></span>
+</div>
+
+<script>
+  // === Управление темой ===
+  const themeToggle = document.getElementById('themeToggle');
+  const body = document.body;
+  const THEME_KEY = 'akyl_theme';
+
+  function applyTheme(theme) {
+    if (theme === 'light') {
+      body.setAttribute('data-theme', 'light');
+    } else {
+      body.removeAttribute('data-theme');
+    }
+  }
+
+  function toggleTheme() {
+    const currentTheme = body.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    applyTheme(currentTheme);
+    try {
+      localStorage.setItem(THEME_KEY, currentTheme);
+    } catch (e) {}
+  }
+
+  // Инициализация темы при загрузке
+  try {
+    const savedTheme = localStorage.getItem(THEME_KEY);
+    if (savedTheme) {
+      applyTheme(savedTheme);
+    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+      applyTheme('light');
+    }
+  } catch (e) {}
+
+  themeToggle.addEventListener('click', toggleTheme);
+
+  // === Логика авторизации ===
+  const TOKEN_KEY = 'akyl_auth_token';
+  const REMEMBER_KEY = 'akyl_remember';
+
+  const SHORT_EXPIRY_MS = 24 * 60 * 60 * 1000;
+  const EXTENDED_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
+  const REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+
+  let refreshTimerId = null;
+
+  function generateToken() {
+    const randomPart = Math.random().toString(36).substring(2, 15);
+    const timePart = Date.now().toString(36);
+    return `akyl_${timePart}_${randomPart}`;
+  }
+
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  const toast = document.getElementById('toast');
+  const toastText = document.getElementById('toastText');
+  const toastIcon = document.getElementById('toastIcon');
+  let toastTimer = null;
+
+  function showToast(message, type = 'info') {
+    if (toastTimer) clearTimeout(toastTimer);
+    toast.classList.remove('show', 'success', 'error', 'info');
+    toast.classList.add(type);
+    toastText.textContent = message;
+
+    if (type === 'success') {
+      toastIcon.innerHTML = '<polyline points="20 6 9 17 4 12"/>';
+    } else if (type === 'error') {
+      toastIcon.innerHTML = '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>';
+    } else {
+      toastIcon.innerHTML = '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>';
+    }
+
+    requestAnimationFrame(() => toast.classList.add('show'));
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 3500);
+  }
+
+  function login(email, password, remember) {
+    if (!email || !email.trim()) {
+      showToast('Введите email', 'error');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      showToast('Некорректный формат email', 'error');
+      return;
+    }
+    if (!password) {
+      showToast('Введите пароль', 'error');
+      return;
+    }
+    if (password.length < 6) {
+      showToast('Пароль должен быть не менее 6 символов', 'error');
+      return;
+    }
+
+    setLoadingState(true);
+
+    setTimeout(() => {
+      const expiryMs = remember ? EXTENDED_EXPIRY_MS : SHORT_EXPIRY_MS;
+      const tokenData = {
+        value: generateToken(),
+        email: email.trim(),
+        remember: remember,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + expiryMs
+      };
+
+      try {
+        localStorage.setItem(TOKEN_KEY, JSON.stringify(tokenData));
+        localStorage.setItem(REMEMBER_KEY, remember ? '1' : '0');
+      } catch (e) {
+        console.warn('Не удалось сохранить в localStorage:', e);
+      }
+
+      setLoadingState(false);
+      const days = remember ? 30 : 1;
+      showToast(`Добро пожаловать! Сессия на ${days} ${pluralDays(days)}`, 'success');
+
+      if (remember) scheduleTokenRefresh();
+      else cancelTokenRefresh();
+    }, 1200);
+  }
+
+  function pluralDays(n) {
+    const mod10 = n % 10;
+    const mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return 'день';
+    if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return 'дня';
+    return 'дней';
+  }
+
+  function setLoadingState(isLoading) {
+    const btn = document.getElementById('loginBtn');
+    const btnContent = document.getElementById('btnContent');
+    btn.disabled = isLoading;
+    if (isLoading) {
+      btnContent.innerHTML = '<div class="spinner"></div> Вход...';
+    } else {
+      btnContent.textContent = 'Войти';
+    }
+  }
+
+  function checkExistingSession() {
+    try {
+      const raw = localStorage.getItem(TOKEN_KEY);
+      if (!raw) return;
+
+      const token = JSON.parse(raw);
+      if (!token || !token.expiresAt || !token.value) {
+        clearSession();
+        return;
+      }
+
+      const now = Date.now();
+      if (token.expiresAt > now) {
+        showToast(`Сессия активна (${token.email})`, 'info');
+        if (token.remember) {
+          token.expiresAt = now + EXTENDED_EXPIRY_MS;
+          localStorage.setItem(TOKEN_KEY, JSON.stringify(token));
+          scheduleTokenRefresh();
+          document.getElementById('email').value = token.email;
+          document.getElementById('remember').checked = true;
+        }
+      } else {
+        clearSession();
+        showToast('Сессия истекла. Войдите снова.', 'error');
+      }
+    } catch (e) {
+      clearSession();
+    }
+  }
+
+  function clearSession() {
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(REMEMBER_KEY);
+    } catch (e) {}
+    cancelTokenRefresh();
+  }
+
+  function scheduleTokenRefresh() {
+    cancelTokenRefresh();
+    refreshTimerId = setInterval(() => {
+      try {
+        const raw = localStorage.getItem(TOKEN_KEY);
+        if (!raw) { cancelTokenRefresh(); return; }
+        const token = JSON.parse(raw);
+        if (!token.remember) { cancelTokenRefresh(); return; }
+        token.expiresAt = Date.now() + EXTENDED_EXPIRY_MS;
+        token.value = generateToken();
+        localStorage.setItem(TOKEN_KEY, JSON.stringify(token));
+      } catch (e) {
+        console.warn('Ошибка авто-продления токена:', e);
+      }
+    }, REFRESH_INTERVAL_MS);
+  }
+
+  function cancelTokenRefresh() {
+    if (refreshTimerId !== null) {
+      clearInterval(refreshTimerId);
+      refreshTimerId = null;
+    }
+  }
+
+  const passwordInput = document.getElementById('password');
+  const toggleBtn = document.getElementById('togglePassword');
+
+  toggleBtn.addEventListener('click', () => {
+    const isPassword = passwordInput.type === 'password';
+    passwordInput.type = isPassword ? 'text' : 'password';
+  });
+
+  const form = document.getElementById('loginForm');
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = document.getElementById('email').value;
+    const password = passwordInput.value;
+    const remember = document.getElementById('remember').checked;
+    login(email, password, remember);
+  });
+
+  document.getElementById('registerLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    showToast('Экран регистрации в разработке', 'info');
+  });
+
+  document.getElementById('forgotLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    showToast('Письмо для восстановления отправлено', 'success');
+  });
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    checkExistingSession();
+  } else {
+    document.addEventListener('DOMContentLoaded', checkExistingSession);
+  }
+</script>
+
+</body>
+</html>
+

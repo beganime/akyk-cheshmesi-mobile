@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Akyl Cheshmesi — Чаты</title>
+
+<!-- Подключение шрифта Inter -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-400-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-500-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-600-normal.css">
+
+<style>
+  /* =========================================
+     ПЕРЕМЕННЫЕ И ТЕМЫ
+     ========================================= */
+  :root {
+    /* Темная тема (Telegram Dark Style) */
+    --bg-primary: #0e1621;
+    --bg-secondary: #17212b;
+    --bg-hover: #202b36;
+    --accent: #5288c1;
+    --text-primary: #ffffff;
+    --text-secondary: #7f91a4;
+    --separator: rgba(255, 255, 255, 0.06);
+    --badge-bg: #5288c1;
+    --story-gradient: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+    --shadow: rgba(0, 0, 0, 0.4);
+  }
+
+  [data-theme="light"] {
+    /* Светлая тема (Telegram Light Style) */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f4f4f5;
+    --bg-hover: #ebebeb;
+    --accent: #3390ec;
+    --text-primary: #000000;
+    --text-secondary: #707579;
+    --separator: #e4e4e5;
+    --badge-bg: #3390ec;
+    --story-gradient: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+    --shadow: rgba(0, 0, 0, 0.1);
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: #000;
+    color: var(--text-primary);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  .app-container {
+    width: 100%;
+    max-width: 480px;
+    height: 100vh;
+    max-height: 900px;
+    background-color: var(--bg-primary);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: background-color 0.3s ease;
+  }
+
+  @media (min-width: 481px) {
+    .app-container {
+      height: 90vh;
+      border-radius: 24px;
+      box-shadow: 0 20px 60px var(--shadow);
+      border: 1px solid var(--separator);
+    }
+  }
+
+  /* =========================================
+     ШАПКА И МЕНЮ (НОВЫЙ ДИЗАЙН ТОЧЕК)
+     ========================================= */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background-color: var(--bg-secondary);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+
+  .header-title {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .menu-trigger {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s, color 0.2s;
+  }
+
+  .menu-trigger:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  /* Новый дизайн иконки "Три точки": горизонтальная, крупные точки */
+  .menu-dots {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .dot {
+    width: 5px; /* Увеличенный размер точек */
+    height: 5px;
+    background-color: currentColor;
+    border-radius: 50%;
+    display: block;
+  }
+
+  /* Выпадающее меню */
+  .dropdown-menu {
+    position: absolute;
+    top: 64px;
+    right: 16px;
+    width: 240px;
+    background-color: var(--bg-secondary);
+    border-radius: 16px;
+    box-shadow: 0 8px 24px var(--shadow);
+    padding: 8px 0;
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+    pointer-events: none;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 100;
+  }
+
+  .dropdown-menu.active {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    pointer-events: auto;
+  }
+
+  .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 20px;
+    color: var(--text-primary);
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.15s;
+  }
+
+  .dropdown-item:hover {
+    background-color: var(--bg-hover);
+  }
+
+  .dropdown-item svg {
+    width: 22px;
+    height: 22px;
+    color: var(--text-secondary);
+    stroke-width: 2;
+  }
+
+  .dropdown-divider {
+    height: 1px;
+    background-color: var(--separator);
+    margin: 6px 0;
+  }
+
+  /* =========================================
+     ПОИСК
+     ========================================= */
+  .search-container {
+    padding: 12px 16px;
+    background-color: var(--bg-primary);
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 10px 16px 10px 40px;
+    background-color: var(--bg-secondary);
+    border: 1px solid transparent;
+    border-radius: 22px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 15px;
+    outline: none;
+    transition: all 0.2s;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%237f91a4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 12px center;
+  }
+
+  [data-theme="light"] .search-input {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23707579' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+  }
+
+  .search-input:focus {
+    border-color: var(--accent);
+    background-color: var(--bg-primary);
+  }
+
+  .search-input::placeholder {
+    color: var(--text-secondary);
+  }
+
+  /* =========================================
+     ЛЕНТА ИСТОРИЙ
+     ========================================= */
+  .stories-container {
+    display: flex;
+    gap: 16px;
+    padding: 8px 16px 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    background-color: var(--bg-primary);
+  }
+
+  .stories-container::-webkit-scrollbar {
+    display: none;
+  }
+
+  .story-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .story-avatar-wrapper {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    padding: 2px;
+    background: var(--separator);
+    position: relative;
+    transition: transform 0.2s;
+  }
+
+  .story-item:hover .story-avatar-wrapper {
+    transform: scale(1.05);
+  }
+
+  .story-avatar-wrapper.has-story {
+    background: var(--story-gradient);
+  }
+
+  .story-avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    border: 2px solid var(--bg-primary);
+    background-color: var(--bg-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 20px;
+    color: var(--text-primary);
+    overflow: hidden;
+  }
+
+  .add-story-btn {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 22px;
+    height: 22px;
+    background-color: var(--accent);
+    border: 2px solid var(--bg-primary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+  }
+
+  .add-story-btn svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .story-name {
+    font-size: 12px;
+    color: var(--text-secondary);
+    max-width: 64px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .story-name.my-story {
+    color: var(--accent);
+  }
+
+  /* =========================================
+     СПИСОК ЧАТОВ
+     ========================================= */
+  .chat-list {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 80px;
+    background-color: var(--bg-primary);
+  }
+
+  .chat-list::-webkit-scrollbar {
+    width: 4px;
+  }
+  .chat-list::-webkit-scrollbar-thumb {
+    background: var(--separator);
+    border-radius: 4px;
+  }
+
+  .chat-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background-color 0.15s;
+    position: relative;
+  }
+
+  .chat-item:hover {
+    background-color: var(--bg-hover);
+  }
+
+  .chat-item:active {
+    background-color: var(--separator);
+  }
+
+  .chat-avatar {
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    background-color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 20px;
+    color: white;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .chat-content {
+    flex: 1;
+    margin-left: 14px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 54px;
+  }
+
+  .chat-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chat-message {
+    font-size: 14px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chat-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: space-between;
+    height: 54px;
+    min-width: 40px;
+    margin-left: 8px;
+  }
+
+  .chat-time {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .chat-meta-bottom {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .pin-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--text-secondary);
+    transform: rotate(45deg);
+  }
+
+  .unread-badge {
+    background-color: var(--badge-bg);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 20px;
+    height: 20px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+  }
+
+  .chat-separator {
+    position: absolute;
+    bottom: 0;
+    left: 84px;
+    right: 0;
+    height: 1px;
+    background-color: var(--separator);
+  }
+
+  /* =========================================
+     НИЖНЯЯ НАВИГАЦИЯ (НОВЫЕ ЗНАЧКИ)
+     ========================================= */
+  .bottom-nav {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 64px;
+    background-color: var(--bg-secondary);
+    border-top: 1px solid var(--separator);
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 40;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.2s;
+    padding: 8px 12px;
+    border-radius: 12px;
+  }
+
+  .nav-item:hover {
+    color: var(--text-primary);
+  }
+
+  .nav-item.active {
+    color: var(--accent);
+  }
+
+  .nav-item svg {
+    width: 24px;
+    height: 24px;
+    stroke-width: 2;
+  }
+
+  /* =========================================
+     TOAST УВЕДОМЛЕНИЯ
+     ========================================= */
+  .toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    padding: 12px 24px;
+    border-radius: 24px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 8px 24px var(--shadow);
+    border: 1px solid var(--separator);
+    z-index: 200;
+    opacity: 0;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  .toast.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+
+  .menu-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 90;
+    display: none;
+  }
+  .menu-overlay.active {
+    display: block;
+  }
+</style>
+</head>
+<body>
+
+<div class="app-container">
+  <header class="header">
+    <h1 class="header-title">Чаты</h1>
+    <!-- Кнопка с новым дизайном точек (горизонтальные, крупные) -->
+    <button class="menu-trigger" id="menuTrigger" aria-label="Открыть меню">
+      <div class="menu-dots">
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+      </div>
+    </button>
+  </header>
+
+  <div class="menu-overlay" id="menuOverlay"></div>
+
+  <nav class="dropdown-menu" id="dropdownMenu">
+    <div class="dropdown-item" data-action="favorites">
+      <!-- Новая иконка: Закладка -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+      <span>Избранное</span>
+    </div>
+    <div class="dropdown-item" data-action="new-group">
+      <!-- Новая иконка: Пользователи -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span>Создать группу</span>
+    </div>
+    <div class="dropdown-item" data-action="archive">
+      <!-- Новая иконка: Архив -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+      <span>Архив</span>
+    </div>
+    <div class="dropdown-item" data-action="pinned">
+      <!-- Новая иконка: Канцелярская кнопка -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>
+      <span>Закрепленное</span>
+    </div>
+    <div class="dropdown-divider"></div>
+    <div class="dropdown-item" id="themeToggle">
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      <svg class="icon-sun" style="display: none;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <span id="themeText">Дневной режим</span>
+    </div>
+  </nav>
+
+  <div class="search-container">
+    <input type="text" class="search-input" placeholder="Поиск чатов и людей">
+  </div>
+
+  <div class="stories-container">
+    <div class="story-item" data-name="Моя история">
+      <div class="story-avatar-wrapper">
+        <div class="story-avatar" style="background-color: #5288c1;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 28px; height: 28px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <div class="add-story-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </div>
+      </div>
+      <span class="story-name my-story">Моя история</span>
+    </div>
+
+    <div class="story-item" data-name="admin">
+      <div class="story-avatar-wrapper has-story">
+        <div class="story-avatar" style="background-color: #e6683c; color: white;">A</div>
+      </div>
+      <span class="story-name">admin</span>
+    </div>
+
+    <div class="story-item" data-name="Бегенч Ягмуров">
+      <div class="story-avatar-wrapper has-story">
+        <div class="story-avatar" style="background-color: #dc2743; color: white;">Б</div>
+      </div>
+      <span class="story-name">Бегенч Я.</span>
+    </div>
+
+    <div class="story-item" data-name="Мария Иванова">
+      <div class="story-avatar-wrapper has-story">
+        <div class="story-avatar" style="background-color: #cc2366; color: white;">М</div>
+      </div>
+      <span class="story-name">Мария</span>
+    </div>
+  </div>
+
+  <div class="chat-list" id="chatList">
+    
+    <div class="chat-item" data-name="Бегенч Ягмуров">
+      <div class="chat-avatar" style="background-color: #e6683c;">Б</div>
+      <div class="chat-content">
+        <div class="chat-name">Бегенч Ягмуров</div>
+        <div class="chat-message">Сидишь?</div>
+      </div>
+      <div class="chat-meta">
+        <div class="chat-time">12:01</div>
+        <div class="chat-meta-bottom">
+          <svg class="pin-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4H17V2H7V4H8V12L6 14V16H11.2V22H12.8V16H18V14L16 12Z"/></svg>
+          <div class="unread-badge">1</div>
+        </div>
+      </div>
+      <div class="chat-separator"></div>
+    </div>
+
+    <div class="chat-item" data-name="admin">
+      <div class="chat-avatar" style="background-color: #5288c1;">A</div>
+      <div class="chat-content">
+        <div class="chat-name">admin</div>
+        <div class="chat-message">Ggg</div>
+      </div>
+      <div class="chat-meta">
+        <div class="chat-time">Вчера</div>
+        <div class="chat-meta-bottom">
+          <div class="unread-badge">3</div>
+        </div>
+      </div>
+      <div class="chat-separator"></div>
+    </div>
+
+    <div class="chat-item" data-name="Мария Иванова">
+      <div class="chat-avatar" style="background-color: #dc2743;">М</div>
+      <div class="chat-content">
+        <div class="chat-name">Мария Иванова</div>
+        <div class="chat-message">Отправила файлы на почту, проверь</div>
+      </div>
+      <div class="chat-meta">
+        <div class="chat-time">Пн</div>
+        <div class="chat-meta-bottom"></div>
+      </div>
+      <div class="chat-separator"></div>
+    </div>
+
+    <div class="chat-item" data-name="Рабочий чат">
+      <div class="chat-avatar" style="background-color: #7f91a4;">Р</div>
+      <div class="chat-content">
+        <div class="chat-name">Рабочий чат</div>
+        <div class="chat-message">Алексей: Завтра собрание в 10:00</div>
+      </div>
+      <div class="chat-meta">
+        <div class="chat-time">Пн</div>
+        <div class="chat-meta-bottom">
+          <div class="unread-badge">12</div>
+        </div>
+      </div>
+      <div class="chat-separator"></div>
+    </div>
+
+  </div>
+
+  <nav class="bottom-nav">
+    <div class="nav-item active" data-tab="chats">
+      <!-- Новый дизайн: Пузыри сообщений -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+      </svg>
+      <span>Чаты</span>
+    </div>
+    <div class="nav-item" data-tab="contacts">
+      <!-- Новый дизайн: Адресная книга -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      <span>Контакты</span>
+    </div>
+    <div class="nav-item" data-tab="ai">
+      <!-- Новый дизайн: Робот/ИИ -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="10" rx="2"/>
+        <circle cx="12" cy="5" r="2"/>
+        <path d="M12 7v4"/>
+        <line x1="8" y1="16" x2="8" y2="16"/>
+        <line x1="16" y1="16" x2="16" y2="16"/>
+      </svg>
+      <span>ИИ</span>
+    </div>
+    <div class="nav-item" data-tab="news">
+      <!-- Новый дизайн: Газета -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/>
+        <path d="M18 14h-8"/>
+        <path d="M15 18h-5"/>
+        <path d="M10 6h8v4h-8V6Z"/>
+      </svg>
+      <span>Новости</span>
+    </div>
+    <div class="nav-item" data-tab="profile">
+      <!-- Новый дизайн: Профиль пользователя -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      <span>Профиль</span>
+    </div>
+  </nav>
+
+  <div class="toast" id="toast"></div>
+
+</div>
+
+<script>
+  const menuTrigger = document.getElementById('menuTrigger');
+  const dropdownMenu = document.getElementById('dropdownMenu');
+  const menuOverlay = document.getElementById('menuOverlay');
+
+  function toggleMenu() {
+    const isActive = dropdownMenu.classList.contains('active');
+    if (isActive) {
+      closeMenu();
+    } else {
+      dropdownMenu.classList.add('active');
+      menuOverlay.classList.add('active');
+    }
+  }
+
+  function closeMenu() {
+    dropdownMenu.classList.remove('active');
+    menuOverlay.classList.remove('active');
+  }
+
+  menuTrigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleMenu();
+  });
+
+  menuOverlay.addEventListener('click', closeMenu);
+
+  const themeToggle = document.getElementById('themeToggle');
+  const themeText = document.getElementById('themeText');
+  const iconMoon = themeToggle.querySelector('.icon-moon');
+  const iconSun = themeToggle.querySelector('.icon-sun');
+  const html = document.documentElement;
+
+  themeToggle.addEventListener('click', () => {
+    const currentTheme = html.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    
+    html.setAttribute('data-theme', newTheme);
+    
+    if (newTheme === 'light') {
+      themeText.textContent = 'Ночной режим';
+      iconMoon.style.display = 'none';
+      iconSun.style.display = 'block';
+    } else {
+      themeText.textContent = 'Дневной режим';
+      iconMoon.style.display = 'block';
+      iconSun.style.display = 'none';
+    }
+    
+    showToast(newTheme === 'light' ? 'Включен дневной режим' : 'Включен ночной режим');
+    closeMenu();
+  });
+
+  document.querySelectorAll('.dropdown-item[data-action]').forEach(item => {
+    item.addEventListener('click', () => {
+      const action = item.getAttribute('data-action');
+      const names = {
+        'favorites': 'Открыто: Избранное',
+        'new-group': 'Создание новой группы',
+        'archive': 'Открыт: Архив',
+        'pinned': 'Открыто: Закрепленные сообщения'
+      };
+      showToast(names[action] || 'Действие выполнено');
+      closeMenu();
+    });
+  });
+
+  const toast = document.getElementById('toast');
+  let toastTimeout;
+
+  function showToast(message) {
+    clearTimeout(toastTimeout);
+    toast.textContent = message;
+    toast.classList.add('show');
+    
+    toastTimeout = setTimeout(() => {
+      toast.classList.remove('show');
+    }, 2500);
+  }
+
+  document.querySelectorAll('.chat-item').forEach(chat => {
+    chat.addEventListener('click', () => {
+      const name = chat.getAttribute('data-name');
+      showToast(`Открыт чат: ${name}`);
+    });
+  });
+
+  document.querySelectorAll('.story-item').forEach(story => {
+    story.addEventListener('click', () => {
+      const name = story.getAttribute('data-name');
+      if (name === 'Моя история') {
+        showToast('Добавление новой истории');
+      } else {
+        showToast(`Просмотр истории: ${name}`);
+      }
+    });
+  });
+
+  document.querySelectorAll('.nav-item').forEach(nav => {
+    nav.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      nav.classList.add('active');
+      
+      const tab = nav.getAttribute('data-tab');
+      const tabNames = {
+        'chats': 'Чаты',
+        'contacts': 'Контакты',
+        'ai': 'ИИ Ассистент',
+        'news': 'Новости',
+        'profile': 'Профиль'
+      };
+      
+      if (tab !== 'chats') {
+        showToast(`Раздел "${tabNames[tab]}" в разработке`);
+      }
+    });
+  });
+
+  if (html.getAttribute('data-theme') === 'light') {
+    themeText.textContent = 'Ночной режим';
+    iconMoon.style.display = 'none';
+    iconSun.style.display = 'block';
+  }
+</script>
+
+</body>
+</html>
+

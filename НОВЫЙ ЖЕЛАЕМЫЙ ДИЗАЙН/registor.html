@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Akyl Cheshmesi — Регистрация</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-400-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-500-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-600-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-700-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-800-normal.css">
+
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :root {
+    /* Ночная тема (по умолчанию) */
+    --bg-deep: #020f12;
+    --bg-dark: #051c20;
+    --bg-surface: rgba(10, 40, 44, 0.55);
+    --primary: #10b981;
+    --primary-light: #34d399;
+    --accent: #f59e0b;
+    --accent-light: #fbbf24;
+    --neon-teal: #2dd4bf;
+    --text-primary: #f0fdf4;
+    --text-secondary: #a7c7bd;
+    --text-muted: #5f7a74;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-focus: rgba(16, 185, 129, 0.6);
+    --input-bg: rgba(255, 255, 255, 0.04);
+    --shadow-color: rgba(16, 185, 129, 0.35);
+    --shadow-accent: rgba(245, 158, 11, 0.25);
+    --phone-bg: linear-gradient(165deg, #042024 0%, #073837 50%, #051c20 100%);
+    --blob-1: radial-gradient(circle, #10b981, #047857);
+    --blob-2: radial-gradient(circle, #f59e0b, #b45309);
+    --blob-3: radial-gradient(circle, #2dd4bf, #0d9488);
+    --grid-color: rgba(255, 255, 255, 0.02);
+    --toast-bg-success: linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(4, 120, 87, 0.95));
+    --toast-bg-error: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.95));
+    --toast-bg-info: linear-gradient(135deg, rgba(45, 212, 191, 0.95), rgba(13, 148, 136, 0.95));
+  }
+
+  [data-theme="light"] {
+    /* Дневная тема */
+    --bg-deep: #f0fdf9;
+    --bg-dark: #ffffff;
+    --bg-surface: rgba(255, 255, 255, 0.7);
+    --primary: #059669;
+    --primary-light: #10b981;
+    --accent: #d97706;
+    --accent-light: #f59e0b;
+    --neon-teal: #14b8a6;
+    --text-primary: #064e3b;
+    --text-secondary: #37635b;
+    --text-muted: #8fa3a0;
+    --border: rgba(0, 0, 0, 0.08);
+    --border-focus: rgba(5, 150, 105, 0.5);
+    --input-bg: rgba(0, 0, 0, 0.03);
+    --shadow-color: rgba(5, 150, 105, 0.15);
+    --shadow-accent: rgba(217, 119, 6, 0.1);
+    --phone-bg: linear-gradient(165deg, #ffffff 0%, #ecfdf5 50%, #f0fdf9 100%);
+    --blob-1: radial-gradient(circle, #a7f3d0, #6ee7b7);
+    --blob-2: radial-gradient(circle, #fde68a, #fcd34d);
+    --blob-3: radial-gradient(circle, #99f6e4, #5eead4);
+    --grid-color: rgba(0, 0, 0, 0.03);
+    --toast-bg-success: linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95));
+    --toast-bg-error: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.95));
+    --toast-bg-info: linear-gradient(135deg, rgba(20, 184, 166, 0.95), rgba(13, 148, 136, 0.95));
+  }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    position: relative;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.4s ease, color 0.4s ease;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(16, 185, 129, 0.15) 0%, transparent 40%),
+      radial-gradient(circle at 80% 80%, rgba(245, 158, 11, 0.1) 0%, transparent 45%),
+      radial-gradient(circle at 50% 50%, rgba(45, 212, 191, 0.08) 0%, transparent 60%);
+    z-index: 0;
+    pointer-events: none;
+    transition: background 0.4s ease;
+  }
+
+  [data-theme="light"] body::before {
+    background:
+      radial-gradient(circle at 20% 10%, rgba(16, 185, 129, 0.08) 0%, transparent 40%),
+      radial-gradient(circle at 80% 80%, rgba(245, 158, 11, 0.06) 0%, transparent 45%),
+      radial-gradient(circle at 50% 50%, rgba(45, 212, 191, 0.05) 0%, transparent 60%);
+  }
+
+  .phone {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    height: 100%;
+    max-height: 900px;
+    background: var(--phone-bg);
+    border-radius: 44px;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 2px var(--border),
+      0 50px 120px -20px var(--shadow-color),
+      0 30px 60px -30px var(--shadow-accent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    isolation: isolate;
+    transition: background 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease;
+  }
+
+  [data-theme="light"] .phone {
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.05),
+      0 50px 120px -20px rgba(5, 150, 105, 0.15),
+      0 30px 60px -30px rgba(217, 119, 6, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+
+  @media (max-width: 480px) {
+    body { padding: 0; }
+    .phone {
+      max-width: none;
+      max-height: none;
+      border-radius: 0;
+      box-shadow: none;
+    }
+  }
+
+  .blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(70px);
+    opacity: 0.45;
+    z-index: -1;
+    animation: float 18s infinite ease-in-out;
+    transition: background 0.4s ease;
+  }
+
+  .blob-1 {
+    width: 280px;
+    height: 280px;
+    background: var(--blob-1);
+    top: -80px;
+    left: -60px;
+  }
+
+  .blob-2 {
+    width: 240px;
+    height: 240px;
+    background: var(--blob-2);
+    bottom: 60px;
+    right: -80px;
+    animation-delay: -6s;
+    opacity: 0.35;
+  }
+
+  .blob-3 {
+    width: 200px;
+    height: 200px;
+    background: var(--blob-3);
+    top: 40%;
+    left: 30%;
+    opacity: 0.25;
+    animation-delay: -12s;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(40px, -30px) scale(1.1); }
+    66% { transform: translate(-30px, 40px) scale(0.95); }
+  }
+
+  .grid-overlay {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--grid-color) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+    background-size: 40px 40px;
+    z-index: -1;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+    transition: background-image 0.4s ease;
+  }
+
+  .scroll-container {
+    position: relative;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 48px 32px 40px;
+    scroll-behavior: smooth;
+  }
+
+  .scroll-container::-webkit-scrollbar { width: 4px; }
+  .scroll-container::-webkit-scrollbar-track { background: transparent; }
+  .scroll-container::-webkit-scrollbar-thumb {
+    background: var(--primary);
+    opacity: 0.4;
+    border-radius: 4px;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
+    animation: slideUp 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .logo-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 84px;
+    height: 84px;
+    margin-bottom: 16px;
+    position: relative;
+    animation: logoPulse 3s ease-in-out infinite;
+  }
+
+  .logo-wrap svg.square-logo {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 20px 40px rgba(16, 185, 129, 0.5));
+    transition: filter 0.4s ease;
+  }
+
+  [data-theme="light"] .logo-wrap svg.square-logo {
+    filter: drop-shadow(0 10px 20px rgba(5, 150, 105, 0.2));
+  }
+
+  @keyframes logoPulse {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
+
+  .app-title {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, #ffffff 0%, #a7f3d0 50%, #fcd34d 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 4px;
+    transition: background 0.4s ease;
+  }
+
+  [data-theme="light"] .app-title {
+    background: linear-gradient(135deg, #064e3b 0%, #059669 50%, #d97706 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    animation: slideUp 0.7s 0.1s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  .input-group {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .input-icon {
+    position: absolute;
+    left: 18px;
+    width: 20px;
+    height: 20px;
+    color: var(--text-muted);
+    transition: color 0.3s ease;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .input {
+    width: 100%;
+    padding: 15px 18px 15px 50px;
+    background: var(--input-bg);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 500;
+    outline: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .input::placeholder {
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
+  .input:hover {
+    border-color: rgba(128, 128, 128, 0.2);
+    background: var(--bg-surface);
+  }
+
+  .input:focus {
+    border-color: var(--primary);
+    background: rgba(16, 185, 129, 0.05);
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1), 0 0 20px rgba(16, 185, 129, 0.1);
+  }
+
+  [data-theme="light"] .input:focus {
+    background: rgba(5, 150, 105, 0.05);
+    box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.1), 0 0 15px rgba(5, 150, 105, 0.1);
+  }
+
+  .input-group:focus-within .input-icon {
+    color: var(--primary-light);
+  }
+
+  .toggle-password {
+    position: absolute;
+    right: 12px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 2;
+  }
+
+  .toggle-password:hover {
+    background: var(--bg-surface);
+    color: var(--primary-light);
+  }
+
+  .toggle-password svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .input[type="password"] ~ .toggle-password .eye-off,
+  .input[type="text"] ~ .toggle-password .eye-on {
+    display: none;
+  }
+
+  .checkbox {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 400;
+    line-height: 1.4;
+    margin-top: 4px;
+  }
+
+  .checkbox input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .checkmark {
+    position: relative;
+    width: 20px;
+    height: 20px;
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    background: var(--input-bg);
+    transition: all 0.25s ease;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .checkmark::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 2px;
+    width: 5px;
+    height: 10px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) scale(0);
+    opacity: 0;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .checkbox input:checked + .checkmark {
+    background: linear-gradient(135deg, #10b981, #047857);
+    border-color: transparent;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+  }
+
+  [data-theme="light"] .checkbox input:checked + .checkmark {
+    background: linear-gradient(135deg, #10b981, #059669);
+  }
+
+  .checkbox input:checked + .checkmark::after {
+    transform: rotate(45deg) scale(1);
+    opacity: 1;
+  }
+
+  .checkbox:hover .checkmark {
+    border-color: var(--primary-light);
+  }
+
+  .terms-link {
+    color: var(--primary-light);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s ease;
+  }
+
+  .terms-link:hover {
+    color: var(--accent);
+  }
+
+  .btn-register {
+    position: relative;
+    width: 100%;
+    padding: 16px;
+    margin-top: 8px;
+    background: linear-gradient(135deg, #10b981 0%, #047857 50%, #065f46 100%);
+    background-size: 200% 200%;
+    background-position: 0% 50%;
+    color: white;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    overflow: hidden;
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow:
+      0 10px 30px -8px rgba(16, 185, 129, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    animation: slideUp 0.7s 0.2s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  .btn-register::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, #34d399, #f59e0b, #10b981);
+    opacity: 0;
+    transition: opacity 0.35s ease;
+  }
+
+  .btn-register span {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .btn-register:hover {
+    transform: translateY(-2px) scale(1.01);
+    background-position: 100% 50%;
+    box-shadow:
+      0 15px 40px -8px rgba(16, 185, 129, 0.7),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+
+  .btn-register:hover::before {
+    opacity: 1;
+  }
+
+  .btn-register:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  .btn-register:disabled {
+    cursor: not-allowed;
+    opacity: 0.75;
+  }
+
+  .btn-register:disabled:hover {
+    transform: none;
+    background-position: 0% 50%;
+  }
+
+  .spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 20px 0 16px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    animation: slideUp 0.7s 0.3s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  .divider::before,
+  .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+  }
+
+  .login-wrap {
+    text-align: center;
+    animation: slideUp 0.7s 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  .login-text {
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+
+  .login-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+    margin-left: 4px;
+    transition: color 0.2s ease;
+    position: relative;
+  }
+
+  .login-link::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -2px;
+    height: 1px;
+    background: currentColor;
+    transform: scaleX(0);
+    transition: transform 0.3s ease;
+    transform-origin: right;
+  }
+
+  .login-link:hover {
+    color: var(--accent-light);
+  }
+
+  .login-link:hover::after {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+
+  .theme-toggle {
+    position: absolute;
+    top: 24px;
+    right: 24px;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    background: var(--input-bg);
+    border: 1.5px solid var(--border);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    z-index: 50;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .theme-toggle:hover {
+    background: var(--bg-surface);
+    color: var(--primary);
+    border-color: var(--primary-light);
+    transform: translateY(-1px);
+  }
+
+  .theme-toggle:active {
+    transform: translateY(0) scale(0.95);
+  }
+
+  .theme-toggle svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .theme-toggle .icon-moon,
+  [data-theme="light"] .theme-toggle .icon-sun {
+    display: none;
+  }
+
+  [data-theme="light"] .theme-toggle .icon-moon {
+    display: block;
+  }
+
+  .toast {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-150%);
+    padding: 14px 20px;
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    font-weight: 500;
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 1000;
+    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5);
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    max-width: 90%;
+    white-space: nowrap;
+  }
+
+  .toast.show {
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .toast.success {
+    background: var(--toast-bg-success);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+
+  .toast.error {
+    background: var(--toast-bg-error);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  .toast.info {
+    background: var(--toast-bg-info);
+    border: 1px solid rgba(45, 212, 191, 0.3);
+  }
+
+  .toast svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (max-width: 380px) {
+    .scroll-container {
+      padding: 40px 24px 32px;
+    }
+    .app-title {
+      font-size: 24px;
+    }
+    .logo-wrap {
+      width: 76px;
+      height: 76px;
+    }
+    .theme-toggle {
+      top: 16px;
+      right: 16px;
+      width: 40px;
+      height: 40px;
+    }
+  }
+
+  @media (min-height: 800px) {
+    .scroll-container {
+      padding-top: 50px;
+    }
+    .header {
+      margin-bottom: 36px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="phone" role="application" aria-label="Экран регистрации Akyl Cheshmesi">
+  
+  <!-- Переключатель темы -->
+  <button type="button" class="theme-toggle" id="themeToggle" aria-label="Переключить тему">
+    <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="1" x2="12" y2="3"/>
+      <line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/>
+      <line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+    <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  </button>
+
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+  <div class="grid-overlay"></div>
+
+  <div class="scroll-container">
+    <header class="header">
+      <div class="logo-wrap" aria-hidden="true">
+        <svg class="square-logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="sqGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#34d399"/>
+              <stop offset="50%" stop-color="#10b981"/>
+              <stop offset="100%" stop-color="#047857"/>
+            </linearGradient>
+            <linearGradient id="sqInner" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#fcd34d"/>
+              <stop offset="100%" stop-color="#f59e0b"/>
+            </linearGradient>
+            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="1.2" result="blur"/>
+              <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+          <rect x="6" y="6" width="88" height="88" rx="24" fill="url(#sqGrad)" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+          <rect x="16" y="16" width="68" height="68" rx="16" fill="none" stroke="url(#sqInner)" stroke-width="1.5" opacity="0.8"/>
+          <path d="M38 68 L50 34 L62 68 M42 58 H58"
+                stroke="white" stroke-width="5"
+                stroke-linecap="round" stroke-linejoin="round"
+                fill="none"
+                filter="url(#glow)"/>
+          <circle cx="50" cy="18" r="3" fill="url(#sqInner)"/>
+        </svg>
+      </div>
+      <h1 class="app-title">Создать аккаунт</h1>
+    </header>
+
+    <form class="form" id="registerForm" novalidate>
+      <div class="input-group">
+        <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+        <input type="text" class="input" id="name" placeholder="Имя" autocomplete="name" required>
+      </div>
+
+      <div class="input-group">
+        <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="4" width="20" height="16" rx="2"/>
+          <path d="M22 6l-10 7L2 6"/>
+        </svg>
+        <input type="email" class="input" id="email" placeholder="Email" autocomplete="email" required>
+      </div>
+
+      <div class="input-group">
+        <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        <input type="password" class="input" id="password" placeholder="Пароль" autocomplete="new-password" required>
+        <button type="button" class="toggle-password" id="togglePassword" aria-label="Показать или скрыть пароль">
+          <svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+            <line x1="1" y1="1" x2="23" y2="23"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="input-group">
+        <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        <input type="password" class="input" id="confirmPassword" placeholder="Подтвердите пароль" autocomplete="new-password" required>
+        <button type="button" class="toggle-password" id="toggleConfirmPassword" aria-label="Показать или скрыть пароль">
+          <svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+            <line x1="1" y1="1" x2="23" y2="23"/>
+          </svg>
+        </button>
+      </div>
+
+      <label class="checkbox">
+        <input type="checkbox" id="agreeTerms">
+        <span class="checkmark"></span>
+        <span>Я согласен с <a href="#" class="terms-link" id="termsLink">условиями использования</a> и <a href="#" class="terms-link" id="privacyLink">политикой конфиденциальности</a></span>
+      </label>
+
+      <button type="submit" class="btn-register" id="registerBtn">
+        <span id="btnContent">Зарегистрироваться</span>
+      </button>
+    </form>
+
+    <div class="divider">или</div>
+
+    <div class="login-wrap">
+      <span class="login-text">Уже есть аккаунт?</span>
+      <a href="#" class="login-link" id="loginLink">Войти</a>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="alert" aria-live="polite">
+  <svg id="toastIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>
+  <span id="toastText"></span>
+</div>
+
+<script>
+  // ============================
+  // УПРАВЛЕНИЕ ТЕМОЙ
+  // ============================
+  const themeToggle = document.getElementById('themeToggle');
+  const html = document.documentElement;
+
+  function setTheme(theme) {
+    if (theme === 'light') {
+      html.setAttribute('data-theme', 'light');
+      localStorage.setItem('akyl_theme', 'light');
+    } else {
+      html.removeAttribute('data-theme');
+      localStorage.setItem('akyl_theme', 'dark');
+    }
+  }
+
+  function initTheme() {
+    const savedTheme = localStorage.getItem('akyl_theme');
+    if (savedTheme) {
+      setTheme(savedTheme);
+    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+      setTheme('light');
+    } else {
+      setTheme('dark');
+    }
+  }
+
+  themeToggle.addEventListener('click', () => {
+    const currentTheme = html.getAttribute('data-theme');
+    setTheme(currentTheme === 'light' ? 'dark' : 'light');
+  });
+
+  initTheme();
+
+  // ============================
+  // ЛОГИКА РЕГИСТРАЦИИ
+  // ============================
+  const USER_KEY = 'akyl_registered_user';
+
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  const toast = document.getElementById('toast');
+  const toastText = document.getElementById('toastText');
+  const toastIcon = document.getElementById('toastIcon');
+  let toastTimer = null;
+
+  function showToast(message, type = 'info') {
+    if (toastTimer) clearTimeout(toastTimer);
+    toast.classList.remove('show', 'success', 'error', 'info');
+    toast.classList.add(type);
+    toastText.textContent = message;
+
+    if (type === 'success') {
+      toastIcon.innerHTML = '<polyline points="20 6 9 17 4 12"/>';
+    } else if (type === 'error') {
+      toastIcon.innerHTML = '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>';
+    } else {
+      toastIcon.innerHTML = '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>';
+    }
+
+    requestAnimationFrame(() => toast.classList.add('show'));
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 3500);
+  }
+
+  function setLoadingState(isLoading) {
+    const btn = document.getElementById('registerBtn');
+    const btnContent = document.getElementById('btnContent');
+    btn.disabled = isLoading;
+    if (isLoading) {
+      btnContent.innerHTML = '<div class="spinner"></div> Регистрация...';
+    } else {
+      btnContent.textContent = 'Зарегистрироваться';
+    }
+  }
+
+  function registerUser(name, email, password, confirmPassword, agreeTerms) {
+    if (!name || !name.trim()) {
+      showToast('Введите ваше имя', 'error');
+      return;
+    }
+    if (!email || !email.trim()) {
+      showToast('Введите email', 'error');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      showToast('Некорректный формат email', 'error');
+      return;
+    }
+    if (!password) {
+      showToast('Введите пароль', 'error');
+      return;
+    }
+    if (password.length < 6) {
+      showToast('Пароль должен быть не менее 6 символов', 'error');
+      return;
+    }
+    if (password !== confirmPassword) {
+      showToast('Пароли не совпадают', 'error');
+      return;
+    }
+    if (!agreeTerms) {
+      showToast('Необходимо согласиться с условиями', 'error');
+      return;
+    }
+
+    setLoadingState(true);
+
+    setTimeout(() => {
+      const userData = {
+        name: name.trim(),
+        email: email.trim(),
+        registeredAt: Date.now()
+      };
+
+      try {
+        localStorage.setItem(USER_KEY, JSON.stringify(userData));
+      } catch (e) {
+        console.warn('Не удалось сохранить в localStorage:', e);
+      }
+
+      setLoadingState(false);
+      showToast('Регистрация успешна! Теперь вы можете войти.', 'success');
+      document.getElementById('registerForm').reset();
+    }, 1500);
+  }
+
+  // Переключение видимости паролей
+  const passwordInput = document.getElementById('password');
+  const toggleBtn = document.getElementById('togglePassword');
+  toggleBtn.addEventListener('click', () => {
+    const isPassword = passwordInput.type === 'password';
+    passwordInput.type = isPassword ? 'text' : 'password';
+  });
+
+  const confirmPasswordInput = document.getElementById('confirmPassword');
+  const toggleConfirmBtn = document.getElementById('toggleConfirmPassword');
+  toggleConfirmBtn.addEventListener('click', () => {
+    const isPassword = confirmPasswordInput.type === 'password';
+    confirmPasswordInput.type = isPassword ? 'text' : 'password';
+  });
+
+  // Отправка формы
+  const form = document.getElementById('registerForm');
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = document.getElementById('name').value;
+    const email = document.getElementById('email').value;
+    const password = passwordInput.value;
+    const confirmPassword = confirmPasswordInput.value;
+    const agreeTerms = document.getElementById('agreeTerms').checked;
+    
+    registerUser(name, email, password, confirmPassword, agreeTerms);
+  });
+
+  // Ссылки-заглушки
+  document.getElementById('loginLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    showToast('Переход на экран входа...', 'info');
+  });
+
+  document.getElementById('termsLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    showToast('Условия использования', 'info');
+  });
+
+  document.getElementById('privacyLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    showToast('Политика конфиденциальности', 'info');
+  });
+
+  // Автозаполнение email, если пользователь уже регистрировался
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    const existingUser = localStorage.getItem(USER_KEY);
+    if (existingUser) {
+      try {
+        const user = JSON.parse(existingUser);
+        if (user && user.email) {
+          document.getElementById('email').value = user.email;
+        }
+      } catch (e) {}
+    }
+  }
+</script>
+
+</body>
+</html>
+
