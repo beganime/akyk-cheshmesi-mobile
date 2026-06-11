@@ -15,7 +15,11 @@ function readString(value: unknown) {
 }
 
 export function getCallRealtimePayload(event: RealtimeEvent): CallRealtimePayload {
-  const payload = (event.payload ?? {}) as Record<string, unknown>;
+  const rawEvent = event.raw && typeof event.raw === 'object' ? event.raw : {};
+  const payload = {
+    ...(rawEvent as Record<string, unknown>),
+    ...((event.payload ?? {}) as Record<string, unknown>),
+  };
 
   return {
     callUuid: readString(payload.call_uuid),
@@ -32,12 +36,27 @@ export function getCallRealtimePayload(event: RealtimeEvent): CallRealtimePayloa
 }
 
 export function isCallInviteRealtimeEvent(event: RealtimeEvent) {
-  return event.type === 'call_invite';
+  return event.type === 'call:invite' || event.type === 'call_invite';
 }
 
 export function isCallLifecycleRealtimeEvent(event: RealtimeEvent) {
   return (
+    event.type === 'call:accept' ||
+    event.type === 'call:decline' ||
+    event.type === 'call:end' ||
+    event.type === 'call:missed' ||
     event.type === 'call_accepted' ||
+    event.type === 'call_rejected' ||
+    event.type === 'call_canceled' ||
+    event.type === 'call_ended'
+  );
+}
+
+export function isCallTerminalRealtimeEvent(event: RealtimeEvent) {
+  return (
+    event.type === 'call:decline' ||
+    event.type === 'call:end' ||
+    event.type === 'call:missed' ||
     event.type === 'call_rejected' ||
     event.type === 'call_canceled' ||
     event.type === 'call_ended'

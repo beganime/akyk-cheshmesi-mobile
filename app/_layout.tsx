@@ -30,6 +30,7 @@ import {
   getCallRealtimePayload,
   isCallInviteRealtimeEvent,
   isCallLifecycleRealtimeEvent,
+  isCallTerminalRealtimeEvent,
 } from '@/src/lib/calls/realtime';
 import { useCallStore } from '@/src/state/call';
 
@@ -241,7 +242,11 @@ export default function RootLayout() {
         const payload = getCallRealtimePayload(event);
         if (!payload.callUuid) return;
 
-        if (currentCallUuid && currentCallUuid === payload.callUuid) {
+        if (
+          currentCallUuid &&
+          currentCallUuid === payload.callUuid &&
+          isCallTerminalRealtimeEvent(event)
+        ) {
           void remoteEnded(payload.callUuid);
         }
       }

@@ -6,6 +6,7 @@ import { Platform } from 'react-native';
 
 import {
   deletePushToken,
+  isPushTokenEndpointMissing,
   registerPushToken,
   type PushPlatform,
   type PushProvider,
@@ -42,7 +43,7 @@ async function ensureAndroidNotificationChannel() {
     name: 'Messages',
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 200, 120, 200],
-    lightColor: '#4E7BFF',
+    lightColor: '#1DB954',
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
   });
 }
@@ -129,25 +130,33 @@ async function upsertTokenByNativeToken(tokenInfo: Notifications.DevicePushToken
   const platform = mapTokenToPlatform(tokenInfo.type);
   const deviceId = await getOrCreateLocalDeviceId();
 
-  await registerPushToken({
-    token: tokenValue,
-    provider,
-    platform,
-    device_id: deviceId,
-    device_name: Device.modelName || Constants.deviceName || '',
-    app_version: Constants.expoConfig?.version || '',
-    meta: {
-      appOwnership: Constants.appOwnership ?? null,
-      executionEnvironment: Constants.executionEnvironment ?? null,
-      platformOs: Platform.OS,
-      platformVersion: Platform.Version,
-      brand: Device.brand ?? null,
-      manufacturer: Device.manufacturer ?? null,
-      osName: Device.osName ?? null,
-      osVersion: Device.osVersion ?? null,
-      isDevice: Device.isDevice,
-    },
-  });
+  try {
+    await registerPushToken({
+      token: tokenValue,
+      provider,
+      platform,
+      device_id: deviceId,
+      device_name: Device.modelName || Constants.deviceName || '',
+      app_version: Constants.expoConfig?.version || '',
+      meta: {
+        appOwnership: Constants.appOwnership ?? null,
+        executionEnvironment: Constants.executionEnvironment ?? null,
+        platformOs: Platform.OS,
+        platformVersion: Platform.Version,
+        brand: Device.brand ?? null,
+        manufacturer: Device.manufacturer ?? null,
+        osName: Device.osName ?? null,
+        osVersion: Device.osVersion ?? null,
+        isDevice: Device.isDevice,
+      },
+    });
+  } catch (error) {
+    if (!isPushTokenEndpointMissing(error)) {
+      throw error;
+    }
+
+    console.warn('Push token backend endpoint is not available yet.');
+  }
 
   currentRegisteredToken = tokenValue;
 
@@ -212,7 +221,11 @@ export async function unregisterCurrentPushToken() {
       });
     }
   } catch (error) {
-    console.error('unregisterCurrentPushToken error:', error);
+    if (isPushTokenEndpointMissing(error)) {
+      console.warn('Push token delete endpoint is not available yet.');
+    } else {
+      console.error('unregisterCurrentPushToken error:', error);
+    }
   } finally {
     currentRegisteredToken = null;
 

@@ -237,7 +237,7 @@ class CallEngine {
       }
 
       this.sendSocketMessage({
-        type: 'call_ice',
+        type: 'call:ice-candidate',
         chat_uuid: this.state.call.chat_uuid,
         call_uuid: this.state.call.uuid,
         room_key: this.state.call.room_key,
@@ -377,6 +377,10 @@ class CallEngine {
           if (parsed.type === 'joined_call') {
             clearTimeout(timeout);
             this.joined = true;
+            const payload =
+              parsed.payload && typeof parsed.payload === 'object'
+                ? parsed.payload
+                : {};
 
             ws.onmessage = async (nextEvent) => {
               try {
@@ -388,7 +392,7 @@ class CallEngine {
             };
 
             resolve({
-              peerId: parsed.peer_id ?? null,
+              peerId: parsed.peer_id ?? (payload.peer_id as string | undefined) ?? null,
             });
             return;
           }
@@ -439,7 +443,7 @@ class CallEngine {
       await this.pc.setLocalDescription(offer);
 
       this.sendSocketMessage({
-        type: 'call_offer',
+        type: 'call:offer',
         chat_uuid: this.state.call.chat_uuid,
         call_uuid: this.state.call.uuid,
         room_key: this.state.call.room_key,
@@ -462,16 +466,33 @@ class CallEngine {
       return;
     }
 
+    const payload =
+      event.payload && typeof event.payload === 'object'
+        ? (event.payload as Record<string, unknown>)
+        : {};
+    const eventRecord = event as Record<string, any>;
+    const eventSdp = typeof eventRecord.sdp === 'string'
+      ? eventRecord.sdp
+      : typeof payload.sdp === 'string'
+        ? payload.sdp
+        : '';
+    const eventCandidate =
+      eventRecord.candidate ||
+      (payload.candidate && typeof payload.candidate === 'object'
+        ? (payload.candidate as any)
+        : null);
+
     switch (event.type) {
+      case 'call:answer':
       case 'call_answer': {
-        if (!event.sdp) {
+        if (!eventSdp) {
           return;
         }
 
         await this.pc.setRemoteDescription(
           new RTCSessionDescription({
             type: 'answer',
-            sdp: event.sdp,
+            sdp: eventSdp,
           }) as any,
         );
 
@@ -481,8 +502,9 @@ class CallEngine {
         return;
       }
 
+      case 'call:offer':
       case 'call_offer': {
-        if (!event.sdp) {
+        if (!eventSdp) {
           return;
         }
 
@@ -498,7 +520,7 @@ class CallEngine {
         await this.pc.setRemoteDescription(
           new RTCSessionDescription({
             type: 'offer',
-            sdp: event.sdp,
+            sdp: eventSdp,
           }) as any,
         );
 
@@ -506,7 +528,7 @@ class CallEngine {
         await this.pc.setLocalDescription(answer);
 
         this.sendSocketMessage({
-          type: 'call_answer',
+          type: 'call:answer',
           chat_uuid: this.state.call.chat_uuid,
           call_uuid: this.state.call.uuid,
           room_key: this.state.call.room_key,
@@ -520,17 +542,18 @@ class CallEngine {
         return;
       }
 
+      case 'call:ice-candidate':
       case 'call_ice': {
-        if (!event.candidate || this.ignoreOffer) {
+        if (!eventCandidate || this.ignoreOffer) {
           return;
         }
 
         try {
           await this.pc.addIceCandidate(
             new RTCIceCandidate({
-              candidate: event.candidate.candidate,
-              sdpMid: event.candidate.sdpMid ?? undefined,
-              sdpMLineIndex: event.candidate.sdpMLineIndex ?? undefined,
+              candidate: eventCandidate.candidate,
+              sdpMid: eventCandidate.sdpMid ?? undefined,
+              sdpMLineIndex: eventCandidate.sdpMLineIndex ?? undefined,
             } as any) as any,
           );
         } catch (error) {

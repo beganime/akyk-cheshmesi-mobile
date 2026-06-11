@@ -7,6 +7,7 @@ import {
   FlatList,
   Modal,
   PanResponder,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -61,7 +62,7 @@ type ChatRowProps = {
 
 const SWIPE_ACTION_WIDTH = 104;
 
-const chatTabs: Array<{ key: ChatTab; label: string }> = [
+const chatTabs: { key: ChatTab; label: string }[] = [
   { key: 'all', label: 'Все' },
   { key: 'pinned', label: 'Закреплённые' },
   { key: 'archive', label: 'Архив' },
@@ -339,7 +340,7 @@ function ChatRow({
 }
 
 export default function ChatsScreen() {
-  const { theme, themeName, setThemeName } = useTheme();
+  const { theme, themeMode, setThemeMode } = useTheme();
   const startOutgoing = useCallStore((state) => state.startOutgoing);
 
   const [data, setData] = useState<ChatListItem[]>([]);
@@ -559,11 +560,8 @@ export default function ChatsScreen() {
   };
 
   const switchDayNight = async () => {
-    const nextTheme =
-      themeName === 'darkGradient' || themeName === 'darkOrange'
-        ? 'lightGradient'
-        : 'darkGradient';
-    await setThemeName(nextTheme);
+    const nextMode = themeMode === 'dark' ? 'light' : 'dark';
+    await setThemeMode(nextMode);
     setMainMenuVisible(false);
   };
 
@@ -842,6 +840,11 @@ export default function ChatsScreen() {
       <FlatList
         data={filteredChats}
         keyExtractor={(item) => item.uuid}
+        initialNumToRender={16}
+        maxToRenderPerBatch={12}
+        updateCellsBatchingPeriod={50}
+        windowSize={8}
+        removeClippedSubviews={Platform.OS !== 'web'}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void loadChats()} />
         }
@@ -1045,11 +1048,7 @@ export default function ChatsScreen() {
 
               <Pressable onPress={() => void switchDayNight()} style={styles.mainMenuItem}>
                 <Ionicons
-                  name={
-                    themeName === 'darkGradient' || themeName === 'darkOrange'
-                      ? 'sunny-outline'
-                      : 'moon-outline'
-                  }
+                  name={themeMode === 'dark' ? 'sunny-outline' : 'moon-outline'}
                   size={20}
                   color={theme.colors.primary}
                 />
@@ -1256,7 +1255,7 @@ export default function ChatsScreen() {
                 style={({ pressed }) => [
                   styles.callChoice,
                   {
-                    backgroundColor: '#3B82F6',
+                    backgroundColor: theme.colors.primary,
                     opacity: pressed ? 0.8 : callingKey ? 0.6 : 1,
                   },
                 ]}

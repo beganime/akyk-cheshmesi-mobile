@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type ChatBackgroundPreset =
+  | 'gradient'
+  | 'solid'
+  | 'light'
+  | 'dark'
   | 'theme'
   | 'plain'
   | 'midnight'
@@ -13,10 +17,19 @@ export type BubblePreset =
   | 'glass'
   | 'soft';
 
+export type TextSizePreset = 'small' | 'normal' | 'large';
+export type MessageSizePreset = 'compact' | 'normal' | 'spacious';
+export type CardRadiusPreset = 'standard' | 'soft' | 'large';
+export type ColorStylePreset = 'green';
+
 export type ChatAppearance = {
   backgroundPreset: ChatBackgroundPreset;
   ownBubblePreset: BubblePreset;
   peerBubblePreset: BubblePreset;
+  colorStyle: ColorStylePreset;
+  textSize: TextSizePreset;
+  messageSize: MessageSizePreset;
+  cardRadius: CardRadiusPreset;
   customBackgroundColor?: string | null;
   customOwnBubbleColor?: string | null;
   customPeerBubbleColor?: string | null;
@@ -26,9 +39,13 @@ export type ChatAppearance = {
 };
 
 export const DEFAULT_CHAT_APPEARANCE: ChatAppearance = {
-  backgroundPreset: 'theme',
+  backgroundPreset: 'gradient',
   ownBubblePreset: 'default',
   peerBubblePreset: 'default',
+  colorStyle: 'green',
+  textSize: 'normal',
+  messageSize: 'normal',
+  cardRadius: 'soft',
   customBackgroundColor: null,
   customOwnBubbleColor: null,
   customPeerBubbleColor: null,
@@ -41,6 +58,10 @@ const STORAGE_KEY = 'chat_appearance_v2';
 
 function normalizeBackgroundPreset(value: unknown): ChatBackgroundPreset {
   switch (value) {
+    case 'gradient':
+    case 'solid':
+    case 'light':
+    case 'dark':
     case 'plain':
     case 'midnight':
     case 'sunset':
@@ -50,6 +71,24 @@ function normalizeBackgroundPreset(value: unknown): ChatBackgroundPreset {
     default:
       return DEFAULT_CHAT_APPEARANCE.backgroundPreset;
   }
+}
+
+function normalizeTextSize(value: unknown): TextSizePreset {
+  return value === 'small' || value === 'large' || value === 'normal'
+    ? value
+    : DEFAULT_CHAT_APPEARANCE.textSize;
+}
+
+function normalizeMessageSize(value: unknown): MessageSizePreset {
+  return value === 'compact' || value === 'spacious' || value === 'normal'
+    ? value
+    : DEFAULT_CHAT_APPEARANCE.messageSize;
+}
+
+function normalizeCardRadius(value: unknown): CardRadiusPreset {
+  return value === 'standard' || value === 'large' || value === 'soft'
+    ? value
+    : DEFAULT_CHAT_APPEARANCE.cardRadius;
 }
 
 function normalizeBubblePreset(value: unknown): BubblePreset {
@@ -78,6 +117,10 @@ function normalizeAppearance(value: Partial<ChatAppearance> | null | undefined):
     backgroundPreset: normalizeBackgroundPreset(value?.backgroundPreset),
     ownBubblePreset: normalizeBubblePreset(value?.ownBubblePreset),
     peerBubblePreset: normalizeBubblePreset(value?.peerBubblePreset),
+    colorStyle: 'green',
+    textSize: normalizeTextSize(value?.textSize),
+    messageSize: normalizeMessageSize(value?.messageSize),
+    cardRadius: normalizeCardRadius(value?.cardRadius),
     customBackgroundColor:
       typeof value?.customBackgroundColor === 'string' ? value.customBackgroundColor : null,
     customOwnBubbleColor:
@@ -155,6 +198,14 @@ export function buildChatBackgroundStyle(theme: any, appearance: ChatAppearance)
   }
 
   switch (appearance.backgroundPreset) {
+    case 'gradient':
+      return { backgroundColor: theme.colors.backgroundTertiary };
+    case 'solid':
+      return { backgroundColor: theme.colors.backgroundSecondary };
+    case 'light':
+      return { backgroundColor: '#F4FFF8' };
+    case 'dark':
+      return { backgroundColor: '#061A12' };
     case 'plain':
       return { backgroundColor: theme.colors.background };
     case 'midnight':
@@ -169,8 +220,33 @@ export function buildChatBackgroundStyle(theme: any, appearance: ChatAppearance)
   }
 }
 
+export function getTextScale(appearance: ChatAppearance) {
+  if (appearance.textSize === 'small') return 0.94;
+  if (appearance.textSize === 'large') return 1.1;
+  return 1;
+}
+
+export function getMessagePadding(appearance: ChatAppearance) {
+  if (appearance.messageSize === 'compact') {
+    return { paddingHorizontal: 11, paddingVertical: 7 };
+  }
+
+  if (appearance.messageSize === 'spacious') {
+    return { paddingHorizontal: 16, paddingVertical: 12 };
+  }
+
+  return { paddingHorizontal: 14, paddingVertical: 9 };
+}
+
+export function getCardRadius(appearance: ChatAppearance) {
+  if (appearance.cardRadius === 'standard') return 18;
+  if (appearance.cardRadius === 'large') return 30;
+  return 24;
+}
+
 export function buildBubbleStyle(theme: any, appearance: ChatAppearance, isOwn: boolean) {
   const preset = isOwn ? appearance.ownBubblePreset : appearance.peerBubblePreset;
+  const radius = getCardRadius(appearance);
 
   const base = {
     backgroundColor:
@@ -178,26 +254,27 @@ export function buildBubbleStyle(theme: any, appearance: ChatAppearance, isOwn: 
       (isOwn ? theme.colors.primary : theme.colors.card),
     borderColor: isOwn ? 'transparent' : theme.colors.border,
     borderWidth: 1,
-    borderRadius: 24,
+    borderRadius: radius,
+    ...getMessagePadding(appearance),
   };
 
   switch (preset) {
     case 'rounded':
       return {
         ...base,
-        borderRadius: 30,
+        borderRadius: Math.max(30, radius + 6),
       };
     case 'glass':
       return {
         ...base,
-        backgroundColor: isOwn ? 'rgba(255,122,0,0.88)' : 'rgba(255,255,255,0.08)',
-        borderColor: 'rgba(255,255,255,0.14)',
+        backgroundColor: isOwn ? 'rgba(15,157,88,0.90)' : theme.colors.card,
+        borderColor: theme.colors.borderStrong,
       };
     case 'soft':
       return {
         ...base,
-        backgroundColor: isOwn ? 'rgba(255,122,0,0.18)' : 'rgba(255,255,255,0.05)',
-        borderColor: isOwn ? 'rgba(255,122,0,0.22)' : 'rgba(255,255,255,0.10)',
+        backgroundColor: isOwn ? theme.colors.primarySoft : theme.colors.cardStrong,
+        borderColor: isOwn ? theme.colors.primary : theme.colors.borderStrong,
       };
     case 'default':
     default:
@@ -209,7 +286,8 @@ export function buildBubblePreviewStyle(theme: any, preset: BubblePreset, isOwn:
   return buildBubbleStyle(
     theme,
     {
-      backgroundPreset: 'theme',
+      ...DEFAULT_CHAT_APPEARANCE,
+      backgroundPreset: 'gradient',
       ownBubblePreset: isOwn ? preset : 'default',
       peerBubblePreset: isOwn ? 'default' : preset,
     },

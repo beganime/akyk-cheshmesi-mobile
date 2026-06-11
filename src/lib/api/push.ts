@@ -39,16 +39,51 @@ function normalizePath(path?: string) {
 }
 
 const PUSH_TOKEN_PATH = normalizePath(ENV.PUSH_TOKEN_SYNC_PATH);
+const FALLBACK_PUSH_TOKEN_PATHS = [
+  '/device-tokens/',
+  '/notifications/device-token/',
+].filter((path) => path !== PUSH_TOKEN_PATH);
+
+function isMissingEndpointError(error: any) {
+  const status = Number(error?.response?.status || 0);
+  return status === 404 || status === 405;
+}
+
+async function tryPushTokenPaths<T>(
+  request: (path: string) => Promise<T>,
+): Promise<T> {
+  const paths = [PUSH_TOKEN_PATH, ...FALLBACK_PUSH_TOKEN_PATHS];
+  let lastError: unknown = null;
+
+  for (const path of paths) {
+    try {
+      return await request(path);
+    } catch (error) {
+      lastError = error;
+      if (!isMissingEndpointError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+export function isPushTokenEndpointMissing(error: unknown) {
+  return isMissingEndpointError(error);
+}
 
 export async function registerPushToken(payload: RegisterPushTokenPayload) {
-  const response = await apiClient.post(PUSH_TOKEN_PATH, payload);
+  const response = await tryPushTokenPaths((path) => apiClient.post(path, payload));
   return response.data;
 }
 
 export async function deletePushToken(payload: DeletePushTokenPayload) {
-  const response = await apiClient.delete(PUSH_TOKEN_PATH, {
-    data: payload,
-  });
+  const response = await tryPushTokenPaths((path) =>
+    apiClient.delete(path, {
+      data: payload,
+    }),
+  );
   return response.data;
 }
 

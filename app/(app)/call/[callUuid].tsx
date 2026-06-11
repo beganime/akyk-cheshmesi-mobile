@@ -10,6 +10,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { RTCView } from '@/src/lib/calls/webrtc';
 import { useTheme } from '@/src/theme/ThemeProvider';
@@ -138,7 +139,9 @@ export default function CallScreen() {
   const remoteStreamUrl = engineState.remoteStream?.toURL?.() ?? null;
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: '#0B1020' }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <LinearGradient colors={theme.colors.heroGradient} style={StyleSheet.absoluteFill} />
+
       <View style={styles.topBar}>
         <Pressable
           onPress={() => void handleClose()}
@@ -295,7 +298,7 @@ export default function CallScreen() {
                 styles.iconActionButton,
                 {
                   backgroundColor: engineState.speakerOn
-                    ? 'rgba(59,130,246,0.92)'
+                    ? 'rgba(29,185,84,0.92)'
                     : 'rgba(255,255,255,0.12)',
                 },
                 pressed && { opacity: 0.75 },

@@ -31,6 +31,15 @@ export type UploadedMedia = {
   updated_at?: string | null;
 };
 
+type UploadProgressCallback = (progress: number) => void;
+
+type UploadPickedMediaOptions = {
+  filenamePrefix: string;
+  fallbackContentType: string;
+  isPublic?: boolean;
+  onProgress?: UploadProgressCallback;
+};
+
 type MediaPresignResponse = {
   media: UploadedMedia;
   upload: {
@@ -40,6 +49,12 @@ type MediaPresignResponse = {
     expires_in_seconds?: number;
   };
 };
+
+function reportProgress(callback: UploadProgressCallback | undefined, value: number) {
+  if (!callback) return;
+  const nextValue = Math.max(0, Math.min(1, value));
+  callback(nextValue);
+}
 
 function normalizeMimeType(mimeType?: string | null, fallback?: string): string {
   const value = String(mimeType || fallback || '').trim().toLowerCase();
@@ -153,6 +168,7 @@ async function uploadBlobToSignedUrl(
   method: string,
   body: Blob | File,
   headers?: Record<string, string>,
+  onProgress?: UploadProgressCallback,
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -182,6 +198,11 @@ async function uploadBlobToSignedUrl(
 
     xhr.onerror = () => {
       reject(new Error('S3 upload network error'));
+    };
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || !event.total) return;
+      reportProgress(onProgress, event.loaded / event.total);
     };
 
     xhr.ontimeout = () => {
@@ -234,7 +255,10 @@ async function uploadFileUriToSignedUrl(
   method: string,
   fileUri: string,
   headers?: Record<string, string>,
+  onProgress?: UploadProgressCallback,
 ): Promise<void> {
+  reportProgress(onProgress, 0.05);
+
   const result = await FileSystem.uploadAsync(url, fileUri, {
     httpMethod: (method || 'PUT') as any,
     headers: headers || {},
@@ -246,6 +270,8 @@ async function uploadFileUriToSignedUrl(
       `S3 upload failed with status ${result.status}${result.body ? `: ${result.body}` : ''}`,
     );
   }
+
+  reportProgress(onProgress, 1);
 }
 
 async function appendFileToFormData(
@@ -279,7 +305,7 @@ async function appendFileToFormData(
 
 async function uploadLocal(
   asset: PickedMediaAsset,
-  options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean },
+  options: UploadPickedMediaOptions,
 ): Promise<UploadedMedia> {
   const formData = new FormData();
   const durationSeconds = normalizeDurationSeconds(asset.duration);
@@ -300,14 +326,20 @@ async function uploadLocal(
     headers: {
       Accept: 'application/json',
     },
+    onUploadProgress: (event) => {
+      if (!event.total) return;
+      reportProgress(options.onProgress, event.loaded / event.total);
+    },
   });
+
+  reportProgress(options.onProgress, 1);
 
   return response.data;
 }
 
 async function uploadViaPresign(
   asset: PickedMediaAsset,
-  options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean },
+  options: UploadPickedMediaOptions,
 ): Promise<UploadedMedia> {
   const filename = buildSafeFilename(asset, options.filenamePrefix);
   const contentType = buildContentType(asset, options.fallbackContentType);
@@ -321,6 +353,8 @@ async function uploadViaPresign(
     is_public: Boolean(options.isPublic),
     ...(durationSeconds ? { duration_seconds: durationSeconds } : {}),
   });
+
+  reportProgress(options.onProgress, 0.12);
 
   const presignData = presignResponse.data;
 
@@ -344,6 +378,7 @@ async function uploadViaPresign(
       presignData.upload.method || 'PUT',
       blob,
       uploadHeaders,
+      (progress) => reportProgress(options.onProgress, 0.12 + progress * 0.74),
     );
   } else {
     await uploadFileUriToSignedUrl(
@@ -351,12 +386,15 @@ async function uploadViaPresign(
       presignData.upload.method || 'PUT',
       asset.uri,
       uploadHeaders,
+      (progress) => reportProgress(options.onProgress, 0.12 + progress * 0.74),
     );
   }
 
   const completeResponse = await apiClient.post<UploadedMedia>('/media/complete/', {
     media_uuid: presignData.media.uuid,
   });
+
+  reportProgress(options.onProgress, 1);
 
   return completeResponse.data;
 }
@@ -380,17 +418,20 @@ function shouldFallbackToLocalUpload(error: any): boolean {
 
 export async function uploadPickedMedia(
   asset: PickedMediaAsset,
-  options: { filenamePrefix: string; fallbackContentType: string; isPublic?: boolean },
+  options: UploadPickedMediaOptions,
 ): Promise<UploadedMedia> {
   const optimizedAsset = await optimizePickedMediaForUpload(asset, {
     filenamePrefix: options.filenamePrefix,
     fallbackContentType: options.fallbackContentType,
   });
 
+  reportProgress(options.onProgress, 0.04);
+
   try {
     return await uploadViaPresign(optimizedAsset, options);
   } catch (error: any) {
     if (shouldFallbackToLocalUpload(error)) {
+      reportProgress(options.onProgress, 0.08);
       return await uploadLocal(optimizedAsset, options);
     }
 

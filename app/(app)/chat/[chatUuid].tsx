@@ -70,7 +70,7 @@ import {
 import { mergeMessages } from '@/src/lib/utils/messageSync';
 import { generateUUIDv4 } from '@/src/lib/utils/uuid';
 import type { ChatListItem } from '@/src/types/chat';
-import type { MessageAttachment, MessageItem } from '@/src/types/message';
+import type { MessageItem } from '@/src/types/message';
 import type { PresenceDetail } from '@/src/types/presence';
 import type {
   StickerItem,
@@ -83,6 +83,7 @@ import {
   DEFAULT_CHAT_APPEARANCE,
   buildBubbleStyle,
   buildChatBackgroundStyle,
+  getTextScale,
   loadChatAppearanceForChat,
   saveChatAppearanceForChat,
 } from '@/src/lib/chatAppearance';
@@ -162,6 +163,7 @@ async function uploadChatAsset(
     fallbackContentType: string;
     fallbackExtension: string;
     durationSeconds?: number;
+    onProgress?: (progress: number) => void;
   },
 ): Promise<{ uuid: string }> {
   const uploaded = await uploadPickedMedia(
@@ -175,6 +177,7 @@ async function uploadChatAsset(
       filenamePrefix: options.filenamePrefix,
       fallbackContentType: options.fallbackContentType,
       isPublic: false,
+      onProgress: options.onProgress,
     },
   );
 
@@ -264,46 +267,6 @@ function getMessagePreviewText(message: MessageItem) {
   return 'Сообщение';
 }
 
-function getAttachmentByPredicate(
-  message: MessageItem,
-  predicate: (attachment: MessageAttachment) => boolean,
-) {
-  return message.attachments?.find(predicate) || null;
-}
-
-function getFirstImageUrl(message: MessageItem) {
-  const attachment = getAttachmentByPredicate(
-    message,
-    (item) =>
-      item.media_kind === 'image' ||
-      item.content_type?.startsWith('image/') === true,
-  );
-
-  return attachment?.file_url || null;
-}
-
-function getFirstAudioUrl(message: MessageItem) {
-  const attachment = getAttachmentByPredicate(
-    message,
-    (item) =>
-      item.media_kind === 'audio' ||
-      item.content_type?.startsWith('audio/') === true,
-  );
-
-  return attachment?.file_url || null;
-}
-
-function getFirstVideoUrl(message: MessageItem) {
-  const attachment = getAttachmentByPredicate(
-    message,
-    (item) =>
-      item.media_kind === 'video' ||
-      item.content_type?.startsWith('video/') === true,
-  );
-
-  return attachment?.file_url || null;
-}
-
 function getStickerImage(message: MessageItem) {
   const meta = message.metadata as Record<string, unknown> | null | undefined;
   const image = meta?.sticker_image;
@@ -380,7 +343,6 @@ export default function ChatScreen() {
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [loadingStickers, setLoadingStickers] = useState(false);
-  const [sending, setSending] = useState(false);
   const [callingKey, setCallingKey] = useState<string | null>(null);
 
   const [appearance, setAppearance] = useState(DEFAULT_CHAT_APPEARANCE);
@@ -448,6 +410,7 @@ export default function ChatScreen() {
   }, [draft, audioRecording]);
 
   const canSend = draft.trim().length > 0;
+  const textScale = getTextScale(appearance);
 
   const canEditSelectedMessage = useMemo(() => {
     if (!selectedMessage) return false;
@@ -479,12 +442,6 @@ export default function ChatScreen() {
       }
     }
   }, [captureVisible]);
-
-  useEffect(() => {
-    if (captureVisible && captureMode === 'video') {
-      void ensureVideoPermissions();
-    }
-  }, [captureVisible, captureMode]);
 
   useEffect(() => {
     return () => {
@@ -696,14 +653,14 @@ export default function ChatScreen() {
     }
   };
 
-  const syncReadState = async () => {
+  const syncReadState = useCallback(async () => {
     try {
       if (!chatUuid || !latestIncomingMessage?.uuid) return;
       await markChatRead(chatUuid, latestIncomingMessage.uuid);
     } catch (error) {
       console.error('syncReadState error:', error);
     }
-  };
+  }, [chatUuid, latestIncomingMessage?.uuid]);
 
   useEffect(() => {
     if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -832,7 +789,7 @@ export default function ChatScreen() {
 
   useEffect(() => {
     void syncReadState();
-  }, [latestIncomingMessage?.uuid]);
+  }, [syncReadState]);
 
   useEffect(() => {
     if (isNearBottomRef.current) {
@@ -1235,6 +1192,44 @@ export default function ChatScreen() {
     return fallback;
   };
 
+  const patchLocalMessage = (
+    clientUuid: string,
+    patcher: (message: MessageItem) => MessageItem,
+  ) => {
+    if (!chatUuid) return;
+
+    setMessages((current) => {
+      const next = current.map((message) =>
+        message.client_uuid === clientUuid ? patcher(message) : message,
+      );
+
+      void saveCachedChatMessages(chatUuid, next);
+      return next;
+    });
+  };
+
+  const setUploadProgress = (clientUuid: string, progress: number) => {
+    patchLocalMessage(clientUuid, (message) => ({
+      ...message,
+      metadata: {
+        ...(message.metadata || {}),
+        upload_progress: Math.round(Math.max(0, Math.min(1, progress)) * 100),
+      },
+    }));
+  };
+
+  const getUploadProgress = (message: MessageItem) => {
+    const value = Number((message.metadata as Record<string, unknown> | null)?.upload_progress);
+    return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
+  };
+
+  const getServerMetadata = (metadata?: Record<string, unknown> | null) => {
+    const next = { ...(metadata || {}) };
+    delete next.upload_progress;
+    delete next.local_upload_error;
+    return next;
+  };
+
   const getHeaderAvatarUrl = (currentChat: ChatListItem | null) => {
     return currentChat?.peer_user?.avatar || currentChat?.avatar || null;
   };
@@ -1273,7 +1268,7 @@ export default function ChatScreen() {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       local_status: 'pending',
-      metadata: metadata || {},
+      metadata: { ...(metadata || {}), upload_progress: 0 },
       attachments: [
         {
           uuid: `local-attachment-${clientUuid}`,
@@ -1302,14 +1297,16 @@ export default function ChatScreen() {
         fallbackContentType: mediaType === 'audio' ? 'audio/mp4' : 'video/mp4',
         fallbackExtension: mediaType === 'audio' ? (Platform.OS === 'web' ? '.webm' : '.m4a') : '.mp4',
         durationSeconds: Math.max(1, Math.ceil(Number(asset.duration || 1))),
+        onProgress: (progress) => setUploadProgress(clientUuid, progress),
       });
 
+      const serverMetadata = getServerMetadata(metadata);
       const savedMessage = await sendChatMessage(chatUuid, {
         client_uuid: clientUuid,
         message_type: mediaType,
         text: '',
         attachment_uuids: [uploaded.uuid],
-        ...(metadata ? { metadata } : {}),
+        ...(Object.keys(serverMetadata).length ? { metadata: serverMetadata } : {}),
         ...(optimisticReply?.uuid ? { reply_to_uuid: optimisticReply.uuid } : {}),
       });
 
@@ -1335,6 +1332,10 @@ export default function ChatScreen() {
             ? {
                 ...message,
                 local_status: 'failed',
+                metadata: {
+                  ...(message.metadata || {}),
+                  local_upload_error: getApiErrorMessage(error, 'Upload failed'),
+                },
               }
             : message,
         );
@@ -1532,7 +1533,7 @@ export default function ChatScreen() {
     }
   };
 
-  const ensureVideoPermissions = async () => {
+  const ensureVideoPermissions = useCallback(async () => {
     const cameraStatus = cameraPermission?.granted
       ? cameraPermission
       : await requestCameraPermission();
@@ -1552,7 +1553,18 @@ export default function ChatScreen() {
     }
 
     return true;
-  };
+  }, [
+    cameraPermission,
+    microphonePermission,
+    requestCameraPermission,
+    requestMicrophonePermission,
+  ]);
+
+  useEffect(() => {
+    if (captureVisible && captureMode === 'video') {
+      void ensureVideoPermissions();
+    }
+  }, [captureVisible, captureMode, ensureVideoPermissions]);
 
   const startVideoRecording = async () => {
     try {
@@ -1667,6 +1679,9 @@ export default function ChatScreen() {
         updated_at: new Date().toISOString(),
         local_status: 'pending',
         reply_to: optimisticReply,
+        metadata: {
+          upload_progress: 0,
+        },
         attachments: asset.uri
           ? [
               {
@@ -1699,6 +1714,7 @@ export default function ChatScreen() {
           messageType === 'video'
             ? Math.max(1, Math.ceil(Number(asset.duration || 1)))
             : undefined,
+        onProgress: (progress) => setUploadProgress(clientUuid!, progress),
       });
 
       const savedMessage = await sendChatMessage(chatUuid, {
@@ -1732,6 +1748,10 @@ export default function ChatScreen() {
               ? {
                   ...message,
                   local_status: 'failed',
+                  metadata: {
+                    ...(message.metadata || {}),
+                    local_upload_error: getApiErrorMessage(error, 'Upload failed'),
+                  },
                 }
               : message,
           );
@@ -1849,7 +1869,6 @@ export default function ChatScreen() {
     };
 
     setDraft('');
-    setSending(true);
     animateLayout();
 
     setMessages((current) => {
@@ -1900,7 +1919,6 @@ export default function ChatScreen() {
       });
     } finally {
       sendLockRef.current = false;
-      setSending(false);
     }
   };
 
@@ -1960,6 +1978,99 @@ export default function ChatScreen() {
         void saveCachedChatMessages(chatUuid, next);
         return next;
       });
+    }
+  };
+
+  const retryMediaMessage = async (message: MessageItem) => {
+    if (!chatUuid || !message.client_uuid) return;
+
+    const retryableTypes = ['image', 'video', 'video_note', 'audio', 'file'];
+    if (!retryableTypes.includes(message.message_type)) return;
+
+    const attachment = message.attachments?.[0];
+    const localUri = attachment?.file_url;
+
+    if (!localUri) {
+      Alert.alert('Не удалось повторить', 'Локальный файл больше недоступен. Выберите медиа заново.');
+      return;
+    }
+
+    const messageType = message.message_type;
+    const fallbackContentType =
+      messageType === 'image'
+        ? 'image/jpeg'
+        : messageType === 'audio'
+          ? 'audio/mp4'
+          : messageType === 'file'
+            ? attachment.content_type || 'application/octet-stream'
+            : 'video/mp4';
+    const filenamePrefix =
+      messageType === 'image'
+        ? 'photo'
+        : messageType === 'audio'
+          ? 'voice'
+          : messageType === 'file'
+            ? 'file'
+            : 'video';
+    const fallbackExtension =
+      messageType === 'image'
+        ? '.jpg'
+        : messageType === 'audio'
+          ? Platform.OS === 'web'
+            ? '.webm'
+            : '.m4a'
+          : messageType === 'file'
+            ? ''
+            : '.mp4';
+
+    patchLocalMessage(message.client_uuid, (item) => ({
+      ...item,
+      local_status: 'pending',
+      metadata: {
+        ...(item.metadata || {}),
+        upload_progress: 0,
+      },
+    }));
+
+    try {
+      const uploaded = await uploadChatAsset(
+        {
+          uri: localUri,
+          fileName: attachment.original_name || undefined,
+          mimeType: attachment.content_type || fallbackContentType,
+        },
+        {
+          filenamePrefix,
+          fallbackContentType,
+          fallbackExtension,
+          onProgress: (progress) => setUploadProgress(message.client_uuid!, progress),
+        },
+      );
+
+      const serverMetadata = getServerMetadata(message.metadata);
+      const savedMessage = await sendChatMessage(chatUuid, {
+        client_uuid: message.client_uuid,
+        message_type: messageType,
+        text: message.text || '',
+        attachment_uuids: [uploaded.uuid],
+        ...(Object.keys(serverMetadata).length ? { metadata: serverMetadata } : {}),
+        ...(message.reply_to?.uuid ? { reply_to_uuid: message.reply_to.uuid } : {}),
+      });
+
+      patchLocalMessage(message.client_uuid, () => ({
+        ...savedMessage,
+        local_status: 'sent',
+      }));
+    } catch (error) {
+      console.error('retryMediaMessage error:', error);
+      patchLocalMessage(message.client_uuid, (item) => ({
+        ...item,
+        local_status: 'failed',
+        metadata: {
+          ...(item.metadata || {}),
+          local_upload_error: getApiErrorMessage(error, 'Upload failed'),
+        },
+      }));
     }
   };
 
@@ -2076,6 +2187,7 @@ export default function ChatScreen() {
     const metaColor = isOwn ? 'rgba(255,255,255,0.82)' : theme.colors.muted;
     const stickerImage = getStickerImage(item);
     const stickerEmoji = getStickerEmoji(item);
+    const uploadProgress = getUploadProgress(item);
     const isMediaMessage =
       item.message_type === 'image' ||
       item.message_type === 'video' ||
@@ -2125,6 +2237,11 @@ export default function ChatScreen() {
         >
           <Pressable
             onLongPress={() => handleOpenActionMenu(item)}
+            onPress={() => {
+              if (item.local_status === 'failed') {
+                void retryMediaMessage(item);
+              }
+            }}
             style={[
               styles.mediaMessageShell,
               {
@@ -2159,6 +2276,26 @@ export default function ChatScreen() {
 
             <MessageMedia message={item} isOwn={isOwn} theme={theme} />
 
+            {item.local_status === 'pending' && uploadProgress !== null ? (
+              <View style={[styles.uploadProgressTrack, { backgroundColor: theme.colors.border }]}>
+                <View
+                  style={[
+                    styles.uploadProgressFill,
+                    {
+                      width: `${uploadProgress}%`,
+                      backgroundColor: theme.colors.primary,
+                    },
+                  ]}
+                />
+              </View>
+            ) : null}
+
+            {item.local_status === 'failed' ? (
+              <Text style={[styles.uploadRetryText, { color: theme.colors.danger }]}>
+                Не отправлено. Нажмите, чтобы повторить.
+              </Text>
+            ) : null}
+
             {!!item.text?.trim() && (
               <Text
                 style={[
@@ -2166,6 +2303,8 @@ export default function ChatScreen() {
                   {
                     color: theme.colors.text,
                     backgroundColor: theme.colors.cardStrong,
+                    fontSize: 14 * textScale,
+                    lineHeight: 20 * textScale,
                   },
                 ]}
               >
@@ -2262,6 +2401,8 @@ export default function ChatScreen() {
                 styles.messageText,
                 {
                   color: isOwn ? '#FFFFFF' : theme.colors.text,
+                  fontSize: 15 * textScale,
+                  lineHeight: 21 * textScale,
                 },
               ]}
             >
@@ -2297,6 +2438,10 @@ export default function ChatScreen() {
             style={StyleSheet.absoluteFill}
             contentFit={appearance.backgroundSizeMode === 'contain' ? 'contain' : 'cover'}
           />
+        ) : null}
+
+        {!appearance.backgroundImageUri && appearance.backgroundPreset === 'gradient' ? (
+          <LinearGradient colors={theme.colors.heroGradient} style={StyleSheet.absoluteFill} />
         ) : null}
 
         {appearance.gradientPreset && appearance.gradientPreset !== 'none' ? (
@@ -2447,6 +2592,11 @@ export default function ChatScreen() {
           data={visibleMessages}
           keyExtractor={(item) => item.uuid}
           renderItem={renderMessage}
+          initialNumToRender={18}
+          maxToRenderPerBatch={12}
+          updateCellsBatchingPeriod={40}
+          windowSize={9}
+          removeClippedSubviews={Platform.OS !== 'web'}
           onScroll={handleScroll}
           scrollEventThrottle={16}
           keyboardShouldPersistTaps="handled"
@@ -3823,6 +3973,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     fontWeight: '600',
+  },
+
+  uploadProgressTrack: {
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginTop: 8,
+  },
+  uploadProgressFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  uploadRetryText: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '800',
   },
 
   mediaMetaPill: {

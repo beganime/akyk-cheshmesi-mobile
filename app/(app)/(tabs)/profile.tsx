@@ -77,9 +77,9 @@ export default function ProfileScreen() {
       action: () => showApiNote('Управление устройствами'),
     },
     {
-      title: 'Тема',
+      title: 'Внешний вид',
       icon: 'color-palette-outline',
-      color: '#EC4899',
+      color: theme.colors.primary,
       action: () => router.push('/(app)/settings'),
     },
     {

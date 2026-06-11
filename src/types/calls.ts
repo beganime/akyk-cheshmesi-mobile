@@ -101,7 +101,7 @@ export type CallSignalMessage =
       room_key: string;
     }
   | {
-      type: 'call_offer';
+      type: 'call:offer' | 'call_offer';
       chat_uuid: string;
       call_uuid: string;
       room_key: string;
@@ -109,7 +109,7 @@ export type CallSignalMessage =
       sdp_type?: 'offer';
     }
   | {
-      type: 'call_answer';
+      type: 'call:answer' | 'call_answer';
       chat_uuid: string;
       call_uuid: string;
       room_key: string;
@@ -117,7 +117,7 @@ export type CallSignalMessage =
       sdp_type?: 'answer';
     }
   | {
-      type: 'call_ice';
+      type: 'call:ice-candidate' | 'call_ice';
       chat_uuid: string;
       call_uuid: string;
       room_key: string;
@@ -147,7 +147,7 @@ export type CallSocketEvent =
       payload?: Record<string, unknown> | null;
     }
   | {
-      type: 'call_offer' | 'call_answer';
+      type: 'call:offer' | 'call:answer' | 'call_offer' | 'call_answer';
       chat_uuid?: string;
       call_uuid?: string;
       room_key?: string;
@@ -157,7 +157,7 @@ export type CallSocketEvent =
       payload?: Record<string, unknown> | null;
     }
   | {
-      type: 'call_ice';
+      type: 'call:ice-candidate' | 'call_ice';
       chat_uuid?: string;
       call_uuid?: string;
       room_key?: string;
