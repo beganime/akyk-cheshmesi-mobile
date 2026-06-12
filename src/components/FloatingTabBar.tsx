@@ -1,64 +1,79 @@
-import { useMemo } from 'react';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/src/theme/ThemeProvider';
 
+const TAB_UI = {
+  dark: {
+    bgSecondary: '#17212b',
+    accent: '#5288c1',
+    textSecondary: '#7f91a4',
+    textPrimary: '#ffffff',
+    separator: 'rgba(255, 255, 255, 0.06)',
+  },
+  light: {
+    bgSecondary: '#f4f4f5',
+    accent: '#3390ec',
+    textSecondary: '#707579',
+    textPrimary: '#000000',
+    separator: '#e4e4e5',
+  },
+} as const;
+
+const labelMap: Record<string, string> = {
+  chats: 'Чаты',
+  contacts: 'Контакты',
+  stories: 'ИИ',
+  announcements: 'Новости',
+  profile: 'Профиль',
+};
+
 const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
-  chats: 'chatbubbles-outline',
-  contacts: 'people-outline',
-  stories: 'play-circle-outline',
+  chats: 'chatbubble-ellipses-outline',
+  contacts: 'person-outline',
+  stories: 'hardware-chip-outline',
   announcements: 'newspaper-outline',
-  profile: 'person-outline',
+  profile: 'person-circle-outline',
 };
 
 const activeIconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
-  chats: 'chatbubbles',
-  contacts: 'people',
-  stories: 'play-circle',
+  chats: 'chatbubble-ellipses',
+  contacts: 'person',
+  stories: 'hardware-chip',
   announcements: 'newspaper',
-  profile: 'person',
+  profile: 'person-circle',
 };
 
 export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
-  const { theme } = useTheme();
+  const { resolvedThemeName } = useTheme();
   const insets = useSafeAreaInsets();
-
-  const bottom = useMemo(() => Math.max(insets.bottom, 10), [insets.bottom]);
-
-  const Container = Platform.OS === 'web' ? View : BlurView;
-  const containerProps =
-    Platform.OS === 'web'
-      ? {}
-      : {
-          intensity: 44,
-          tint: theme.blurTint,
-        };
+  const isLightTheme = resolvedThemeName.toLowerCase().includes('light');
+  const ui = isLightTheme ? TAB_UI.light : TAB_UI.dark;
+  const bottomInset = Math.max(insets.bottom, 0);
 
   return (
-    <View pointerEvents="box-none" style={[styles.outerWrap, { bottom }]}>
-      <Container
-        {...containerProps}
+    <View pointerEvents="box-none" style={styles.outerWrap}>
+      <View
         style={[
           styles.bar,
           {
-            backgroundColor: theme.colors.tabBar,
-            borderColor: theme.colors.borderStrong,
-            shadowColor: theme.colors.shadow,
+            height: 64 + bottomInset,
+            paddingBottom: bottomInset,
+            backgroundColor: ui.bgSecondary,
+            borderTopColor: ui.separator,
           },
         ]}
       >
         {state.routes.map((route, index) => {
           const isFocused = state.index === index;
           const options = descriptors[route.key]?.options;
-          const label =
+          const fallbackLabel =
             typeof options?.title === 'string' && options.title.length > 0
               ? options.title
               : route.name;
-
+          const label = labelMap[route.name] ?? fallbackLabel;
           const iconName = isFocused
             ? activeIconMap[route.name] ?? 'ellipse'
             : iconMap[route.name] ?? 'ellipse-outline';
@@ -87,27 +102,18 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
               key={route.key}
               onPress={onPress}
               onLongPress={onLongPress}
-              style={[
-                styles.item,
-                isFocused && [
-                  styles.itemActive,
-                  {
-                    backgroundColor: theme.colors.tabItemActive,
-                    borderColor: theme.colors.borderStrong,
-                  },
-                ],
-              ]}
+              style={({ pressed }) => [styles.item, pressed && { opacity: 0.72 }]}
             >
               <Ionicons
                 name={iconName}
-                size={19}
-                color={isFocused ? theme.colors.primary : theme.colors.muted}
+                size={24}
+                color={isFocused ? ui.accent : ui.textSecondary}
               />
               <Text
                 style={[
                   styles.label,
                   {
-                    color: isFocused ? theme.colors.primary : theme.colors.muted,
+                    color: isFocused ? ui.accent : ui.textSecondary,
                   },
                 ]}
                 numberOfLines={1}
@@ -117,7 +123,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
             </Pressable>
           );
         })}
-      </Container>
+      </View>
     </View>
   );
 }
@@ -125,39 +131,32 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
 const styles = StyleSheet.create({
   outerWrap: {
     position: 'absolute',
-    left: 14,
-    right: 14,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
   },
   bar: {
-    minHeight: 62,
-    borderRadius: 26,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    width: '100%',
+    maxWidth: 480,
+    minHeight: 64,
+    borderTopWidth: 1,
+    paddingHorizontal: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    shadowOpacity: 0.16,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 12,
-    overflow: 'hidden',
+    justifyContent: 'space-around',
   },
   item: {
     flex: 1,
-    minHeight: 46,
-    borderRadius: 18,
+    minHeight: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  itemActive: {
-    transform: [{ scale: 1 }],
+    gap: 4,
+    paddingHorizontal: 2,
+    paddingTop: 8,
   },
   label: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '500',
   },
 });
