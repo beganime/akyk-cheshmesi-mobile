@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { BlurView as ExpoBlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/src/theme/ThemeProvider';
@@ -24,11 +26,22 @@ const activeIconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
 export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const bottom = Math.max(insets.bottom, 10);
+
+  const bottom = useMemo(() => Math.max(insets.bottom, 10), [insets.bottom]);
+
+  const Container = Platform.OS === 'web' ? View : ExpoBlurView;
+  const containerProps =
+    Platform.OS === 'web'
+      ? {}
+      : {
+          intensity: 44,
+          tint: theme.blurTint,
+        };
 
   return (
     <View pointerEvents="box-none" style={[styles.outerWrap, { bottom }]}> 
-      <View
+      <Container
+        {...containerProps}
         style={[
           styles.bar,
           {
@@ -104,7 +117,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
             </Pressable>
           );
         })}
-      </View>
+      </Container>
     </View>
   );
 }
