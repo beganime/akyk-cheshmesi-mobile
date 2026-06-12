@@ -16,7 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image as ExpoImage } from 'expo-image';
 import { Video, ResizeMode } from 'expo-av';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { GlassCard } from '@/src/components/GlassCard';
@@ -59,6 +59,7 @@ function formatExpires(story: StoryItem) {
 
 export default function StoriesScreen() {
   const { theme } = useTheme();
+  const params = useLocalSearchParams<{ create?: string }>();
   const [stories, setStories] = useState<StoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,6 +70,13 @@ export default function StoriesScreen() {
 
   const myStories = useMemo(() => stories.filter((item) => item.is_own), [stories]);
   const feedStories = useMemo(() => stories.filter((item) => !item.is_own), [stories]);
+
+  const closeCreateSheet = useCallback(() => {
+    setCreateVisible(false);
+    if (params.create) {
+      router.setParams({ create: undefined });
+    }
+  }, [params.create]);
 
   const load = useCallback(async (silent = false) => {
     try {
@@ -93,7 +101,10 @@ export default function StoriesScreen() {
   useFocusEffect(
     useCallback(() => {
       void load(true);
-    }, [load]),
+      if (params.create === '1') {
+        setCreateVisible(true);
+      }
+    }, [load, params.create]),
   );
 
   const createTextStory = async () => {
@@ -111,7 +122,7 @@ export default function StoriesScreen() {
         background: textBackground,
       });
       setCaption('');
-      setCreateVisible(false);
+      closeCreateSheet();
       await load(true);
     } catch (error) {
       Alert.alert('Story', getApiErrorMessage(error, 'Не удалось создать story'));
@@ -166,7 +177,7 @@ export default function StoriesScreen() {
       });
 
       setCaption('');
-      setCreateVisible(false);
+      closeCreateSheet();
       await load(true);
     } catch (error) {
       Alert.alert('Story', getApiErrorMessage(error, 'Не удалось загрузить story'));
@@ -195,7 +206,7 @@ export default function StoriesScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}> 
         <View style={styles.centered}>
           <ActivityIndicator color={theme.colors.primary} />
         </View>
@@ -204,11 +215,11 @@ export default function StoriesScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}> 
       <View style={styles.header}>
         <View style={styles.headerText}>
           <Text style={[styles.title, { color: theme.colors.text }]}>Stories</Text>
-          <Text style={[styles.subtitle, { color: theme.colors.muted }]}>
+          <Text style={[styles.subtitle, { color: theme.colors.muted }]}> 
             Фото, видео и короткие обновления на 24 часа
           </Text>
         </View>
@@ -228,10 +239,8 @@ export default function StoriesScreen() {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <GlassCard>
-            <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
-              Stories пока нет
-            </Text>
-            <Text style={[styles.emptyText, { color: theme.colors.muted }]}>
+            <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>Stories пока нет</Text>
+            <Text style={[styles.emptyText, { color: theme.colors.muted }]}> 
               Создай первую story или дождись обновлений от людей из чатов.
             </Text>
           </GlassCard>
@@ -260,11 +269,7 @@ export default function StoriesScreen() {
                       style={StyleSheet.absoluteFill}
                     />
                   ) : url ? (
-                    <ExpoImage
-                      source={{ uri: url }}
-                      style={StyleSheet.absoluteFill}
-                      contentFit="cover"
-                    />
+                    <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="cover" />
                   ) : (
                     <View
                       style={[
@@ -284,7 +289,7 @@ export default function StoriesScreen() {
                   <Text style={[styles.storyTitle, { color: theme.colors.text }]} numberOfLines={1}>
                     {item.is_own ? 'Моя story' : authorName}
                   </Text>
-                  <Text style={[styles.storyMeta, { color: theme.colors.muted }]}>
+                  <Text style={[styles.storyMeta, { color: theme.colors.muted }]}> 
                     {formatExpires(item)}
                     {item.is_own && typeof item.viewers_count === 'number'
                       ? ` · ${item.viewers_count} просмотров`
@@ -304,9 +309,9 @@ export default function StoriesScreen() {
         }}
       />
 
-      <Modal visible={createVisible} transparent animationType="slide" onRequestClose={() => setCreateVisible(false)}>
+      <Modal visible={createVisible} transparent animationType="slide" onRequestClose={closeCreateSheet}>
         <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setCreateVisible(false)} />
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeCreateSheet} />
           <View style={styles.sheet}>
             <GlassCard>
               <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>Новая story</Text>
@@ -357,7 +362,6 @@ export default function StoriesScreen() {
                     </>
                   )}
                 </Pressable>
-
                 <Pressable
                   onPress={() => void createMediaStory()}
                   disabled={creating}
