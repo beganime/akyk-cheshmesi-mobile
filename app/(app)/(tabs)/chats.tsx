@@ -21,12 +21,9 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 
-import { GlassCard } from '@/src/components/GlassCard';
-import { SearchInput } from '@/src/components/SearchInput';
-import { StoriesStrip } from '@/src/components/stories/StoriesStrip';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { fetchChats, createDirectChat, createGroupChat } from '@/src/lib/api/chats';
-import { searchUsers, UserShort } from '@/src/lib/api/contacts';
+import { searchUsers, type UserShort } from '@/src/lib/api/contacts';
 import { realtimeClient } from '@/src/lib/realtime/socket';
 import { isMessageEvent } from '@/src/lib/realtime/events';
 import { ensureCallPermissions } from '@/src/lib/calls/permissions';
@@ -51,22 +48,66 @@ type DecoratedChat = ChatListItem & {
   localHidden: boolean;
 };
 
+type ChatUi = (typeof CHAT_UI)['dark'];
+
 type ChatRowProps = {
   item: DecoratedChat;
-  theme: any;
+  ui: ChatUi;
   callingKey: string | null;
   onOpenChat: (item: ChatListItem) => void;
   onOpenMenu: (item: DecoratedChat) => void;
   onOpenCallChooser: (item: DecoratedChat) => void;
 };
 
-const SWIPE_ACTION_WIDTH = 104;
+type StoryPreview = {
+  key: string;
+  label: string;
+  title: string;
+  initial: string;
+  avatar?: string | null;
+  color: string;
+  hasStory: boolean;
+  isMine?: boolean;
+  chat?: DecoratedChat;
+};
 
-const chatTabs: { key: ChatTab; label: string }[] = [
-  { key: 'all', label: 'Все' },
-  { key: 'pinned', label: 'Закреплённые' },
-  { key: 'archive', label: 'Архив' },
-];
+const SWIPE_ACTION_WIDTH = 104;
+const ONE_DAY = 24 * 60 * 60 * 1000;
+
+const CHAT_UI = {
+  dark: {
+    bgPrimary: '#0e1621',
+    bgSecondary: '#17212b',
+    bgHover: '#202b36',
+    accent: '#5288c1',
+    textPrimary: '#ffffff',
+    textSecondary: '#7f91a4',
+    separator: 'rgba(255, 255, 255, 0.06)',
+    badgeBg: '#5288c1',
+    shadow: '#000000',
+    overlay: 'rgba(0, 0, 0, 0.34)',
+    danger: '#EF4444',
+    success: '#10B981',
+    pageOuter: '#000000',
+  },
+  light: {
+    bgPrimary: '#ffffff',
+    bgSecondary: '#f4f4f5',
+    bgHover: '#ebebeb',
+    accent: '#3390ec',
+    textPrimary: '#000000',
+    textSecondary: '#707579',
+    separator: '#e4e4e5',
+    badgeBg: '#3390ec',
+    shadow: '#000000',
+    overlay: 'rgba(0, 0, 0, 0.16)',
+    danger: '#EF4444',
+    success: '#10B981',
+    pageOuter: '#f0f2f5',
+  },
+} as const;
+
+const AVATAR_COLORS = ['#5288c1', '#e6683c', '#dc2743', '#cc2366', '#7f91a4', '#10B981'];
 
 function normalizeBoolean(value: unknown): boolean {
   return value === true || value === 'true' || value === 1 || value === '1';
@@ -170,9 +211,155 @@ function sortChats(items: DecoratedChat[]) {
   });
 }
 
+function getAvatarColor(input: string) {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = input.charCodeAt(i) + ((hash << 5) - hash);
+  }
+
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function startOfDay(time: Date) {
+  return new Date(time.getFullYear(), time.getMonth(), time.getDate()).getTime();
+}
+
+function formatChatTime(item: ChatListItem) {
+  const timestamp = Math.max(
+    parseDateValue(item.last_message_at),
+    parseDateValue(item.updated_at),
+    parseDateValue(item.created_at),
+  );
+
+  if (!timestamp) {
+    return '';
+  }
+
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffDays = Math.floor((startOfDay(now) - startOfDay(date)) / ONE_DAY);
+
+  if (diffDays <= 0) {
+    return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  if (diffDays === 1) {
+    return 'Вчера';
+  }
+
+  if (diffDays < 7) {
+    return ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][date.getDay()];
+  }
+
+  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+}
+
+function SearchBar({
+  value,
+  onChangeText,
+  placeholder,
+  ui,
+}: {
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder: string;
+  ui: ChatUi;
+}) {
+  return (
+    <View style={[styles.searchBox, { backgroundColor: ui.bgSecondary }]}> 
+      <Ionicons name="search" size={18} color={ui.textSecondary} />
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={ui.textSecondary}
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={[styles.searchInput, { color: ui.textPrimary }]}
+      />
+      {value.length > 0 ? (
+        <Pressable onPress={() => onChangeText('')} hitSlop={10}>
+          <Ionicons name="close-circle" size={18} color={ui.textSecondary} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function RoundAvatar({
+  title,
+  uri,
+  color,
+  size = 54,
+  ui,
+  icon,
+}: {
+  title: string;
+  uri?: string | null;
+  color?: string;
+  size?: number;
+  ui: ChatUi;
+  icon?: keyof typeof Ionicons.glyphMap;
+}) {
+  const frameStyle = {
+    width: size,
+    height: size,
+    borderRadius: size / 2,
+  };
+
+  if (uri) {
+    return (
+      <ExpoImage
+        source={{ uri }}
+        style={[styles.avatarImage, frameStyle]}
+        contentFit="cover"
+        transition={120}
+      />
+    );
+  }
+
+  return (
+    <View style={[styles.avatar, frameStyle, { backgroundColor: color || getAvatarColor(title) }]}> 
+      {icon ? (
+        <Ionicons name={icon} size={Math.round(size * 0.44)} color="#FFFFFF" />
+      ) : (
+        <Text style={[styles.avatarText, { fontSize: Math.round(size * 0.36) }]}> 
+          {title.slice(0, 1).toUpperCase() || 'A'}
+        </Text>
+      )}
+      <View style={[styles.avatarInnerGlow, { borderColor: ui.separator }]} />
+    </View>
+  );
+}
+
+function DropdownItem({
+  icon,
+  label,
+  ui,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  ui: ChatUi;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.dropdownItem,
+        pressed && { backgroundColor: ui.bgHover },
+      ]}
+    >
+      <Ionicons name={icon} size={22} color={ui.textSecondary} />
+      <Text style={[styles.dropdownText, { color: ui.textPrimary }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function ChatRow({
   item,
-  theme,
+  ui,
   callingKey,
   onOpenChat,
   onOpenMenu,
@@ -181,8 +368,8 @@ function ChatRow({
   const translateX = useRef(new Animated.Value(0)).current;
   const [opened, setOpened] = useState(false);
 
+  const title = chatTitle(item);
   const unread = Number(item.unread_count ?? 0) || 0;
-  const isStaff = Boolean(item.peer_user?.is_admin || item.peer_user?.is_staff);
   const isCallingThisChat =
     callingKey === `${item.uuid}:audio` || callingKey === `${item.uuid}:video`;
 
@@ -244,15 +431,15 @@ function ChatRow({
   };
 
   return (
-    <View style={styles.swipeContainer}>
-      <View style={styles.hiddenActionWrap}>
+    <View style={[styles.swipeContainer, { backgroundColor: ui.bgPrimary }]}> 
+      <View style={[styles.hiddenActionWrap, { backgroundColor: ui.bgPrimary }]}> 
         <Pressable
           onPress={handleCallPress}
           disabled={Boolean(callingKey)}
           style={({ pressed }) => [
             styles.hiddenCallButton,
             {
-              backgroundColor: theme.colors.primary,
+              backgroundColor: ui.accent,
               opacity: callingKey && !isCallingThisChat ? 0.5 : pressed ? 0.78 : 1,
             },
           ]}
@@ -272,67 +459,59 @@ function ChatRow({
         style={[
           styles.swipeForeground,
           {
+            backgroundColor: ui.bgPrimary,
             transform: [{ translateX }],
           },
         ]}
         {...panResponder.panHandlers}
       >
-        <Pressable onPress={handleOpenChat} onLongPress={() => onOpenMenu(item)}>
-          <GlassCard>
-            <View style={styles.chatRow}>
-              {item.peer_user?.avatar ? (
-                <ExpoImage
-                  source={{ uri: item.peer_user.avatar }}
-                  style={styles.avatarImage}
-                  contentFit="cover"
+        <Pressable
+          onPress={handleOpenChat}
+          onLongPress={() => onOpenMenu(item)}
+          style={({ pressed }) => [
+            styles.chatItem,
+            { backgroundColor: pressed ? ui.bgHover : ui.bgPrimary },
+          ]}
+        >
+          <RoundAvatar
+            title={title}
+            uri={item.peer_user?.avatar}
+            color={getAvatarColor(title)}
+            ui={ui}
+          />
+
+          <View style={styles.chatContent}>
+            <Text style={[styles.chatName, { color: ui.textPrimary }]} numberOfLines={1}>
+              {title}
+            </Text>
+            <Text style={[styles.chatMessage, { color: ui.textSecondary }]} numberOfLines={1}>
+              {buildPreview(item)}
+            </Text>
+          </View>
+
+          <View style={styles.chatMeta}>
+            <Text style={[styles.chatTime, { color: ui.textSecondary }]}>{formatChatTime(item)}</Text>
+            <View style={styles.chatMetaBottom}>
+              {item.effectiveArchived ? (
+                <Ionicons name="archive" size={14} color={ui.textSecondary} />
+              ) : item.effectivePinned ? (
+                <Ionicons
+                  name="pin"
+                  size={14}
+                  color={ui.textSecondary}
+                  style={styles.pinIcon}
                 />
-              ) : (
-                <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
-                  <Text style={styles.avatarText}>
-                    {chatTitle(item).slice(0, 1).toUpperCase()}
-                  </Text>
+              ) : null}
+
+              {unread > 0 ? (
+                <View style={[styles.unreadBadge, { backgroundColor: ui.badgeBg }]}> 
+                  <Text style={styles.unreadBadgeText}>{unread > 99 ? '99+' : unread}</Text>
                 </View>
-              )}
-
-              <View style={styles.chatTextBlock}>
-                <View style={styles.titleRow}>
-                  <View style={styles.titleInline}>
-                    <Text
-                      style={[styles.title, { color: theme.colors.text }]}
-                      numberOfLines={1}
-                    >
-                      {chatTitle(item)}
-                    </Text>
-
-                    {isStaff ? <Ionicons name="star" size={14} color="#3B82F6" /> : null}
-
-                    {item.effectivePinned ? (
-                      <Ionicons name="bookmark" size={14} color={theme.colors.primary} />
-                    ) : null}
-
-                    {item.effectiveArchived ? (
-                      <Ionicons name="archive" size={14} color={theme.colors.muted} />
-                    ) : null}
-                  </View>
-
-                  {unread > 0 ? (
-                    <View style={[styles.badge, { backgroundColor: theme.colors.primary }]}>
-                      <Text style={styles.badgeText}>{unread}</Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <Text style={[styles.subtitle, { color: theme.colors.muted }]} numberOfLines={1}>
-                  {buildPreview(item)}
-                </Text>
-
-              </View>
-
-              <View style={styles.chatActions}>
-                <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
-              </View>
+              ) : null}
             </View>
-          </GlassCard>
+          </View>
+
+          <View style={[styles.chatSeparator, { backgroundColor: ui.separator }]} />
         </Pressable>
       </Animated.View>
     </View>
@@ -340,7 +519,7 @@ function ChatRow({
 }
 
 export default function ChatsScreen() {
-  const { theme, themeMode, setThemeMode } = useTheme();
+  const { resolvedThemeName, themeMode, setThemeMode } = useTheme();
   const startOutgoing = useCallStore((state) => state.startOutgoing);
 
   const [data, setData] = useState<ChatListItem[]>([]);
@@ -364,6 +543,9 @@ export default function ChatsScreen() {
   const [selectedGroupMembers, setSelectedGroupMembers] = useState<string[]>([]);
   const [groupSearching, setGroupSearching] = useState(false);
   const [groupCreating, setGroupCreating] = useState(false);
+
+  const isLightTheme = resolvedThemeName.toLowerCase().includes('light');
+  const ui = isLightTheme ? CHAT_UI.light : CHAT_UI.dark;
 
   const hydrateLocalPreferences = useCallback(async () => {
     const loaded = await loadChatListPreferences();
@@ -484,20 +666,6 @@ export default function ChatsScreen() {
     return decoratedChats.filter((item) => !item.effectiveHidden);
   }, [decoratedChats]);
 
-  const tabCounts = useMemo(() => {
-    const allCount = visibleDecoratedChats.filter((item) => !item.effectiveArchived).length;
-    const pinnedCount = visibleDecoratedChats.filter(
-      (item) => item.effectivePinned && !item.effectiveArchived,
-    ).length;
-    const archiveCount = visibleDecoratedChats.filter((item) => item.effectiveArchived).length;
-
-    return {
-      all: allCount,
-      pinned: pinnedCount,
-      archive: archiveCount,
-    };
-  }, [visibleDecoratedChats]);
-
   const filteredChats = useMemo(() => {
     const q = search.trim().toLowerCase();
 
@@ -523,6 +691,41 @@ export default function ChatsScreen() {
 
     return sortChats(bySearch);
   }, [activeTab, visibleDecoratedChats, search]);
+
+  const storyItems = useMemo<StoryPreview[]>(() => {
+    const chats = sortChats(visibleDecoratedChats)
+      .filter((item) => !item.effectiveArchived)
+      .slice(0, 10)
+      .map((item) => {
+        const title = chatTitle(item);
+        return {
+          key: item.uuid,
+          label: title.length > 12 ? `${title.slice(0, 10)}…` : title,
+          title,
+          initial: title.slice(0, 1).toUpperCase(),
+          avatar: item.peer_user?.avatar,
+          color: getAvatarColor(title),
+          hasStory: true,
+          chat: item,
+        };
+      });
+
+    return [
+      {
+        key: 'my-story',
+        label: 'Моя история',
+        title: 'Моя история',
+        initial: 'Я',
+        color: ui.accent,
+        hasStory: false,
+        isMine: true,
+      },
+      ...chats,
+    ];
+  }, [ui.accent, visibleDecoratedChats]);
+
+  const activeFilterLabel =
+    activeTab === 'archive' ? 'Архив' : activeTab === 'pinned' ? 'Закреплённые' : '';
 
   const startDirectChat = async (user: UserShort) => {
     try {
@@ -560,7 +763,7 @@ export default function ChatsScreen() {
   };
 
   const switchDayNight = async () => {
-    const nextMode = themeMode === 'dark' ? 'light' : 'dark';
+    const nextMode = isLightTheme ? 'dark' : 'light';
     await setThemeMode(nextMode);
     setMainMenuVisible(false);
   };
@@ -746,545 +949,545 @@ export default function ChatsScreen() {
     );
   };
 
+  const renderStory = (story: StoryPreview) => {
+    const openStory = () => {
+      if (story.chat) {
+        openChat(story.chat);
+        return;
+      }
+
+      Alert.alert('История', 'Добавление истории будет доступно скоро');
+    };
+
+    return (
+      <Pressable key={story.key} onPress={openStory} style={styles.storyItem}>
+        <View
+          style={[
+            styles.storyAvatarWrapper,
+            {
+              backgroundColor: story.hasStory ? '#dc2743' : ui.separator,
+            },
+          ]}
+        >
+          <RoundAvatar
+            title={story.title}
+            uri={story.avatar}
+            color={story.color}
+            size={60}
+            ui={ui}
+            icon={story.isMine ? 'person-outline' : undefined}
+          />
+          {story.isMine ? (
+            <View style={[styles.addStoryBtn, { backgroundColor: ui.accent, borderColor: ui.bgPrimary }]}> 
+              <Ionicons name="add" size={14} color="#FFFFFF" />
+            </View>
+          ) : null}
+        </View>
+        <Text
+          style={[
+            styles.storyName,
+            { color: story.isMine ? ui.accent : ui.textSecondary },
+          ]}
+          numberOfLines={1}
+        >
+          {story.label}
+        </Text>
+      </Pressable>
+    );
+  };
+
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <SafeAreaView style={[styles.safeRoot, { backgroundColor: ui.bgPrimary }]}> 
         <View style={styles.centered}>
-          <ActivityIndicator color={theme.colors.primary} />
+          <ActivityIndicator color={ui.accent} />
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <Text style={[styles.screenTitle, { color: theme.colors.text }]}>Чаты</Text>
+    <SafeAreaView style={[styles.safeRoot, { backgroundColor: ui.pageOuter }]} edges={['top', 'left', 'right']}>
+      <View style={[styles.appFrame, { backgroundColor: ui.bgPrimary }]}> 
+        <View style={[styles.header, { backgroundColor: ui.bgSecondary }]}> 
+          <Text style={[styles.headerTitle, { color: ui.textPrimary }]}>Чаты</Text>
           <Pressable
             onPress={() => setMainMenuVisible(true)}
+            accessibilityLabel="Открыть меню"
             style={({ pressed }) => [
-              styles.headerMenuButton,
-              { backgroundColor: theme.colors.cardStrong },
-              pressed && { opacity: 0.72 },
+              styles.menuTrigger,
+              pressed && { backgroundColor: ui.bgHover },
             ]}
           >
-            <Ionicons name="ellipsis-horizontal" size={22} color={theme.colors.text} />
+            <View style={styles.menuDots}>
+              <View style={[styles.menuDot, { backgroundColor: ui.textSecondary }]} />
+              <View style={[styles.menuDot, { backgroundColor: ui.textSecondary }]} />
+              <View style={[styles.menuDot, { backgroundColor: ui.textSecondary }]} />
+            </View>
           </Pressable>
         </View>
 
-        <SearchInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Поиск чатов и людей"
-        />
-
-        <View style={styles.tabsRow}>
-          {chatTabs.map((tab) => {
-            const active = activeTab === tab.key;
-            const count =
-              tab.key === 'all'
-                ? tabCounts.all
-                : tab.key === 'pinned'
-                  ? tabCounts.pinned
-                  : tabCounts.archive;
-
-            return (
-              <Pressable
-                key={tab.key}
-                onPress={() => setActiveTab(tab.key)}
-                style={[
-                  styles.tabChip,
-                  {
-                    backgroundColor: active ? theme.colors.primary : theme.colors.cardStrong,
-                    borderColor: active ? 'transparent' : theme.colors.borderStrong,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.tabChipText,
-                    {
-                      color: active ? '#FFFFFF' : theme.colors.text,
-                    },
-                  ]}
-                >
-                  {tab.label}
-                </Text>
-
-                <View
-                  style={[
-                    styles.tabCountBadge,
-                    {
-                      backgroundColor: active ? 'rgba(255,255,255,0.18)' : theme.colors.primarySoft,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.tabCountText,
-                      {
-                        color: active ? '#FFFFFF' : theme.colors.primary,
-                      },
-                    ]}
-                  >
-                    {count}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })}
+        <View style={[styles.searchContainer, { backgroundColor: ui.bgPrimary }]}> 
+          <SearchBar
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Поиск чатов и людей"
+            ui={ui}
+          />
         </View>
-      </View>
 
-      <FlatList
-        data={filteredChats}
-        keyExtractor={(item) => item.uuid}
-        initialNumToRender={16}
-        maxToRenderPerBatch={12}
-        updateCellsBatchingPeriod={50}
-        windowSize={8}
-        removeClippedSubviews={Platform.OS !== 'web'}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void loadChats()} />
-        }
-        contentContainerStyle={styles.listContent}
-        ListHeaderComponent={
-          <>
-            <StoriesStrip compact />
+        <FlatList
+          data={filteredChats}
+          keyExtractor={(item) => item.uuid}
+          initialNumToRender={16}
+          maxToRenderPerBatch={12}
+          updateCellsBatchingPeriod={50}
+          windowSize={8}
+          removeClippedSubviews={Platform.OS !== 'web'}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void loadChats()}
+              tintColor={ui.accent}
+              colors={[ui.accent]}
+            />
+          }
+          contentContainerStyle={styles.listContent}
+          ListHeaderComponent={
+            <>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.storiesContainer}
+              >
+                {storyItems.map(renderStory)}
+              </ScrollView>
 
-            {search.trim().length >= 2 && (
-              <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Люди</Text>
+              {activeTab !== 'all' ? (
+                <View style={[styles.filterBanner, { backgroundColor: ui.bgSecondary }]}> 
+                  <Text style={[styles.filterText, { color: ui.textPrimary }]}>
+                    Показано: {activeFilterLabel}
+                  </Text>
+                  <Pressable onPress={() => setActiveTab('all')} hitSlop={10}>
+                    <Ionicons name="close" size={18} color={ui.textSecondary} />
+                  </Pressable>
+                </View>
+              ) : null}
 
-                {searchingPeople ? (
-                  <Text style={[styles.helperText, { color: theme.colors.muted }]}>Поиск...</Text>
-                ) : people.length > 0 ? (
-                  <View style={{ gap: 10 }}>
-                    {people.map((item) => (
-                      <GlassCard key={item.uuid}>
-                        <View style={styles.personRow}>
-                          {item.avatar ? (
-                            <ExpoImage
-                              source={{ uri: item.avatar }}
-                              style={styles.avatarImage}
-                              contentFit="cover"
+              {search.trim().length >= 2 ? (
+                <View style={styles.peopleSection}>
+                  <Text style={[styles.sectionTitle, { color: ui.textPrimary }]}>Люди</Text>
+
+                  {searchingPeople ? (
+                    <Text style={[styles.helperText, { color: ui.textSecondary }]}>Поиск...</Text>
+                  ) : people.length > 0 ? (
+                    <View style={[styles.peopleCard, { backgroundColor: ui.bgPrimary }]}> 
+                      {people.map((person, index) => {
+                        const name = personName(person);
+                        return (
+                          <Pressable
+                            key={person.uuid}
+                            onPress={() => void startDirectChat(person)}
+                            disabled={creatingFor === person.uuid}
+                            style={({ pressed }) => [
+                              styles.personRow,
+                              { backgroundColor: pressed ? ui.bgHover : ui.bgPrimary },
+                            ]}
+                          >
+                            <RoundAvatar
+                              title={name}
+                              uri={person.avatar}
+                              color={getAvatarColor(name)}
+                              size={46}
+                              ui={ui}
                             />
-                          ) : (
-                            <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
-                              <Text style={styles.avatarText}>
-                                {personName(item).slice(0, 1).toUpperCase()}
+                            <View style={styles.personTextBlock}>
+                              <Text style={[styles.chatName, { color: ui.textPrimary }]} numberOfLines={1}>
+                                {name}
+                              </Text>
+                              <Text
+                                style={[styles.chatMessage, { color: ui.textSecondary }]}
+                                numberOfLines={1}
+                              >
+                                @{person.username || person.email || 'user'}
                               </Text>
                             </View>
-                          )}
-
-                          <View style={{ flex: 1 }}>
-                            <Text
-                              style={[styles.title, { color: theme.colors.text }]}
-                              numberOfLines={1}
-                            >
-                              {personName(item)}
-                            </Text>
-
-                            <Text
-                              style={[styles.subtitle, { color: theme.colors.muted }]}
-                              numberOfLines={1}
-                            >
-                              @{item.username || 'user'}
-                            </Text>
-                          </View>
-
-                          <Pressable
-                            onPress={() => void startDirectChat(item)}
-                            disabled={creatingFor === item.uuid}
-                            style={[styles.actionBtn, { backgroundColor: theme.colors.primary }]}
-                          >
-                            <Text style={styles.actionBtnText}>
-                              {creatingFor === item.uuid ? '...' : 'Чат'}
-                            </Text>
+                            {creatingFor === person.uuid ? (
+                              <ActivityIndicator size="small" color={ui.accent} />
+                            ) : (
+                              <View style={[styles.smallActionBtn, { backgroundColor: ui.accent }]}> 
+                                <Text style={styles.smallActionText}>Чат</Text>
+                              </View>
+                            )}
+                            {index < people.length - 1 ? (
+                              <View style={[styles.personSeparator, { backgroundColor: ui.separator }]} />
+                            ) : null}
                           </Pressable>
-                        </View>
-                      </GlassCard>
-                    ))}
-                  </View>
-                ) : (
-                  <Text style={[styles.helperText, { color: theme.colors.muted }]}>
-                    Люди не найдены
-                  </Text>
-                )}
-              </View>
-            )}
-
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                {activeTab === 'all'
-                  ? 'Все чаты'
-                  : activeTab === 'pinned'
-                    ? 'Закреплённые'
-                    : 'Архив'}
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <Text style={[styles.helperText, { color: ui.textSecondary }]}>Люди не найдены</Text>
+                  )}
+                </View>
+              ) : null}
+            </>
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyWrap}>
+              <Text style={[styles.emptyTitle, { color: ui.textPrimary }]}> 
+                {activeTab === 'archive' ? 'Архив пуст' : 'Чатов пока нет'}
+              </Text>
+              <Text style={[styles.helperText, { color: ui.textSecondary }]}> 
+                {activeTab === 'archive'
+                  ? 'Здесь появятся архивированные чаты.'
+                  : 'Начни диалог через поиск пользователя сверху.'}
               </Text>
             </View>
-          </>
-        }
-        ListEmptyComponent={
-          <GlassCard>
-            <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
-              {activeTab === 'archive' ? 'Архив пуст' : 'Чатов пока нет'}
-            </Text>
-            <Text style={[styles.helperText, { color: theme.colors.muted }]}>
-              {activeTab === 'archive'
-                ? 'Здесь будут локально и серверно архивированные чаты.'
-                : 'Начни диалог через поиск пользователя сверху.'}
-            </Text>
-          </GlassCard>
-        }
-        renderItem={({ item }) => (
-          <ChatRow
-            item={item}
-            theme={theme}
-            callingKey={callingKey}
-            onOpenChat={openChat}
-            onOpenMenu={openChatMenu}
-            onOpenCallChooser={openCallChooser}
-          />
-        )}
-      />
+          }
+          renderItem={({ item }) => (
+            <ChatRow
+              item={item}
+              ui={ui}
+              callingKey={callingKey}
+              onOpenChat={openChat}
+              onOpenMenu={openChatMenu}
+              onOpenCallChooser={openCallChooser}
+            />
+          )}
+        />
 
-      <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuVisible(false)} />
+        <Modal
+          visible={mainMenuVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setMainMenuVisible(false)}
+        >
+          <View style={styles.menuModalRoot}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setMainMenuVisible(false)} />
 
-          <View style={styles.bottomSheetWrap}>
-            <GlassCard>
-              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
-                {selectedChat ? chatTitle(selectedChat) : 'Чат'}
-              </Text>
-
-              <Pressable
-                onPress={() => void toggleLocalPinned()}
-                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
-              >
-                <Ionicons
-                  name={selectedChat?.localPinned ? 'bookmark' : 'bookmark-outline'}
-                  size={18}
-                  color={theme.colors.primary}
-                />
-                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  {selectedChat?.localPinned
-                    ? 'Убрать локальный закреп'
-                    : 'Закрепить локально'}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => void toggleLocalArchived()}
-                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
-              >
-                <Ionicons
-                  name={selectedChat?.localArchived ? 'archive' : 'archive-outline'}
-                  size={18}
-                  color={theme.colors.primary}
-                />
-                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  {selectedChat?.localArchived
-                    ? 'Убрать из локального архива'
-                    : 'Архивировать локально'}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={hideSelectedChat}
-                style={[
-                  styles.sheetItem,
-                  styles.destructiveSheetItem,
-                  { borderColor: 'rgba(239,68,68,0.32)' },
-                ]}
-              >
-                <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                <Text style={[styles.sheetItemText, { color: '#EF4444' }]}>
-                  Удалить / скрыть чат
-                </Text>
-              </Pressable>
-
-              {selectedChat ? (
-                <Text style={[styles.sheetHint, { color: theme.colors.muted }]}>
-                  Скрытие работает локально на этом устройстве. Сообщения и сам чат на сервере не
-                  удаляются.
-                </Text>
-              ) : null}
-            </GlassCard>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={mainMenuVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMainMenuVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setMainMenuVisible(false)} />
-
-          <View style={styles.topMenuWrap}>
-            <GlassCard>
-              <Pressable
+            <View
+              style={[
+                styles.dropdownMenu,
+                {
+                  backgroundColor: ui.bgSecondary,
+                  shadowColor: ui.shadow,
+                },
+              ]}
+            >
+              <DropdownItem
+                icon="bookmark-outline"
+                label="Избранное"
+                ui={ui}
                 onPress={() => {
                   setActiveTab('pinned');
                   setMainMenuVisible(false);
                 }}
-                style={styles.mainMenuItem}
-              >
-                <Ionicons name="star-outline" size={20} color={theme.colors.primary} />
-                <Text style={[styles.mainMenuText, { color: theme.colors.text }]}>Избранное</Text>
-              </Pressable>
-
-              <Pressable onPress={openGroupCreator} style={styles.mainMenuItem}>
-                <Ionicons name="people-circle-outline" size={20} color={theme.colors.primary} />
-                <Text style={[styles.mainMenuText, { color: theme.colors.text }]}>
-                  Создать группу
-                </Text>
-              </Pressable>
-
-              <Pressable onPress={() => void switchDayNight()} style={styles.mainMenuItem}>
-                <Ionicons
-                  name={themeMode === 'dark' ? 'sunny-outline' : 'moon-outline'}
-                  size={20}
-                  color={theme.colors.primary}
-                />
-                <Text style={[styles.mainMenuText, { color: theme.colors.text }]}>
-                  Дневной / ночной режим
-                </Text>
-              </Pressable>
-
-              <Pressable
+              />
+              <DropdownItem icon="people-outline" label="Создать группу" ui={ui} onPress={openGroupCreator} />
+              <DropdownItem
+                icon="archive-outline"
+                label="Архив"
+                ui={ui}
                 onPress={() => {
                   setActiveTab('archive');
                   setMainMenuVisible(false);
                 }}
-                style={styles.mainMenuItem}
-              >
-                <Ionicons name="archive-outline" size={20} color={theme.colors.primary} />
-                <Text style={[styles.mainMenuText, { color: theme.colors.text }]}>Архив</Text>
-              </Pressable>
-
-              <Pressable
+              />
+              <DropdownItem
+                icon="pin-outline"
+                label="Закрепленное"
+                ui={ui}
                 onPress={() => {
                   setActiveTab('pinned');
                   setMainMenuVisible(false);
                 }}
-                style={styles.mainMenuItem}
-              >
-                <Ionicons name="bookmark-outline" size={20} color={theme.colors.primary} />
-                <Text style={[styles.mainMenuText, { color: theme.colors.text }]}>
-                  Закреплённые
-                </Text>
-              </Pressable>
-            </GlassCard>
+              />
+              <View style={[styles.dropdownDivider, { backgroundColor: ui.separator }]} />
+              <DropdownItem
+                icon={isLightTheme ? 'moon-outline' : 'sunny-outline'}
+                label={isLightTheme ? 'Ночной режим' : 'Дневной режим'}
+                ui={ui}
+                onPress={() => void switchDayNight()}
+              />
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
-      <Modal
-        visible={groupVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setGroupVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setGroupVisible(false)} />
+        <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
+          <View style={[styles.bottomModalRoot, { backgroundColor: ui.overlay }]}> 
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuVisible(false)} />
 
-          <View style={styles.bottomSheetWrap}>
-            <GlassCard>
-              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>Создать группу</Text>
-              <TextInput
-                value={groupTitle}
-                onChangeText={setGroupTitle}
-                placeholder="Название группы"
-                placeholderTextColor={theme.colors.muted}
-                style={[
-                  styles.groupInput,
-                  {
-                    color: theme.colors.text,
-                    backgroundColor: theme.colors.inputBackground,
-                    borderColor: theme.colors.borderStrong,
-                  },
-                ]}
-              />
+            <View style={styles.bottomSheetWrap}>
+              <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, shadowColor: ui.shadow }]}> 
+                <Text style={[styles.sheetTitle, { color: ui.textPrimary }]}> 
+                  {selectedChat ? chatTitle(selectedChat) : 'Чат'}
+                </Text>
 
-              <SearchInput
-                value={groupSearch}
-                onChangeText={setGroupSearch}
-                placeholder="Найти участников"
-              />
-
-              <ScrollView style={styles.groupPeopleList} contentContainerStyle={styles.groupPeopleContent}>
-                {groupSearching ? (
-                  <ActivityIndicator color={theme.colors.primary} />
-                ) : groupPeople.length ? (
-                  groupPeople.map((person) => {
-                    const selected = selectedGroupMembers.includes(person.uuid);
-                    const name = personName(person);
-
-                    return (
-                      <Pressable
-                        key={person.uuid}
-                        onPress={() => toggleGroupMember(person.uuid)}
-                        style={[
-                          styles.groupPersonRow,
-                          {
-                            backgroundColor: selected
-                              ? theme.colors.primarySoft
-                              : theme.colors.cardStrong,
-                          },
-                        ]}
-                      >
-                        {person.avatar ? (
-                          <ExpoImage
-                            source={{ uri: person.avatar }}
-                            style={styles.groupPersonAvatar}
-                            contentFit="cover"
-                          />
-                        ) : (
-                          <View
-                            style={[
-                              styles.groupPersonAvatar,
-                              { backgroundColor: theme.colors.primary },
-                            ]}
-                          >
-                            <Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text>
-                          </View>
-                        )}
-                        <View style={styles.groupPersonText}>
-                          <Text style={[styles.title, { color: theme.colors.text }]} numberOfLines={1}>
-                            {name}
-                          </Text>
-                          <Text style={[styles.subtitle, { color: theme.colors.muted }]} numberOfLines={1}>
-                            @{person.username || person.email || 'user'}
-                          </Text>
-                        </View>
-                        <Ionicons
-                          name={selected ? 'checkmark-circle' : 'ellipse-outline'}
-                          size={22}
-                          color={selected ? theme.colors.primary : theme.colors.muted}
-                        />
-                      </Pressable>
-                    );
-                  })
-                ) : (
-                  <Text style={[styles.helperText, { color: theme.colors.muted }]}>
-                    Введи минимум 2 символа, чтобы найти участников.
+                <Pressable
+                  onPress={() => void toggleLocalPinned()}
+                  style={({ pressed }) => [
+                    styles.sheetItem,
+                    {
+                      borderColor: ui.separator,
+                      backgroundColor: pressed ? ui.bgHover : 'transparent',
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={selectedChat?.localPinned ? 'bookmark' : 'bookmark-outline'}
+                    size={20}
+                    color={ui.accent}
+                  />
+                  <Text style={[styles.sheetItemText, { color: ui.textPrimary }]}> 
+                    {selectedChat?.localPinned ? 'Убрать локальный закреп' : 'Закрепить локально'}
                   </Text>
-                )}
-              </ScrollView>
+                </Pressable>
 
-              <Pressable
-                onPress={() => void submitGroup()}
-                disabled={groupCreating}
-                style={[
-                  styles.createGroupButton,
-                  {
-                    backgroundColor: theme.colors.primary,
-                    opacity: groupCreating ? 0.72 : 1,
-                  },
-                ]}
-              >
-                {groupCreating ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-                    <Text style={styles.createGroupButtonText}>
-                      Создать ({selectedGroupMembers.length})
+                <Pressable
+                  onPress={() => void toggleLocalArchived()}
+                  style={({ pressed }) => [
+                    styles.sheetItem,
+                    {
+                      borderColor: ui.separator,
+                      backgroundColor: pressed ? ui.bgHover : 'transparent',
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={selectedChat?.localArchived ? 'archive' : 'archive-outline'}
+                    size={20}
+                    color={ui.accent}
+                  />
+                  <Text style={[styles.sheetItemText, { color: ui.textPrimary }]}> 
+                    {selectedChat?.localArchived ? 'Убрать из локального архива' : 'Архивировать локально'}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={hideSelectedChat}
+                  style={({ pressed }) => [
+                    styles.sheetItem,
+                    styles.destructiveSheetItem,
+                    {
+                      borderColor: 'rgba(239,68,68,0.32)',
+                      backgroundColor: pressed ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.06)',
+                    },
+                  ]}
+                >
+                  <Ionicons name="trash-outline" size={20} color={ui.danger} />
+                  <Text style={[styles.sheetItemText, { color: ui.danger }]}>Удалить / скрыть чат</Text>
+                </Pressable>
+
+                {selectedChat ? (
+                  <Text style={[styles.sheetHint, { color: ui.textSecondary }]}> 
+                    Скрытие работает локально на этом устройстве. Сообщения и сам чат на сервере не
+                    удаляются.
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={groupVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setGroupVisible(false)}
+        >
+          <View style={[styles.bottomModalRoot, { backgroundColor: ui.overlay }]}> 
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setGroupVisible(false)} />
+
+            <View style={styles.bottomSheetWrap}>
+              <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, shadowColor: ui.shadow }]}> 
+                <Text style={[styles.sheetTitle, { color: ui.textPrimary }]}>Создать группу</Text>
+                <TextInput
+                  value={groupTitle}
+                  onChangeText={setGroupTitle}
+                  placeholder="Название группы"
+                  placeholderTextColor={ui.textSecondary}
+                  style={[
+                    styles.groupInput,
+                    {
+                      color: ui.textPrimary,
+                      backgroundColor: ui.bgPrimary,
+                      borderColor: ui.separator,
+                    },
+                  ]}
+                />
+
+                <SearchBar
+                  value={groupSearch}
+                  onChangeText={setGroupSearch}
+                  placeholder="Найти участников"
+                  ui={ui}
+                />
+
+                <ScrollView style={styles.groupPeopleList} contentContainerStyle={styles.groupPeopleContent}>
+                  {groupSearching ? (
+                    <ActivityIndicator color={ui.accent} />
+                  ) : groupPeople.length ? (
+                    groupPeople.map((person) => {
+                      const selected = selectedGroupMembers.includes(person.uuid);
+                      const name = personName(person);
+
+                      return (
+                        <Pressable
+                          key={person.uuid}
+                          onPress={() => toggleGroupMember(person.uuid)}
+                          style={({ pressed }) => [
+                            styles.groupPersonRow,
+                            {
+                              backgroundColor: selected
+                                ? `${ui.accent}22`
+                                : pressed
+                                  ? ui.bgHover
+                                  : ui.bgPrimary,
+                            },
+                          ]}
+                        >
+                          <RoundAvatar
+                            title={name}
+                            uri={person.avatar}
+                            color={getAvatarColor(name)}
+                            size={42}
+                            ui={ui}
+                          />
+                          <View style={styles.groupPersonText}>
+                            <Text style={[styles.chatName, { color: ui.textPrimary }]} numberOfLines={1}>
+                              {name}
+                            </Text>
+                            <Text style={[styles.chatMessage, { color: ui.textSecondary }]} numberOfLines={1}>
+                              @{person.username || person.email || 'user'}
+                            </Text>
+                          </View>
+                          <Ionicons
+                            name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                            size={22}
+                            color={selected ? ui.accent : ui.textSecondary}
+                          />
+                        </Pressable>
+                      );
+                    })
+                  ) : (
+                    <Text style={[styles.helperText, { color: ui.textSecondary }]}> 
+                      Введи минимум 2 символа, чтобы найти участников.
                     </Text>
-                  </>
-                )}
-              </Pressable>
-            </GlassCard>
+                  )}
+                </ScrollView>
+
+                <Pressable
+                  onPress={() => void submitGroup()}
+                  disabled={groupCreating}
+                  style={({ pressed }) => [
+                    styles.createGroupButton,
+                    {
+                      backgroundColor: ui.accent,
+                      opacity: groupCreating ? 0.72 : pressed ? 0.82 : 1,
+                    },
+                  ]}
+                >
+                  {groupCreating ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+                      <Text style={styles.createGroupButtonText}> 
+                        Создать ({selectedGroupMembers.length})
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
-      <Modal
-        visible={Boolean(callChooserChat)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setCallChooserChat(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setCallChooserChat(null)} />
+        <Modal
+          visible={Boolean(callChooserChat)}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setCallChooserChat(null)}
+        >
+          <View style={[styles.bottomModalRoot, { backgroundColor: ui.overlay }]}> 
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setCallChooserChat(null)} />
 
-          <View style={styles.bottomSheetWrap}>
-            <GlassCard>
-              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
-                Позвонить
-              </Text>
+            <View style={styles.bottomSheetWrap}>
+              <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, shadowColor: ui.shadow }]}> 
+                <Text style={[styles.sheetTitle, { color: ui.textPrimary }]}>Позвонить</Text>
 
-              <Text style={[styles.sheetSub, { color: theme.colors.muted }]}>
-                {callChooserChat ? chatTitle(callChooserChat) : ''}
-              </Text>
-
-              <Pressable
-                onPress={() =>
-                  callChooserChat
-                    ? void startCall(callChooserChat, 'audio')
-                    : undefined
-                }
-                disabled={!callChooserChat || Boolean(callingKey)}
-                style={({ pressed }) => [
-                  styles.callChoice,
-                  {
-                    backgroundColor: '#10B981',
-                    opacity: pressed ? 0.8 : callingKey ? 0.6 : 1,
-                  },
-                ]}
-              >
-                <Ionicons name="call" size={20} color="#FFFFFF" />
-                <Text style={styles.callChoiceText}>
-                  {callingKey === `${callChooserChat?.uuid}:audio` ? 'Запускаю...' : 'Аудио звонок'}
+                <Text style={[styles.sheetSub, { color: ui.textSecondary }]}> 
+                  {callChooserChat ? chatTitle(callChooserChat) : ''}
                 </Text>
-              </Pressable>
 
-              <Pressable
-                onPress={() =>
-                  callChooserChat
-                    ? void startCall(callChooserChat, 'video')
-                    : undefined
-                }
-                disabled={!callChooserChat || Boolean(callingKey)}
-                style={({ pressed }) => [
-                  styles.callChoice,
-                  {
-                    backgroundColor: theme.colors.primary,
-                    opacity: pressed ? 0.8 : callingKey ? 0.6 : 1,
-                  },
-                ]}
-              >
-                <Ionicons name="videocam" size={20} color="#FFFFFF" />
-                <Text style={styles.callChoiceText}>
-                  {callingKey === `${callChooserChat?.uuid}:video` ? 'Запускаю...' : 'Видео звонок'}
-                </Text>
-              </Pressable>
+                <Pressable
+                  onPress={() =>
+                    callChooserChat ? void startCall(callChooserChat, 'audio') : undefined
+                  }
+                  disabled={!callChooserChat || Boolean(callingKey)}
+                  style={({ pressed }) => [
+                    styles.callChoice,
+                    {
+                      backgroundColor: ui.success,
+                      opacity: pressed ? 0.8 : callingKey ? 0.6 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons name="call" size={20} color="#FFFFFF" />
+                  <Text style={styles.callChoiceText}>
+                    {callingKey === `${callChooserChat?.uuid}:audio` ? 'Запускаю...' : 'Аудио звонок'}
+                  </Text>
+                </Pressable>
 
-              <Pressable
-                onPress={() => setCallChooserChat(null)}
-                style={[styles.cancelChoice, { backgroundColor: theme.colors.card }]}
-              >
-                <Text style={[styles.cancelChoiceText, { color: theme.colors.text }]}>
-                  Отмена
-                </Text>
-              </Pressable>
-            </GlassCard>
+                <Pressable
+                  onPress={() =>
+                    callChooserChat ? void startCall(callChooserChat, 'video') : undefined
+                  }
+                  disabled={!callChooserChat || Boolean(callingKey)}
+                  style={({ pressed }) => [
+                    styles.callChoice,
+                    {
+                      backgroundColor: ui.accent,
+                      opacity: pressed ? 0.8 : callingKey ? 0.6 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons name="videocam" size={20} color="#FFFFFF" />
+                  <Text style={styles.callChoiceText}>
+                    {callingKey === `${callChooserChat?.uuid}:video` ? 'Запускаю...' : 'Видео звонок'}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setCallChooserChat(null)}
+                  style={({ pressed }) => [
+                    styles.cancelChoice,
+                    { backgroundColor: pressed ? ui.bgHover : ui.bgPrimary },
+                  ]}
+                >
+                  <Text style={[styles.cancelChoiceText, { color: ui.textPrimary }]}>Отмена</Text>
+                </Pressable>
+              </View>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeRoot: {
     flex: 1,
+    alignItems: 'center',
+  },
+  appFrame: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 480,
+    overflow: 'hidden',
   },
   centered: {
     flex: 1,
@@ -1292,78 +1495,112 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   header: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 6,
-    gap: 10,
-  },
-  headerTop: {
+    minHeight: 64,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
   },
-  screenTitle: {
-    fontSize: 24,
-    fontWeight: '800',
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: -0.2,
   },
-  headerMenuButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+  menuTrigger: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tabsRow: {
+  menuDots: {
     flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 4,
   },
-  tabChip: {
-    minHeight: 40,
-    borderRadius: 18,
-    borderWidth: 1,
+  menuDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  searchBox: {
+    minHeight: 42,
+    borderRadius: 22,
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
-  tabChipText: {
-    fontSize: 13,
-    fontWeight: '800',
+  searchInput: {
+    flex: 1,
+    minHeight: 42,
+    paddingVertical: 0,
+    fontSize: 15,
+    fontWeight: '400',
   },
-  tabCountBadge: {
-    minWidth: 22,
-    height: 22,
-    borderRadius: 11,
-    paddingHorizontal: 6,
+  listContent: {
+    paddingBottom: 126,
+  },
+  storiesContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+    gap: 16,
+  },
+  storyItem: {
+    width: 68,
+    alignItems: 'center',
+    gap: 6,
+  },
+  storyAvatarWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    padding: 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tabCountText: {
-    fontSize: 11,
-    fontWeight: '800',
+  storyName: {
+    width: 68,
+    textAlign: 'center',
+    fontSize: 12,
   },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 120,
-    gap: 10,
+  addStoryBtn: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  section: {
-    marginBottom: 12,
+  avatar: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    marginBottom: 10,
+  avatarImage: {
+    backgroundColor: '#E5E7EB',
   },
-  helperText: {
-    fontSize: 14,
+  avatarText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  avatarInnerGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 999,
+    borderWidth: 1,
   },
   swipeContainer: {
     position: 'relative',
     overflow: 'hidden',
-    borderRadius: 24,
   },
   hiddenActionWrap: {
     position: 'absolute',
@@ -1376,8 +1613,8 @@ const styles = StyleSheet.create({
   },
   hiddenCallButton: {
     width: 92,
-    minHeight: 62,
-    borderRadius: 20,
+    minHeight: 58,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
@@ -1388,135 +1625,203 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   swipeForeground: {
-    borderRadius: 24,
+    overflow: 'hidden',
   },
-  personRow: {
+  chatItem: {
+    minHeight: 74,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    position: 'relative',
   },
-  chatRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  chatTextBlock: {
+  chatContent: {
     flex: 1,
     minWidth: 0,
-  },
-  chatActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
+    height: 54,
+    marginLeft: 14,
     justifyContent: 'center',
   },
-  avatarText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  avatarImage: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#E5E7EB',
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-    gap: 8,
-  },
-  titleInline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
-    minWidth: 0,
-  },
-  title: {
+  chatName: {
     fontSize: 16,
-    fontWeight: '700',
-    flexShrink: 1,
+    fontWeight: '600',
+    marginBottom: 4,
   },
-  subtitle: {
-    fontSize: 13,
+  chatMessage: {
+    fontSize: 14,
+    fontWeight: '400',
   },
-  swipeHint: {
-    fontSize: 11,
-    marginTop: 4,
+  chatMeta: {
+    height: 54,
+    minWidth: 42,
+    marginLeft: 8,
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
   },
-  badge: {
-    minWidth: 22,
-    height: 22,
-    borderRadius: 11,
+  chatTime: {
+    fontSize: 12,
+    fontWeight: '400',
+  },
+  chatMetaBottom: {
+    minHeight: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 6,
+  },
+  pinIcon: {
+    transform: [{ rotate: '45deg' }],
+  },
+  unreadBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
     paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: {
+  unreadBadgeText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '600',
   },
-  actionBtn: {
-    minWidth: 72,
-    height: 38,
-    borderRadius: 18,
+  chatSeparator: {
+    position: 'absolute',
+    left: 84,
+    right: 0,
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
+  },
+  filterBanner: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    minHeight: 40,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  filterText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  peopleSection: {
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  peopleCard: {
+    overflow: 'hidden',
+  },
+  personRow: {
+    minHeight: 66,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    position: 'relative',
+  },
+  personTextBlock: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 12,
+  },
+  personSeparator: {
+    position: 'absolute',
+    left: 58,
+    right: 0,
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
+  },
+  smallActionBtn: {
+    minWidth: 56,
+    height: 32,
+    borderRadius: 16,
+    paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 14,
   },
-  actionBtnText: {
+  smallActionText: {
     color: '#FFFFFF',
-    fontWeight: '700',
     fontSize: 13,
+    fontWeight: '700',
+  },
+  helperText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  emptyWrap: {
+    paddingHorizontal: 24,
+    paddingTop: 48,
+    alignItems: 'center',
   },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
     marginBottom: 6,
+    textAlign: 'center',
   },
-  modalOverlay: {
+  menuModalRoot: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.34)',
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: 64,
+    right: 16,
+    width: 240,
+    borderRadius: 16,
+    paddingVertical: 8,
+    shadowOpacity: 0.24,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 18,
+  },
+  dropdownItem: {
+    minHeight: 46,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  dropdownText: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  dropdownDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 6,
+  },
+  bottomModalRoot: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   bottomSheetWrap: {
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
     paddingHorizontal: 12,
     paddingBottom: 16,
   },
-  topMenuWrap: {
-    position: 'absolute',
-    top: 82,
-    right: 12,
-    width: 260,
-  },
-  mainMenuItem: {
-    minHeight: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 8,
-  },
-  mainMenuText: {
-    fontSize: 15,
-    fontWeight: '700',
+  sheet: {
+    borderRadius: 20,
+    padding: 16,
+    shadowOpacity: 0.24,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 18,
   },
   sheetTitle: {
     fontSize: 19,
     fontWeight: '800',
-    marginBottom: 4,
+    marginBottom: 12,
   },
   sheetSub: {
     fontSize: 14,
+    marginTop: -6,
     marginBottom: 14,
   },
   sheetItem: {
@@ -1529,10 +1834,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  destructiveSheetItem: {
-    backgroundColor: 'rgba(239,68,68,0.06)',
-  },
+  destructiveSheetItem: {},
   sheetItemText: {
+    flex: 1,
     fontSize: 15,
     fontWeight: '700',
   },
@@ -1540,32 +1844,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     marginTop: 4,
-  },
-  callChoice: {
-    minHeight: 54,
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    marginBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  callChoiceText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  cancelChoice: {
-    minHeight: 50,
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  cancelChoiceText: {
-    fontSize: 15,
-    fontWeight: '800',
   },
   groupInput: {
     minHeight: 50,
@@ -1591,13 +1869,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  groupPersonAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   groupPersonText: {
     flex: 1,
     minWidth: 0,
@@ -1612,6 +1883,32 @@ const styles = StyleSheet.create({
   },
   createGroupButtonText: {
     color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  callChoice: {
+    minHeight: 54,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  callChoiceText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  cancelChoice: {
+    minHeight: 50,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  cancelChoiceText: {
     fontSize: 15,
     fontWeight: '800',
   },
