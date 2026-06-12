@@ -21,6 +21,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 
+import { StoriesStrip } from '@/src/components/stories/StoriesStrip';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { fetchChats, createDirectChat, createGroupChat } from '@/src/lib/api/chats';
 import { searchUsers, type UserShort } from '@/src/lib/api/contacts';
@@ -48,7 +49,21 @@ type DecoratedChat = ChatListItem & {
   localHidden: boolean;
 };
 
-type ChatUi = (typeof CHAT_UI)['dark'];
+type ChatUi = {
+  bgPrimary: string;
+  bgSecondary: string;
+  bgHover: string;
+  accent: string;
+  textPrimary: string;
+  textSecondary: string;
+  separator: string;
+  badgeBg: string;
+  shadow: string;
+  overlay: string;
+  danger: string;
+  success: string;
+  pageOuter: string;
+};
 
 type ChatRowProps = {
   item: DecoratedChat;
@@ -59,22 +74,10 @@ type ChatRowProps = {
   onOpenCallChooser: (item: DecoratedChat) => void;
 };
 
-type StoryPreview = {
-  key: string;
-  label: string;
-  title: string;
-  initial: string;
-  avatar?: string | null;
-  color: string;
-  hasStory: boolean;
-  isMine?: boolean;
-  chat?: DecoratedChat;
-};
-
 const SWIPE_ACTION_WIDTH = 104;
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
-const CHAT_UI = {
+const CHAT_UI: Record<'dark' | 'light', ChatUi> = {
   dark: {
     bgPrimary: '#0e1621',
     bgSecondary: '#17212b',
@@ -105,7 +108,7 @@ const CHAT_UI = {
     success: '#10B981',
     pageOuter: '#f0f2f5',
   },
-} as const;
+};
 
 const AVATAR_COLORS = ['#5288c1', '#e6683c', '#dc2743', '#cc2366', '#7f91a4', '#10B981'];
 
@@ -308,14 +311,7 @@ function RoundAvatar({
   };
 
   if (uri) {
-    return (
-      <ExpoImage
-        source={{ uri }}
-        style={[styles.avatarImage, frameStyle]}
-        contentFit="cover"
-        transition={120}
-      />
-    );
+    return <ExpoImage source={{ uri }} style={[styles.avatarImage, frameStyle]} contentFit="cover" />;
   }
 
   return (
@@ -346,10 +342,7 @@ function DropdownItem({
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.dropdownItem,
-        pressed && { backgroundColor: ui.bgHover },
-      ]}
+      style={({ pressed }) => [styles.dropdownItem, pressed && { backgroundColor: ui.bgHover }]}
     >
       <Ionicons name={icon} size={22} color={ui.textSecondary} />
       <Text style={[styles.dropdownText, { color: ui.textPrimary }]}>{label}</Text>
@@ -473,12 +466,7 @@ function ChatRow({
             { backgroundColor: pressed ? ui.bgHover : ui.bgPrimary },
           ]}
         >
-          <RoundAvatar
-            title={title}
-            uri={item.peer_user?.avatar}
-            color={getAvatarColor(title)}
-            ui={ui}
-          />
+          <RoundAvatar title={title} uri={item.peer_user?.avatar} color={getAvatarColor(title)} ui={ui} />
 
           <View style={styles.chatContent}>
             <Text style={[styles.chatName, { color: ui.textPrimary }]} numberOfLines={1}>
@@ -495,12 +483,7 @@ function ChatRow({
               {item.effectiveArchived ? (
                 <Ionicons name="archive" size={14} color={ui.textSecondary} />
               ) : item.effectivePinned ? (
-                <Ionicons
-                  name="pin"
-                  size={14}
-                  color={ui.textSecondary}
-                  style={styles.pinIcon}
-                />
+                <Ionicons name="pin" size={14} color={ui.textSecondary} style={styles.pinIcon} />
               ) : null}
 
               {unread > 0 ? (
@@ -519,7 +502,7 @@ function ChatRow({
 }
 
 export default function ChatsScreen() {
-  const { resolvedThemeName, themeMode, setThemeMode } = useTheme();
+  const { resolvedThemeName, setThemeMode } = useTheme();
   const startOutgoing = useCallStore((state) => state.startOutgoing);
 
   const [data, setData] = useState<ChatListItem[]>([]);
@@ -692,38 +675,6 @@ export default function ChatsScreen() {
     return sortChats(bySearch);
   }, [activeTab, visibleDecoratedChats, search]);
 
-  const storyItems = useMemo<StoryPreview[]>(() => {
-    const chats = sortChats(visibleDecoratedChats)
-      .filter((item) => !item.effectiveArchived)
-      .slice(0, 10)
-      .map((item) => {
-        const title = chatTitle(item);
-        return {
-          key: item.uuid,
-          label: title.length > 12 ? `${title.slice(0, 10)}…` : title,
-          title,
-          initial: title.slice(0, 1).toUpperCase(),
-          avatar: item.peer_user?.avatar,
-          color: getAvatarColor(title),
-          hasStory: true,
-          chat: item,
-        };
-      });
-
-    return [
-      {
-        key: 'my-story',
-        label: 'Моя история',
-        title: 'Моя история',
-        initial: 'Я',
-        color: ui.accent,
-        hasStory: false,
-        isMine: true,
-      },
-      ...chats,
-    ];
-  }, [ui.accent, visibleDecoratedChats]);
-
   const activeFilterLabel =
     activeTab === 'archive' ? 'Архив' : activeTab === 'pinned' ? 'Закреплённые' : '';
 
@@ -851,7 +802,6 @@ export default function ChatsScreen() {
       }
     } catch (error: any) {
       console.error('startCall error:', error);
-
       Alert.alert(
         'Звонок не запущен',
         error?.message || 'Не удалось начать звонок. Проверь Android/iOS build и WebSocket.',
@@ -922,10 +872,7 @@ export default function ChatsScreen() {
       'Скрыть чат?',
       `Чат «${title}» будет скрыт только на этом устройстве. Сообщения на сервере не удаляются.`,
       [
-        {
-          text: 'Отмена',
-          style: 'cancel',
-        },
+        { text: 'Отмена', style: 'cancel' },
         {
           text: 'Скрыть',
           style: 'destructive',
@@ -949,53 +896,6 @@ export default function ChatsScreen() {
     );
   };
 
-  const renderStory = (story: StoryPreview) => {
-    const openStory = () => {
-      if (story.chat) {
-        openChat(story.chat);
-        return;
-      }
-
-      Alert.alert('История', 'Добавление истории будет доступно скоро');
-    };
-
-    return (
-      <Pressable key={story.key} onPress={openStory} style={styles.storyItem}>
-        <View
-          style={[
-            styles.storyAvatarWrapper,
-            {
-              backgroundColor: story.hasStory ? '#dc2743' : ui.separator,
-            },
-          ]}
-        >
-          <RoundAvatar
-            title={story.title}
-            uri={story.avatar}
-            color={story.color}
-            size={60}
-            ui={ui}
-            icon={story.isMine ? 'person-outline' : undefined}
-          />
-          {story.isMine ? (
-            <View style={[styles.addStoryBtn, { backgroundColor: ui.accent, borderColor: ui.bgPrimary }]}> 
-              <Ionicons name="add" size={14} color="#FFFFFF" />
-            </View>
-          ) : null}
-        </View>
-        <Text
-          style={[
-            styles.storyName,
-            { color: story.isMine ? ui.accent : ui.textSecondary },
-          ]}
-          numberOfLines={1}
-        >
-          {story.label}
-        </Text>
-      </Pressable>
-    );
-  };
-
   if (loading) {
     return (
       <SafeAreaView style={[styles.safeRoot, { backgroundColor: ui.bgPrimary }]}> 
@@ -1014,10 +914,7 @@ export default function ChatsScreen() {
           <Pressable
             onPress={() => setMainMenuVisible(true)}
             accessibilityLabel="Открыть меню"
-            style={({ pressed }) => [
-              styles.menuTrigger,
-              pressed && { backgroundColor: ui.bgHover },
-            ]}
+            style={({ pressed }) => [styles.menuTrigger, pressed && { backgroundColor: ui.bgHover }]}
           >
             <View style={styles.menuDots}>
               <View style={[styles.menuDot, { backgroundColor: ui.textSecondary }]} />
@@ -1028,12 +925,7 @@ export default function ChatsScreen() {
         </View>
 
         <View style={[styles.searchContainer, { backgroundColor: ui.bgPrimary }]}> 
-          <SearchBar
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Поиск чатов и людей"
-            ui={ui}
-          />
+          <SearchBar value={search} onChangeText={setSearch} placeholder="Поиск чатов и людей" ui={ui} />
         </View>
 
         <FlatList
@@ -1056,19 +948,11 @@ export default function ChatsScreen() {
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={
             <>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.storiesContainer}
-              >
-                {storyItems.map(renderStory)}
-              </ScrollView>
+              <StoriesStrip compact />
 
               {activeTab !== 'all' ? (
                 <View style={[styles.filterBanner, { backgroundColor: ui.bgSecondary }]}> 
-                  <Text style={[styles.filterText, { color: ui.textPrimary }]}>
-                    Показано: {activeFilterLabel}
-                  </Text>
+                  <Text style={[styles.filterText, { color: ui.textPrimary }]}>Показано: {activeFilterLabel}</Text>
                   <Pressable onPress={() => setActiveTab('all')} hitSlop={10}>
                     <Ionicons name="close" size={18} color={ui.textSecondary} />
                   </Pressable>
@@ -1106,10 +990,7 @@ export default function ChatsScreen() {
                               <Text style={[styles.chatName, { color: ui.textPrimary }]} numberOfLines={1}>
                                 {name}
                               </Text>
-                              <Text
-                                style={[styles.chatMessage, { color: ui.textSecondary }]}
-                                numberOfLines={1}
-                              >
+                              <Text style={[styles.chatMessage, { color: ui.textSecondary }]} numberOfLines={1}>
                                 @{person.username || person.email || 'user'}
                               </Text>
                             </View>
@@ -1158,24 +1039,10 @@ export default function ChatsScreen() {
           )}
         />
 
-        <Modal
-          visible={mainMenuVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setMainMenuVisible(false)}
-        >
+        <Modal visible={mainMenuVisible} transparent animationType="fade" onRequestClose={() => setMainMenuVisible(false)}>
           <View style={styles.menuModalRoot}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setMainMenuVisible(false)} />
-
-            <View
-              style={[
-                styles.dropdownMenu,
-                {
-                  backgroundColor: ui.bgSecondary,
-                  shadowColor: ui.shadow,
-                },
-              ]}
-            >
+            <View style={[styles.dropdownMenu, { backgroundColor: ui.bgSecondary, shadowColor: ui.shadow }]}> 
               <DropdownItem
                 icon="bookmark-outline"
                 label="Избранное"
@@ -1218,7 +1085,6 @@ export default function ChatsScreen() {
         <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
           <View style={[styles.bottomModalRoot, { backgroundColor: ui.overlay }]}> 
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuVisible(false)} />
-
             <View style={styles.bottomSheetWrap}>
               <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, shadowColor: ui.shadow }]}> 
                 <Text style={[styles.sheetTitle, { color: ui.textPrimary }]}> 
@@ -1229,10 +1095,7 @@ export default function ChatsScreen() {
                   onPress={() => void toggleLocalPinned()}
                   style={({ pressed }) => [
                     styles.sheetItem,
-                    {
-                      borderColor: ui.separator,
-                      backgroundColor: pressed ? ui.bgHover : 'transparent',
-                    },
+                    { borderColor: ui.separator, backgroundColor: pressed ? ui.bgHover : 'transparent' },
                   ]}
                 >
                   <Ionicons
@@ -1249,10 +1112,7 @@ export default function ChatsScreen() {
                   onPress={() => void toggleLocalArchived()}
                   style={({ pressed }) => [
                     styles.sheetItem,
-                    {
-                      borderColor: ui.separator,
-                      backgroundColor: pressed ? ui.bgHover : 'transparent',
-                    },
+                    { borderColor: ui.separator, backgroundColor: pressed ? ui.bgHover : 'transparent' },
                   ]}
                 >
                   <Ionicons
@@ -1269,7 +1129,6 @@ export default function ChatsScreen() {
                   onPress={hideSelectedChat}
                   style={({ pressed }) => [
                     styles.sheetItem,
-                    styles.destructiveSheetItem,
                     {
                       borderColor: 'rgba(239,68,68,0.32)',
                       backgroundColor: pressed ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.06)',
@@ -1282,8 +1141,7 @@ export default function ChatsScreen() {
 
                 {selectedChat ? (
                   <Text style={[styles.sheetHint, { color: ui.textSecondary }]}> 
-                    Скрытие работает локально на этом устройстве. Сообщения и сам чат на сервере не
-                    удаляются.
+                    Скрытие работает локально на этом устройстве. Сообщения и сам чат на сервере не удаляются.
                   </Text>
                 ) : null}
               </View>
@@ -1291,15 +1149,9 @@ export default function ChatsScreen() {
           </View>
         </Modal>
 
-        <Modal
-          visible={groupVisible}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setGroupVisible(false)}
-        >
+        <Modal visible={groupVisible} transparent animationType="slide" onRequestClose={() => setGroupVisible(false)}>
           <View style={[styles.bottomModalRoot, { backgroundColor: ui.overlay }]}> 
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setGroupVisible(false)} />
-
             <View style={styles.bottomSheetWrap}>
               <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, shadowColor: ui.shadow }]}> 
                 <Text style={[styles.sheetTitle, { color: ui.textPrimary }]}>Создать группу</Text>
@@ -1310,20 +1162,11 @@ export default function ChatsScreen() {
                   placeholderTextColor={ui.textSecondary}
                   style={[
                     styles.groupInput,
-                    {
-                      color: ui.textPrimary,
-                      backgroundColor: ui.bgPrimary,
-                      borderColor: ui.separator,
-                    },
+                    { color: ui.textPrimary, backgroundColor: ui.bgPrimary, borderColor: ui.separator },
                   ]}
                 />
 
-                <SearchBar
-                  value={groupSearch}
-                  onChangeText={setGroupSearch}
-                  placeholder="Найти участников"
-                  ui={ui}
-                />
+                <SearchBar value={groupSearch} onChangeText={setGroupSearch} placeholder="Найти участников" ui={ui} />
 
                 <ScrollView style={styles.groupPeopleList} contentContainerStyle={styles.groupPeopleContent}>
                   {groupSearching ? (
@@ -1383,10 +1226,7 @@ export default function ChatsScreen() {
                   disabled={groupCreating}
                   style={({ pressed }) => [
                     styles.createGroupButton,
-                    {
-                      backgroundColor: ui.accent,
-                      opacity: groupCreating ? 0.72 : pressed ? 0.82 : 1,
-                    },
+                    { backgroundColor: ui.accent, opacity: groupCreating ? 0.72 : pressed ? 0.82 : 1 },
                   ]}
                 >
                   {groupCreating ? (
@@ -1394,9 +1234,7 @@ export default function ChatsScreen() {
                   ) : (
                     <>
                       <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-                      <Text style={styles.createGroupButtonText}> 
-                        Создать ({selectedGroupMembers.length})
-                      </Text>
+                      <Text style={styles.createGroupButtonText}>Создать ({selectedGroupMembers.length})</Text>
                     </>
                   )}
                 </Pressable>
@@ -1413,26 +1251,19 @@ export default function ChatsScreen() {
         >
           <View style={[styles.bottomModalRoot, { backgroundColor: ui.overlay }]}> 
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setCallChooserChat(null)} />
-
             <View style={styles.bottomSheetWrap}>
               <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, shadowColor: ui.shadow }]}> 
                 <Text style={[styles.sheetTitle, { color: ui.textPrimary }]}>Позвонить</Text>
-
                 <Text style={[styles.sheetSub, { color: ui.textSecondary }]}> 
                   {callChooserChat ? chatTitle(callChooserChat) : ''}
                 </Text>
 
                 <Pressable
-                  onPress={() =>
-                    callChooserChat ? void startCall(callChooserChat, 'audio') : undefined
-                  }
+                  onPress={() => (callChooserChat ? void startCall(callChooserChat, 'audio') : undefined)}
                   disabled={!callChooserChat || Boolean(callingKey)}
                   style={({ pressed }) => [
                     styles.callChoice,
-                    {
-                      backgroundColor: ui.success,
-                      opacity: pressed ? 0.8 : callingKey ? 0.6 : 1,
-                    },
+                    { backgroundColor: ui.success, opacity: pressed ? 0.8 : callingKey ? 0.6 : 1 },
                   ]}
                 >
                   <Ionicons name="call" size={20} color="#FFFFFF" />
@@ -1442,16 +1273,11 @@ export default function ChatsScreen() {
                 </Pressable>
 
                 <Pressable
-                  onPress={() =>
-                    callChooserChat ? void startCall(callChooserChat, 'video') : undefined
-                  }
+                  onPress={() => (callChooserChat ? void startCall(callChooserChat, 'video') : undefined)}
                   disabled={!callChooserChat || Boolean(callingKey)}
                   style={({ pressed }) => [
                     styles.callChoice,
-                    {
-                      backgroundColor: ui.accent,
-                      opacity: pressed ? 0.8 : callingKey ? 0.6 : 1,
-                    },
+                    { backgroundColor: ui.accent, opacity: pressed ? 0.8 : callingKey ? 0.6 : 1 },
                   ]}
                 >
                   <Ionicons name="videocam" size={20} color="#FFFFFF" />
@@ -1462,10 +1288,7 @@ export default function ChatsScreen() {
 
                 <Pressable
                   onPress={() => setCallChooserChat(null)}
-                  style={({ pressed }) => [
-                    styles.cancelChoice,
-                    { backgroundColor: pressed ? ui.bgHover : ui.bgPrimary },
-                  ]}
+                  style={({ pressed }) => [styles.cancelChoice, { backgroundColor: pressed ? ui.bgHover : ui.bgPrimary }]}
                 >
                   <Text style={[styles.cancelChoiceText, { color: ui.textPrimary }]}>Отмена</Text>
                 </Pressable>
@@ -1545,41 +1368,6 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: 126,
-  },
-  storiesContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 16,
-    gap: 16,
-  },
-  storyItem: {
-    width: 68,
-    alignItems: 'center',
-    gap: 6,
-  },
-  storyAvatarWrapper: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    padding: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  storyName: {
-    width: 68,
-    textAlign: 'center',
-    fontSize: 12,
-  },
-  addStoryBtn: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   avatar: {
     alignItems: 'center',
@@ -1834,7 +1622,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  destructiveSheetItem: {},
   sheetItemText: {
     flex: 1,
     fontSize: 15,
