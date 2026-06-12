@@ -1,3 +1,4 @@
+import type { MessageItem } from '@/src/types/message';
 import type { UserShort } from '@/src/types/user';
 
 export type StoryMediaType = 'image' | 'video' | 'text';
@@ -16,6 +17,7 @@ export type StoryItem = {
   media?: {
     uuid: string;
     file_url?: string | null;
+    thumbnail_url?: string | null;
     content_type?: string | null;
     media_kind?: string | null;
     original_name?: string | null;
@@ -50,3 +52,10 @@ export type CreateStoryPayload =
       media_uuid: string;
       caption?: string;
     };
+
+export type StoryActionResponse = {
+  story_uuid?: string | null;
+  chat_uuid?: string | null;
+  message_uuid?: string | null;
+  message?: MessageItem | null;
+};

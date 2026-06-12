@@ -3,9 +3,14 @@ import type { UserShort } from '@/src/types/user';
 export type MessageAttachment = {
   uuid: string;
   file_url?: string | null;
+  thumbnail_url?: string | null;
   content_type?: string | null;
   original_name?: string | null;
   media_kind?: string | null;
+  width?: number | null;
+  height?: number | null;
+  duration_seconds?: number | null;
+  waveform_data?: number[] | null;
 };
 
 export type ReplyMessageShort = {

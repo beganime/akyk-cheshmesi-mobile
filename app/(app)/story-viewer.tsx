@@ -18,11 +18,13 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-import { createDirectChat } from '@/src/lib/api/chats';
-import { sendChatMessage } from '@/src/lib/api/messages';
-import { fetchStories, markStoryViewed } from '@/src/lib/api/stories';
-import type { StoryItem } from '@/src/types/stories';
-import { generateUUIDv4 } from '@/src/lib/utils/uuid';
+import {
+  fetchStories,
+  markStoryViewed,
+  reactToStory,
+  replyToStory,
+} from '@/src/lib/api/stories';
+import type { StoryActionResponse, StoryItem } from '@/src/types/stories';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { getApiErrorMessage } from '@/src/utils/apiErrors';
 
@@ -145,34 +147,52 @@ export default function StoryViewerScreen() {
     [goNext, goPrev],
   );
 
+  const openStoryActionTarget = (response?: StoryActionResponse | null) => {
+    const chatUuid = response?.chat_uuid;
+
+    if (typeof chatUuid !== 'string' || !chatUuid.trim()) {
+      return;
+    }
+
+    router.push({
+      pathname: '/(app)/chat/[chatUuid]',
+      params: { chatUuid },
+    });
+  };
+
   const sendReply = async (text: string) => {
     const message = text.trim();
-    if (!message || !author?.uuid || sending) {
+    if (!message || !current?.uuid || sending || Boolean(current.is_own)) {
       return;
     }
 
     try {
       setSending(true);
-      const chat = await createDirectChat(author.uuid);
-      if (!chat?.uuid) {
-        throw new Error('Не удалось открыть чат для ответа');
-      }
-
-      await sendChatMessage(chat.uuid, {
-        client_uuid: generateUUIDv4(),
-        message_type: 'text',
-        text: `Ответ на story: ${message}`,
-        metadata: current?.uuid ? { story_uuid: current.uuid } : undefined,
-      });
-
+      const result = await replyToStory(current.uuid, message);
       setReply('');
+      openStoryActionTarget(result);
     } catch (error) {
-      Alert.alert('Ответ на story', getApiErrorMessage(error, 'Не удалось отправить ответ'));
+      Alert.alert('Story reply', getApiErrorMessage(error, 'Could not send story reply'));
     } finally {
       setSending(false);
     }
   };
 
+  const sendReaction = async (emoji: string) => {
+    if (!emoji || !current?.uuid || sending || Boolean(current.is_own)) {
+      return;
+    }
+
+    try {
+      setSending(true);
+      const result = await reactToStory(current.uuid, emoji);
+      openStoryActionTarget(result);
+    } catch (error) {
+      Alert.alert('Story', getApiErrorMessage(error, 'Could not send story reaction'));
+    } finally {
+      setSending(false);
+    }
+  };
   if (loading) {
     return (
       <SafeAreaView style={styles.root}>
@@ -276,7 +296,7 @@ export default function StoryViewerScreen() {
           {reactions.map((emoji) => (
             <Pressable
               key={emoji}
-              onPress={() => void sendReply(emoji)}
+              onPress={() => void sendReaction(emoji)}
               disabled={sending || !author?.uuid || Boolean(current.is_own)}
               style={styles.reactionButton}
             >

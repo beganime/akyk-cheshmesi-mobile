@@ -1,6 +1,6 @@
 import 'expo-dev-client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -70,15 +70,63 @@ export default function RootLayout() {
 
   const [appReady, setAppReady] = useState(false);
 
-  const extractChatUuidFromNotification = (
+  const extractNotificationTarget = (
     response: Notifications.NotificationResponse,
   ) => {
     const data = response.notification.request.content.data as
       | Record<string, unknown>
       | undefined;
-    const chatUuid = data?.chat_uuid;
-    return typeof chatUuid === 'string' && chatUuid.trim() ? chatUuid : null;
+    const type = typeof data?.type === 'string' ? data.type : 'message';
+    const chatUuid = typeof data?.chat_uuid === 'string' ? data.chat_uuid : null;
+    const messageUuid = typeof data?.message_uuid === 'string' ? data.message_uuid : null;
+    const callUuid = typeof data?.call_uuid === 'string' ? data.call_uuid : null;
+    const storyUuid = typeof data?.story_uuid === 'string' ? data.story_uuid : null;
+
+    return {
+      type,
+      chatUuid: chatUuid?.trim() || null,
+      messageUuid: messageUuid?.trim() || null,
+      callUuid: callUuid?.trim() || null,
+      storyUuid: storyUuid?.trim() || null,
+    };
   };
+
+  const openNotificationTarget = useCallback((response: Notifications.NotificationResponse) => {
+    const target = extractNotificationTarget(response);
+
+    if (target.type === 'call' && target.callUuid) {
+      void loadCall(target.callUuid, 'incoming').then((call) => {
+        if (!call) return;
+        router.push({
+          pathname: '/(app)/call/[callUuid]',
+          params: { callUuid: call.uuid },
+        });
+      });
+      return;
+    }
+
+    if (
+      (target.type === 'story_reply' || target.type === 'story_reaction') &&
+      target.storyUuid &&
+      !target.chatUuid
+    ) {
+      router.push({
+        pathname: '/(app)/story-viewer',
+        params: { storyUuid: target.storyUuid },
+      });
+      return;
+    }
+
+    if (target.chatUuid) {
+      router.push({
+        pathname: '/(app)/chat/[chatUuid]',
+        params: {
+          chatUuid: target.chatUuid,
+          ...(target.messageUuid ? { messageUuid: target.messageUuid } : {}),
+        },
+      });
+    }
+  }, [loadCall, router]);
 
   useEffect(() => {
     const unsubscribeExpired = subscribeSessionExpired(() => {
@@ -124,31 +172,21 @@ export default function RootLayout() {
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        const chatUuid = extractChatUuidFromNotification(response);
-        if (!chatUuid) return;
-        router.push({
-          pathname: '/(app)/chat/[chatUuid]',
-          params: { chatUuid },
-        });
+        openNotificationTarget(response);
       },
     );
 
     Notifications.getLastNotificationResponseAsync()
       .then((response) => {
         if (!response) return;
-        const chatUuid = extractChatUuidFromNotification(response);
-        if (!chatUuid) return;
-        router.push({
-          pathname: '/(app)/chat/[chatUuid]',
-          params: { chatUuid },
-        });
+        openNotificationTarget(response);
       })
       .catch(() => undefined);
 
     return () => {
       subscription.remove();
     };
-  }, [router]);
+  }, [openNotificationTarget]);
 
   useEffect(() => {
     if (!appReady || !hydrated) {
@@ -200,6 +238,7 @@ export default function RootLayout() {
           title,
           body,
           data: {
+            type: 'message',
             chat_uuid: chatUuid,
             message_uuid: message.uuid,
           },

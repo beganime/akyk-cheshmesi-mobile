@@ -38,6 +38,11 @@ export default function AppLayout() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="settings" />
       <Stack.Screen name="profile-edit" />
+      <Stack.Screen name="blocked-users" />
+      <Stack.Screen name="bots" />
+      <Stack.Screen name="bot/[botUuid]" />
+      <Stack.Screen name="chat-bots/[chatUuid]" />
+      <Stack.Screen name="group-members/[chatUuid]" />
       <Stack.Screen name="chat/[chatUuid]" />
       <Stack.Screen name="chat-user/[userUuid]" />
       <Stack.Screen name="call/[callUuid]" />

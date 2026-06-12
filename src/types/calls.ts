@@ -87,6 +87,28 @@ export type CallActionPayload = {
   device_name?: string;
 };
 
+export type CallSignalPayload = {
+  type:
+    | 'call:offer'
+    | 'call:answer'
+    | 'call:ice-candidate'
+    | 'call_offer'
+    | 'call_answer'
+    | 'call_ice';
+  call_uuid?: string;
+  chat_uuid?: string;
+  room_key?: string;
+  sdp?: string;
+  sdp_type?: 'offer' | 'answer';
+  candidate?: {
+    candidate: string;
+    sdpMid?: string | null;
+    sdpMLineIndex?: number | null;
+    usernameFragment?: string | null;
+  };
+  payload?: Record<string, unknown> | null;
+};
+
 export type CallSignalMessage =
   | {
       type: 'join_call';

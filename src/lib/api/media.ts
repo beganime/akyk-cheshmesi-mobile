@@ -12,6 +12,7 @@ export type PickedMediaAsset = {
   width?: number;
   height?: number;
   duration?: number | null;
+  waveformData?: number[] | null;
   file?: File;
 };
 
@@ -26,6 +27,11 @@ export type UploadedMedia = {
   status?: string | null;
   is_public?: boolean | null;
   file_url?: string | null;
+  thumbnail_url?: string | null;
+  width?: number | null;
+  height?: number | null;
+  duration_seconds?: number | null;
+  waveform_data?: number[] | null;
   meta?: Record<string, unknown> | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -321,6 +327,18 @@ async function uploadLocal(
     formData.append('duration_seconds', String(durationSeconds));
   }
 
+  if (asset.width) {
+    formData.append('width', String(asset.width));
+  }
+
+  if (asset.height) {
+    formData.append('height', String(asset.height));
+  }
+
+  if (Array.isArray(asset.waveformData) && asset.waveformData.length) {
+    formData.append('waveform_data', JSON.stringify(asset.waveformData));
+  }
+
   const response = await apiClient.post<UploadedMedia>('/media/upload-local/', formData, {
     timeout: 90000,
     headers: {
@@ -352,6 +370,11 @@ async function uploadViaPresign(
     ...(uploadSize ? { size: uploadSize } : {}),
     is_public: Boolean(options.isPublic),
     ...(durationSeconds ? { duration_seconds: durationSeconds } : {}),
+    ...(asset.width ? { width: asset.width } : {}),
+    ...(asset.height ? { height: asset.height } : {}),
+    ...(Array.isArray(asset.waveformData) && asset.waveformData.length
+      ? { waveform_data: asset.waveformData }
+      : {}),
   });
 
   reportProgress(options.onProgress, 0.12);
@@ -399,20 +422,22 @@ async function uploadViaPresign(
   return completeResponse.data;
 }
 
-function shouldFallbackToLocalUpload(error: any): boolean {
+function shouldFallbackToPresignUpload(error: any): boolean {
   const status = Number(error?.response?.status || 0);
   const detail = extractBackendDetail(error).toLowerCase();
   const message = String(error?.message || '').toLowerCase();
 
   return (
-    detail.includes('use_s3 is disabled') ||
-    detail.includes('s3 is disabled') ||
-    detail.includes('s3 upload failed') ||
-    message.includes('s3 upload failed') ||
-    detail.includes('/media/upload-local') ||
-    detail.includes('upload-local') ||
+    detail.includes('s3') ||
+    detail.includes('presign') ||
+    detail.includes('direct upload') ||
+    detail.includes('signed upload') ||
+    detail.includes('/media/presign') ||
+    message.includes('presign') ||
     status === 404 ||
-    status === 405
+    status === 405 ||
+    status === 409 ||
+    status === 501
   );
 }
 
@@ -428,11 +453,11 @@ export async function uploadPickedMedia(
   reportProgress(options.onProgress, 0.04);
 
   try {
-    return await uploadViaPresign(optimizedAsset, options);
+    return await uploadLocal(optimizedAsset, options);
   } catch (error: any) {
-    if (shouldFallbackToLocalUpload(error)) {
+    if (shouldFallbackToPresignUpload(error)) {
       reportProgress(options.onProgress, 0.08);
-      return await uploadLocal(optimizedAsset, options);
+      return await uploadViaPresign(optimizedAsset, options);
     }
 
     throw error;
@@ -461,6 +486,16 @@ export async function uploadPickedAudio(asset: PickedMediaAsset): Promise<Upload
     fallbackContentType: Platform.OS === 'web' ? 'audio/webm' : 'audio/mp4',
     isPublic: false,
   });
+}
+
+export async function fetchMediaDetail(mediaUuid: string): Promise<UploadedMedia> {
+  const response = await apiClient.get<UploadedMedia>(`/media/${mediaUuid}/`);
+  return response.data;
+}
+
+export async function deleteMedia(mediaUuid: string) {
+  const response = await apiClient.delete(`/media/${mediaUuid}/`);
+  return response.data;
 }
 
 export function buildMessageTypeFromMedia(

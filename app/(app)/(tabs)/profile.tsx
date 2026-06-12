@@ -53,6 +53,12 @@ export default function ProfileScreen() {
       action: () => router.push('/(app)/settings'),
     },
     {
+      title: 'Telegram-like bots',
+      icon: 'sparkles-outline',
+      color: '#22C55E',
+      action: () => router.push('/(app)/bots'),
+    },
+    {
       title: 'Конфиденциальность',
       icon: 'lock-closed-outline',
       color: '#8B5CF6',

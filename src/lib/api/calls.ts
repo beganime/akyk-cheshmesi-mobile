@@ -2,6 +2,7 @@ import { apiClient } from '@/src/lib/api/client';
 import type {
   CallActionPayload,
   CallCreatePayload,
+  CallSignalPayload,
   CallSession,
 } from '@/src/types/calls';
 
@@ -94,12 +95,36 @@ export async function rejectCall(
   return response.data;
 }
 
+export async function declineCall(
+  callUuid: string,
+  payload: CallActionPayload = {},
+): Promise<CallSession> {
+  const response = await apiClient.post<CallSession>(
+    `/calls/${callUuid}/decline/`,
+    payload,
+  );
+
+  return response.data;
+}
+
 export async function cancelCall(
   callUuid: string,
   payload: CallActionPayload = {},
 ): Promise<CallSession> {
   const response = await apiClient.post<CallSession>(
     `/calls/${callUuid}/cancel/`,
+    payload,
+  );
+
+  return response.data;
+}
+
+export async function missedCall(
+  callUuid: string,
+  payload: CallActionPayload = {},
+): Promise<CallSession> {
+  const response = await apiClient.post<CallSession>(
+    `/calls/${callUuid}/missed/`,
     payload,
   );
 
@@ -115,5 +140,13 @@ export async function endCall(
     payload,
   );
 
+  return response.data;
+}
+
+export async function sendCallSignal(
+  callUuid: string,
+  payload: CallSignalPayload,
+) {
+  const response = await apiClient.post(`/calls/${callUuid}/signals/`, payload);
   return response.data;
 }

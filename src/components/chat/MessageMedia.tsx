@@ -90,6 +90,7 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
   }
 
   const fileUrl = attachment.file_url;
+  const thumbnailUrl = attachment.thumbnail_url || null;
   const mediaKind = String(attachment.media_kind || '').toLowerCase();
   const contentType = String(attachment.content_type || '').toLowerCase();
 
@@ -212,7 +213,7 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
       <>
         <Pressable style={styles.imageWrap} onPress={() => setImageVisible(true)}>
           <ExpoImage
-            source={{ uri: attachment.file_url }}
+            source={{ uri: thumbnailUrl || fileUrl }}
             style={styles.image}
             contentFit="cover"
             cachePolicy="memory-disk"
@@ -259,21 +260,30 @@ export function MessageMedia({ message, isOwn, theme }: Props) {
   if (isVideo) {
     return (
       <View style={[styles.videoWrap, videoNote ? styles.videoNoteWrap : null]}>
-        <Video
-          style={[styles.video, videoNote ? styles.videoNote : null]}
-          source={{ uri: attachment.file_url }}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay={videoPlaying}
-          isLooping={false}
-          useNativeControls={false}
-          onPlaybackStatusUpdate={(status: any) => {
-            if (!status?.isLoaded) return;
-            setVideoPlaying(Boolean(status.isPlaying));
-            if (status.didJustFinish) {
-              setVideoPlaying(false);
-            }
-          }}
-        />
+        {!videoPlaying && thumbnailUrl ? (
+          <ExpoImage
+            source={{ uri: thumbnailUrl }}
+            style={[styles.video, videoNote ? styles.videoNote : null]}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
+        ) : (
+          <Video
+            style={[styles.video, videoNote ? styles.videoNote : null]}
+            source={{ uri: attachment.file_url }}
+            resizeMode={ResizeMode.COVER}
+            shouldPlay={videoPlaying}
+            isLooping={false}
+            useNativeControls={false}
+            onPlaybackStatusUpdate={(status: any) => {
+              if (!status?.isLoaded) return;
+              setVideoPlaying(Boolean(status.isPlaying));
+              if (status.didJustFinish) {
+                setVideoPlaying(false);
+              }
+            }}
+          />
+        )}
 
         <Pressable
           onPress={() => setVideoPlaying((current) => !current)}

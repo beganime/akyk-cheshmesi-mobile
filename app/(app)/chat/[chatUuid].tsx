@@ -3528,6 +3528,40 @@ export default function ChatScreen() {
                 </Text>
               </Pressable>
 
+              {chat?.chat_type === 'group' ? (
+                <Pressable
+                  onPress={() => {
+                    setSettingsVisible(false);
+                    router.push({
+                      pathname: '/(app)/group-members/[chatUuid]',
+                      params: { chatUuid },
+                    });
+                  }}
+                  style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
+                >
+                  <Ionicons name="people-outline" size={18} color={theme.colors.primary} />
+                  <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                    Group members
+                  </Text>
+                </Pressable>
+              ) : null}
+
+              <Pressable
+                onPress={() => {
+                  setSettingsVisible(false);
+                  router.push({
+                    pathname: '/(app)/chat-bots/[chatUuid]',
+                    params: { chatUuid },
+                  });
+                }}
+                style={[styles.sheetItem, { borderColor: theme.colors.borderStrong }]}
+              >
+                <Ionicons name="sparkles-outline" size={18} color={theme.colors.primary} />
+                <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
+                  Bots
+                </Text>
+              </Pressable>
+
               <Pressable
                 onPress={() => {
                   setSettingsVisible(false);

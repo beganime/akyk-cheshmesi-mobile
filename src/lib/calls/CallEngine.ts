@@ -16,8 +16,10 @@ import {
   acceptCall,
   cancelCall,
   createChatCall,
+  declineCall,
   endCall,
   rejectCall,
+  sendCallSignal,
 } from '@/src/lib/api/calls';
 import { getAccessToken } from '@/src/lib/storage/secure';
 import {
@@ -27,6 +29,7 @@ import {
 } from '@/src/lib/calls/networkQuality';
 import type {
   CallSession,
+  CallSignalPayload,
   CallSocketEvent,
   CallType,
 } from '@/src/types/calls';
@@ -236,7 +239,7 @@ class CallEngine {
         return;
       }
 
-      this.sendSocketMessage({
+      this.sendSignalMessage({
         type: 'call:ice-candidate',
         chat_uuid: this.state.call.chat_uuid,
         call_uuid: this.state.call.uuid,
@@ -425,10 +428,33 @@ class CallEngine {
 
   private sendSocketMessage(payload: Record<string, unknown>) {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+
+    try {
+      this.socket.send(JSON.stringify(payload));
+      return true;
+    } catch (error) {
+      console.warn('CallEngine socket send failed:', error);
+      return false;
+    }
+  }
+
+  private sendSignalMessage(payload: CallSignalPayload) {
+    const sent = this.sendSocketMessage(payload);
+
+    if (sent) {
       return;
     }
 
-    this.socket.send(JSON.stringify(payload));
+    const callUuid = payload.call_uuid || this.state.call?.uuid;
+    if (!callUuid) {
+      return;
+    }
+
+    void sendCallSignal(callUuid, payload).catch((error) => {
+      console.warn('CallEngine REST signal fallback failed:', error);
+    });
   }
 
   private async createAndSendOffer() {
@@ -442,7 +468,7 @@ class CallEngine {
       const offer = (await this.pc.createOffer()) as any;
       await this.pc.setLocalDescription(offer);
 
-      this.sendSocketMessage({
+      this.sendSignalMessage({
         type: 'call:offer',
         chat_uuid: this.state.call.chat_uuid,
         call_uuid: this.state.call.uuid,
@@ -527,7 +553,7 @@ class CallEngine {
         const answer = (await this.pc.createAnswer()) as any;
         await this.pc.setLocalDescription(answer);
 
-        this.sendSocketMessage({
+        this.sendSignalMessage({
           type: 'call:answer',
           chat_uuid: this.state.call.chat_uuid,
           call_uuid: this.state.call.uuid,
@@ -664,7 +690,11 @@ class CallEngine {
   }
 
   async rejectIncoming(callUuid: string) {
-    await rejectCall(callUuid);
+    try {
+      await declineCall(callUuid);
+    } catch {
+      await rejectCall(callUuid);
+    }
     await this.cleanup(false);
   }
 

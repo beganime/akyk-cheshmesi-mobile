@@ -2,6 +2,7 @@ import { apiClient } from '@/src/lib/api/client';
 import type {
   CreateStoryPayload,
   PaginatedStoriesResponse,
+  StoryActionResponse,
   StoryItem,
   StoryViewer,
 } from '@/src/types/stories';
@@ -49,4 +50,28 @@ export async function fetchStoryViewers(storyUuid: string): Promise<StoryViewer[
   }
 
   return Array.isArray(response.data?.results) ? response.data.results : [];
+}
+
+export async function replyToStory(
+  storyUuid: string,
+  text: string,
+): Promise<StoryActionResponse> {
+  const response = await apiClient.post<StoryActionResponse>(
+    `/stories/${storyUuid}/reply/`,
+    { text },
+  );
+
+  return response.data;
+}
+
+export async function reactToStory(
+  storyUuid: string,
+  emoji: string,
+): Promise<StoryActionResponse> {
+  const response = await apiClient.post<StoryActionResponse>(
+    `/stories/${storyUuid}/react/`,
+    { emoji },
+  );
+
+  return response.data;
 }

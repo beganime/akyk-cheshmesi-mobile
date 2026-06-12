@@ -56,6 +56,11 @@ export async function updateGroupChat(
   return response.data;
 }
 
+export async function deleteGroupChat(chatUuid: string) {
+  const response = await apiClient.delete(`/chats/${chatUuid}/`);
+  return response.data;
+}
+
 export async function addGroupMembers(chatUuid: string, memberUuids: string[]) {
   const response = await apiClient.post(`/chats/${chatUuid}/members/`, {
     member_uuids: memberUuids,
@@ -72,6 +77,11 @@ export async function promoteGroupAdmin(chatUuid: string, userUuid: string) {
   const response = await apiClient.post(`/chats/${chatUuid}/admins/`, {
     user_uuid: userUuid,
   });
+  return response.data;
+}
+
+export async function demoteGroupAdmin(chatUuid: string, userUuid: string) {
+  const response = await apiClient.delete(`/chats/${chatUuid}/admins/${userUuid}/`);
   return response.data;
 }
 
