@@ -7,9 +7,12 @@ import {
   FlatList,
   Modal,
   PanResponder,
+  Platform,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,8 +20,6 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 
-import { GlassCard } from '@/src/components/GlassCard';
-import { SearchInput } from '@/src/components/SearchInput';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { fetchChats, createDirectChat } from '@/src/lib/api/chats';
 import {
@@ -70,18 +71,69 @@ type ContactItem = {
   is_staff?: boolean | null;
 };
 
+type ContactUi = {
+  bgPrimary: string;
+  bgSecondary: string;
+  bgHover: string;
+  accent: string;
+  textPrimary: string;
+  textSecondary: string;
+  separator: string;
+  badgeBg: string;
+  shadow: string;
+  overlay: string;
+  danger: string;
+  success: string;
+  pageOuter: string;
+};
+
 type ContactRowProps = {
   item: ContactItem;
-  theme: any;
-  isExpanded: boolean;
+  ui: ContactUi;
   isBusy: boolean;
-  onToggleExpand: (item: ContactItem) => void;
   onOpenProfile: (item: ContactItem) => void;
   onOpenChat: (item: ContactItem) => void;
   onOpenCallChooser: (item: ContactItem) => void;
+  onOpenMenu: (item: ContactItem) => void;
 };
 
-const SWIPE_ACTION_WIDTH = 96;
+const SWIPE_ACTION_WIDTH = 104;
+const ONE_DAY = 24 * 60 * 60 * 1000;
+
+const CONTACT_UI: Record<'dark' | 'light', ContactUi> = {
+  dark: {
+    bgPrimary: '#0e1621',
+    bgSecondary: '#17212b',
+    bgHover: '#202b36',
+    accent: '#5288c1',
+    textPrimary: '#ffffff',
+    textSecondary: '#7f91a4',
+    separator: 'rgba(255, 255, 255, 0.06)',
+    badgeBg: '#5288c1',
+    shadow: '#000000',
+    overlay: 'rgba(0, 0, 0, 0.34)',
+    danger: '#EF4444',
+    success: '#10B981',
+    pageOuter: '#000000',
+  },
+  light: {
+    bgPrimary: '#ffffff',
+    bgSecondary: '#f4f4f5',
+    bgHover: '#ebebeb',
+    accent: '#3390ec',
+    textPrimary: '#000000',
+    textSecondary: '#707579',
+    separator: '#e4e4e5',
+    badgeBg: '#3390ec',
+    shadow: '#000000',
+    overlay: 'rgba(0, 0, 0, 0.16)',
+    danger: '#EF4444',
+    success: '#10B981',
+    pageOuter: '#f0f2f5',
+  },
+};
+
+const AVATAR_COLORS = ['#5288c1', '#e6683c', '#dc2743', '#cc2366', '#7f91a4', '#10B981'];
 
 function fullName(user?: Partial<ContactUser> | null, fallback?: string | null) {
   if (!user) return fallback || 'Без имени';
@@ -101,9 +153,9 @@ function getPhone(user?: Partial<ContactUser> | null) {
 }
 
 function getContactSubtitle(item: ContactItem) {
-  if (item.email) return item.email;
-  if (getPhone(item)) return getPhone(item);
   if (item.username) return `@${item.username}`;
+  if (getPhone(item)) return getPhone(item);
+  if (item.email) return item.email;
   return 'Данных пока нет';
 }
 
@@ -122,14 +174,47 @@ function formatDateTime(value?: string | null) {
     return 'Не указано';
   }
 
-  return `${date.toLocaleDateString([], {
+  return `${date.toLocaleDateString('ru-RU', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-  })} ${date.toLocaleTimeString([], {
+  })} ${date.toLocaleTimeString('ru-RU', {
     hour: '2-digit',
     minute: '2-digit',
   })}`;
+}
+
+function startOfDay(time: Date) {
+  return new Date(time.getFullYear(), time.getMonth(), time.getDate()).getTime();
+}
+
+function formatContactTime(value?: string | null) {
+  if (!value) return '';
+
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return '';
+
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffDays = Math.floor((startOfDay(now) - startOfDay(date)) / ONE_DAY);
+
+  if (diffDays <= 0) {
+    return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  if (diffDays === 1) return 'Вчера';
+  if (diffDays < 7) return ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][date.getDay()];
+
+  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+}
+
+function getAvatarColor(input: string) {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = input.charCodeAt(i) + ((hash << 5) - hash);
+  }
+
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
 function normalizeUserFromApi(user?: UserShort | null): ContactUser | null {
@@ -209,7 +294,7 @@ function buildContactsFromChats(chats: ChatListItem[], currentUserUuid?: string 
 
   const upsert = (
     user: ContactUser,
-    options: { chatUuid?: string | null; sourceChatUuid?: string | null },
+    options: { chatUuid?: string | null; sourceChatUuid?: string | null; lastInteractionAt?: string | null },
   ) => {
     if (!user?.uuid || user.uuid === currentUserUuid) {
       return;
@@ -224,7 +309,7 @@ function buildContactsFromChats(chats: ChatListItem[], currentUserUuid?: string 
       chat_uuid: existing?.chat_uuid || options.chatUuid || null,
       source_chat_uuid: existing?.source_chat_uuid || options.sourceChatUuid || null,
       source: existing?.source || 'chat',
-      last_interaction_at: existing?.last_interaction_at ?? null,
+      last_interaction_at: existing?.last_interaction_at || options.lastInteractionAt || null,
       is_favorite: Boolean(existing?.is_favorite),
       username: user.username ?? existing?.username ?? null,
       email: user.email ?? existing?.email ?? null,
@@ -239,15 +324,12 @@ function buildContactsFromChats(chats: ChatListItem[], currentUserUuid?: string 
       is_staff: Boolean(user.is_staff || existing?.is_staff || user.badge === 'staff'),
     };
 
-    if (!nextValue.chat_uuid && options.chatUuid) {
-      nextValue.chat_uuid = options.chatUuid;
-    }
-
     map.set(user.uuid, nextValue);
   };
 
   chats.forEach((chat) => {
     const directPeer: any = chat.peer_user;
+    const lastInteractionAt = chat.last_message_at || chat.updated_at || chat.created_at || null;
 
     if (directPeer?.uuid && directPeer.uuid !== currentUserUuid) {
       upsert(
@@ -265,7 +347,7 @@ function buildContactsFromChats(chats: ChatListItem[], currentUserUuid?: string 
           is_admin: Boolean(directPeer.is_admin),
           is_staff: Boolean(directPeer.is_staff || directPeer.badge === 'staff'),
         },
-        { chatUuid: chat.uuid, sourceChatUuid: chat.uuid },
+        { chatUuid: chat.uuid, sourceChatUuid: chat.uuid, lastInteractionAt },
       );
     }
 
@@ -280,14 +362,13 @@ function buildContactsFromChats(chats: ChatListItem[], currentUserUuid?: string 
         upsert(normalized, {
           chatUuid: chat.chat_type === 'direct' ? chat.uuid : null,
           sourceChatUuid: chat.uuid,
+          lastInteractionAt,
         });
       });
     }
   });
 
-  return [...map.values()].sort((a, b) =>
-    fullName(a).localeCompare(fullName(b), 'ru'),
-  );
+  return [...map.values()].sort((a, b) => fullName(a).localeCompare(fullName(b), 'ru'));
 }
 
 function mergeContactItems(primary: ContactItem[], fallback: ContactItem[]): ContactItem[] {
@@ -305,6 +386,7 @@ function mergeContactItems(primary: ContactItem[], fallback: ContactItem[]): Con
       ...item,
       chat_uuid: existing?.chat_uuid || item.chat_uuid || null,
       source_chat_uuid: existing?.source_chat_uuid || item.source_chat_uuid || null,
+      last_interaction_at: item.last_interaction_at ?? existing?.last_interaction_at ?? null,
       email: item.email ?? existing?.email ?? null,
       phone: item.phone ?? existing?.phone ?? null,
       phone_number: item.phone_number ?? existing?.phone_number ?? null,
@@ -317,9 +399,7 @@ function mergeContactItems(primary: ContactItem[], fallback: ContactItem[]): Con
     });
   });
 
-  return [...map.values()].sort((a, b) =>
-    fullName(a).localeCompare(fullName(b), 'ru'),
-  );
+  return [...map.values()].sort((a, b) => fullName(a).localeCompare(fullName(b), 'ru'));
 }
 
 async function loadServerContactsWithDetails(): Promise<ContactItem[]> {
@@ -349,22 +429,87 @@ async function loadServerContactsWithDetails(): Promise<ContactItem[]> {
     .filter(Boolean) as ContactItem[];
 }
 
+function SearchBar({
+  value,
+  onChangeText,
+  placeholder,
+  ui,
+}: {
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder: string;
+  ui: ContactUi;
+}) {
+  return (
+    <View style={[styles.searchBox, { backgroundColor: ui.bgSecondary }]}> 
+      <Ionicons name="search" size={18} color={ui.textSecondary} />
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={ui.textSecondary}
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={[styles.searchInput, { color: ui.textPrimary }]}
+      />
+      {value.length > 0 ? (
+        <Pressable onPress={() => onChangeText('')} hitSlop={10}>
+          <Ionicons name="close-circle" size={18} color={ui.textSecondary} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function RoundAvatar({
+  title,
+  uri,
+  color,
+  size = 54,
+  ui,
+}: {
+  title: string;
+  uri?: string | null;
+  color?: string;
+  size?: number;
+  ui: ContactUi;
+}) {
+  const frameStyle = {
+    width: size,
+    height: size,
+    borderRadius: size / 2,
+  };
+
+  if (uri) {
+    return <ExpoImage source={{ uri }} style={[styles.avatarImage, frameStyle]} contentFit="cover" />;
+  }
+
+  return (
+    <View style={[styles.avatar, frameStyle, { backgroundColor: color || getAvatarColor(title) }]}> 
+      <Text style={[styles.avatarText, { fontSize: Math.round(size * 0.36) }]}> 
+        {title.slice(0, 1).toUpperCase() || 'A'}
+      </Text>
+      <View style={[styles.avatarInnerGlow, { borderColor: ui.separator }]} />
+    </View>
+  );
+}
+
 function ContactRow({
   item,
-  theme,
-  isExpanded,
+  ui,
   isBusy,
-  onToggleExpand,
   onOpenProfile,
   onOpenChat,
   onOpenCallChooser,
+  onOpenMenu,
 }: ContactRowProps) {
   const translateX = useRef(new Animated.Value(0)).current;
   const [opened, setOpened] = useState(false);
 
   const name = fullName(item);
-  const phone = getPhone(item);
+  const subtitle = getContactSubtitle(item);
   const isStaff = Boolean(item.is_admin || item.is_staff || item.badge === 'staff');
+  const time = formatContactTime(item.last_interaction_at);
 
   const openSwipe = useCallback(() => {
     Animated.spring(translateX, {
@@ -409,26 +554,40 @@ function ContactRow({
     [closeSwipe, openSwipe, opened, translateX],
   );
 
+  const handleOpenChat = () => {
+    if (opened) {
+      closeSwipe();
+      return;
+    }
+
+    onOpenChat(item);
+  };
+
   const handleCallPress = () => {
     closeSwipe();
     onOpenCallChooser(item);
   };
 
   return (
-    <View style={styles.swipeContainer}>
-      <View style={styles.hiddenActionWrap}>
+    <View style={[styles.swipeContainer, { backgroundColor: ui.bgPrimary }]}> 
+      <View style={[styles.hiddenActionWrap, { backgroundColor: ui.bgPrimary }]}> 
         <Pressable
           onPress={handleCallPress}
+          disabled={isBusy}
           style={({ pressed }) => [
             styles.hiddenCallButton,
             {
-              backgroundColor: theme.colors.primary,
-              opacity: pressed ? 0.78 : 1,
+              backgroundColor: ui.accent,
+              opacity: isBusy ? 0.56 : pressed ? 0.78 : 1,
             },
           ]}
         >
-          <Ionicons name="call" size={20} color="#FFFFFF" />
-          <Text style={styles.hiddenCallText}>Позвонить</Text>
+          {isBusy ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Ionicons name="call" size={20} color="#FFFFFF" />
+          )}
+          <Text style={styles.hiddenCallText}>{isBusy ? 'Ждём...' : 'Позвонить'}</Text>
         </Pressable>
       </View>
 
@@ -436,126 +595,55 @@ function ContactRow({
         style={[
           styles.swipeForeground,
           {
+            backgroundColor: ui.bgPrimary,
             transform: [{ translateX }],
           },
         ]}
         {...panResponder.panHandlers}
       >
-        <Pressable onPress={() => onToggleExpand(item)}>
-          <GlassCard>
-            <View style={styles.row}>
-              {item.avatar ? (
-                <ExpoImage source={{ uri: item.avatar }} style={styles.avatarImage} contentFit="cover" />
-              ) : (
-                <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
-                  <Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text>
-                </View>
-              )}
+        <Pressable
+          onPress={handleOpenChat}
+          onLongPress={() => onOpenMenu(item)}
+          style={({ pressed }) => [
+            styles.contactItem,
+            { backgroundColor: pressed ? ui.bgHover : ui.bgPrimary },
+          ]}
+        >
+          <RoundAvatar title={name} uri={item.avatar} color={getAvatarColor(name)} ui={ui} />
 
-              <View style={styles.content}>
-                <View style={styles.titleRow}>
-                  <View style={styles.nameRow}>
-                    <Text style={[styles.name, { color: theme.colors.text }]} numberOfLines={1}>
-                      {name}
-                    </Text>
-
-                    {isStaff ? <Ionicons name="star" size={14} color="#3B82F6" /> : null}
-                    {item.is_favorite ? <Ionicons name="heart" size={14} color="#EF4444" /> : null}
-                  </View>
-
-                  <Ionicons
-                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                    size={18}
-                    color={theme.colors.muted}
-                  />
-                </View>
-
-                <Text style={[styles.username, { color: theme.colors.muted }]} numberOfLines={1}>
-                  {getContactSubtitle(item)}
-                </Text>
-
-                <View style={styles.quickInfoRow}>
-                  {item.email ? (
-                    <View style={[styles.infoChip, { backgroundColor: theme.colors.card }]}>
-                      <Ionicons name="mail-outline" size={12} color={theme.colors.muted} />
-                      <Text style={[styles.infoChipText, { color: theme.colors.muted }]} numberOfLines={1}>
-                        {item.email}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  {phone ? (
-                    <View style={[styles.infoChip, { backgroundColor: theme.colors.card }]}>
-                      <Ionicons name="call-outline" size={12} color={theme.colors.muted} />
-                      <Text style={[styles.infoChipText, { color: theme.colors.muted }]} numberOfLines={1}>
-                        {phone}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                {isExpanded ? (
-                  <View style={styles.details}>
-                    <Text style={[styles.detailText, { color: theme.colors.text }]}>
-                      ФИО: {name}
-                    </Text>
-                    <Text style={[styles.detailText, { color: theme.colors.text }]}>
-                      Имя: {item.first_name || 'Не указано'}
-                    </Text>
-                    <Text style={[styles.detailText, { color: theme.colors.text }]}>
-                      Фамилия: {item.last_name || 'Не указана'}
-                    </Text>
-                    <Text style={[styles.detailText, { color: theme.colors.text }]}>
-                      Username: {item.username ? `@${item.username}` : 'Не указан'}
-                    </Text>
-                    <Text style={[styles.detailText, { color: theme.colors.text }]}>
-                      Почта: {item.email || 'Не указана'}
-                    </Text>
-                    <Text style={[styles.detailText, { color: theme.colors.text }]}>
-                      Телефон: {phone || 'Не указан'}
-                    </Text>
-                    <Text style={[styles.detailText, { color: theme.colors.text }]}>
-                      Источник: {formatSource(item.source)}
-                    </Text>
-                    <Text style={[styles.detailText, { color: theme.colors.text }]}>
-                      Последний контакт: {formatDateTime(item.last_interaction_at)}
-                    </Text>
-                    <Text style={[styles.detailText, { color: theme.colors.text }]}>
-                      Статус: {isStaff ? 'Персонал' : 'Пользователь'}
-                    </Text>
-
-                    <View style={styles.actionsGrid}>
-                      <Pressable
-                        onPress={() => onOpenProfile(item)}
-                        disabled={isBusy}
-                        style={[styles.secondaryButton, { backgroundColor: theme.colors.card }]}
-                      >
-                        <Ionicons name="person-outline" size={16} color={theme.colors.text} />
-                        <Text style={[styles.secondaryButtonText, { color: theme.colors.text }]}>
-                          Профиль
-                        </Text>
-                      </Pressable>
-
-                      <Pressable
-                        onPress={() => onOpenChat(item)}
-                        disabled={isBusy}
-                        style={[styles.secondaryButton, { backgroundColor: theme.colors.card }]}
-                      >
-                        <Ionicons name="chatbubble-ellipses-outline" size={16} color={theme.colors.text} />
-                        <Text style={[styles.secondaryButtonText, { color: theme.colors.text }]}>
-                          Чат
-                        </Text>
-                      </Pressable>
-                    </View>
-
-                    <Text style={[styles.swipeHint, { color: theme.colors.muted }]}>
-                      Свайпни контакт влево, чтобы открыть кнопку звонка.
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
+          <View style={styles.contactContent}>
+            <View style={styles.nameLine}>
+              <Text style={[styles.contactName, { color: ui.textPrimary }]} numberOfLines={1}>
+                {name}
+              </Text>
+              {isStaff ? <Ionicons name="star" size={13} color={ui.accent} /> : null}
+              {item.is_favorite ? <Ionicons name="heart" size={13} color={ui.danger} /> : null}
             </View>
-          </GlassCard>
+            <Text style={[styles.contactSubtitle, { color: ui.textSecondary }]} numberOfLines={1}>
+              {subtitle}
+            </Text>
+          </View>
+
+          <View style={styles.contactMeta}>
+            <Text style={[styles.contactTime, { color: ui.textSecondary }]}>{time}</Text>
+            <View style={styles.contactMetaBottom}>
+              {item.chat_uuid ? <Ionicons name="chatbubble-ellipses" size={15} color={ui.textSecondary} /> : null}
+              <Pressable
+                onPress={() => onOpenProfile(item)}
+                hitSlop={10}
+                disabled={isBusy}
+                style={({ pressed }) => [styles.profileMiniButton, pressed && { backgroundColor: ui.bgHover }]}
+              >
+                {isBusy ? (
+                  <ActivityIndicator size="small" color={ui.accent} />
+                ) : (
+                  <Ionicons name="person-circle-outline" size={20} color={ui.textSecondary} />
+                )}
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={[styles.contactSeparator, { backgroundColor: ui.separator }]} />
         </Pressable>
       </Animated.View>
     </View>
@@ -563,29 +651,36 @@ function ContactRow({
 }
 
 export default function ContactsScreen() {
-  const { theme } = useTheme();
+  const { resolvedThemeName } = useTheme();
   const currentUserUuid = useAuthStore((s) => s.user?.uuid);
   const startOutgoing = useCallStore((s) => s.startOutgoing);
 
   const [items, setItems] = useState<ContactItem[]>([]);
-  const [expandedUuid, setExpandedUuid] = useState<string | null>(null);
   const [actionUuid, setActionUuid] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [callChooserContact, setCallChooserContact] = useState<ContactItem | null>(null);
+  const [selectedContact, setSelectedContact] = useState<ContactItem | null>(null);
+  const [menuVisible, setMenuVisible] = useState(false);
 
-  const loadContacts = useCallback(async () => {
+  const isLightTheme = resolvedThemeName.toLowerCase().includes('light');
+  const ui = isLightTheme ? CONTACT_UI.light : CONTACT_UI.dark;
+
+  const loadContacts = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = Boolean(options?.silent);
+
     try {
+      if (!silent) {
+        setRefreshing(true);
+      }
+
       const [serverContacts, chatsResponse] = await Promise.allSettled([
         loadServerContactsWithDetails(),
         fetchChats(1, 100),
       ]);
 
-      const fromServer =
-        serverContacts.status === 'fulfilled'
-          ? serverContacts.value
-          : [];
-
+      const fromServer = serverContacts.status === 'fulfilled' ? serverContacts.value : [];
       const chats =
         chatsResponse.status === 'fulfilled' && Array.isArray(chatsResponse.value?.results)
           ? chatsResponse.value.results
@@ -607,6 +702,9 @@ export default function ContactsScreen() {
       }
     } finally {
       setLoading(false);
+      if (!silent) {
+        setRefreshing(false);
+      }
     }
   }, [currentUserUuid]);
 
@@ -616,14 +714,14 @@ export default function ContactsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void loadContacts();
+      void loadContacts({ silent: true });
     }, [loadContacts]),
   );
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        void loadContacts();
+        void loadContacts({ silent: true });
       }
     });
 
@@ -633,9 +731,18 @@ export default function ContactsScreen() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    if (!q) return items;
+    const sorted = [...items].sort((a, b) => {
+      const aFav = Boolean(a.is_favorite);
+      const bFav = Boolean(b.is_favorite);
 
-    return items.filter((item) => {
+      if (aFav !== bFav) return aFav ? -1 : 1;
+
+      return fullName(a).localeCompare(fullName(b), 'ru');
+    });
+
+    if (!q) return sorted;
+
+    return sorted.filter((item) => {
       const name = fullName(item).toLowerCase();
       const username = String(item.username || '').toLowerCase();
       const email = String(item.email || '').toLowerCase();
@@ -698,6 +805,7 @@ export default function ContactsScreen() {
   const openContactProfile = async (item: ContactItem) => {
     try {
       setActionUuid(item.user_uuid);
+      setMenuVisible(false);
 
       const chatUuid = await ensureDirectChat(item);
 
@@ -732,16 +840,19 @@ export default function ContactsScreen() {
       const created = await startOutgoing(chatUuid, callType);
 
       setCallChooserContact(null);
+      setMenuVisible(false);
 
       router.push({
         pathname: '/(app)/call/[callUuid]',
-        params: { callUuid: created.uuid },
+        params: {
+          callUuid: created.uuid,
+        },
       });
     } catch (error: any) {
       console.error('startContactCall error:', error);
       Alert.alert(
         'Звонок не запущен',
-        error?.message || 'Не удалось начать звонок',
+        error?.message || 'Не удалось начать звонок. Проверь Android/iOS build и WebSocket.',
       );
     } finally {
       setActionUuid(null);
@@ -752,163 +863,310 @@ export default function ContactsScreen() {
     setCallChooserContact(item);
   };
 
-  const toggleExpanded = (item: ContactItem) => {
-    setExpandedUuid((current) => (current === item.user_uuid ? null : item.user_uuid));
+  const openContactMenu = (item: ContactItem) => {
+    setSelectedContact(item);
+    setMenuVisible(true);
   };
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <SafeAreaView style={[styles.safeRoot, { backgroundColor: ui.bgPrimary }]}> 
         <View style={styles.centered}>
-          <ActivityIndicator color={theme.colors.primary} />
+          <ActivityIndicator color={ui.accent} />
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <View style={styles.header}>
-        <Text style={[styles.screenTitle, { color: theme.colors.text }]}>Контакты</Text>
-
-        <SearchInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Поиск по ФИО, почте, телефону"
-        />
-      </View>
-
-      <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.key}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <GlassCard>
-            <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
-              Контактов пока нет
-            </Text>
-            <Text style={[styles.emptySub, { color: theme.colors.muted }]}>
-              Здесь автоматически появятся пользователи, которые встретились в твоих чатах.
-            </Text>
-          </GlassCard>
-        }
-        renderItem={({ item }) => (
-          <ContactRow
-            item={item}
-            theme={theme}
-            isExpanded={expandedUuid === item.user_uuid}
-            isBusy={actionUuid === item.user_uuid}
-            onToggleExpand={toggleExpanded}
-            onOpenProfile={(contact) => void openContactProfile(contact)}
-            onOpenChat={(contact) => void openContactChat(contact)}
-            onOpenCallChooser={openCallChooser}
-          />
-        )}
-      />
-
-      <Modal
-        visible={Boolean(callChooserContact)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setCallChooserContact(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setCallChooserContact(null)} />
-
-          <View style={styles.bottomSheetWrap}>
-            <GlassCard>
-              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
-                Позвонить
-              </Text>
-
-              <Text style={[styles.sheetSub, { color: theme.colors.muted }]}>
-                {callChooserContact ? fullName(callChooserContact) : ''}
-              </Text>
-
-              <Pressable
-                onPress={() =>
-                  callChooserContact
-                    ? void startContactCall(callChooserContact, 'audio')
-                    : undefined
-                }
-                disabled={!callChooserContact || actionUuid === callChooserContact.user_uuid}
-                style={({ pressed }) => [
-                  styles.callChoice,
-                  {
-                    backgroundColor: '#10B981',
-                    opacity: pressed ? 0.8 : 1,
-                  },
-                ]}
-              >
-                <Ionicons name="call" size={20} color="#FFFFFF" />
-                <Text style={styles.callChoiceText}>
-                  {actionUuid === callChooserContact?.user_uuid ? 'Запускаю...' : 'Аудио звонок'}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() =>
-                  callChooserContact
-                    ? void startContactCall(callChooserContact, 'video')
-                    : undefined
-                }
-                disabled={!callChooserContact || actionUuid === callChooserContact.user_uuid}
-                style={({ pressed }) => [
-                  styles.callChoice,
-                  {
-                    backgroundColor: '#3B82F6',
-                    opacity: pressed ? 0.8 : 1,
-                  },
-                ]}
-              >
-                <Ionicons name="videocam" size={20} color="#FFFFFF" />
-                <Text style={styles.callChoiceText}>
-                  {actionUuid === callChooserContact?.user_uuid ? 'Запускаю...' : 'Видео звонок'}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => setCallChooserContact(null)}
-                style={[styles.cancelChoice, { backgroundColor: theme.colors.card }]}
-              >
-                <Text style={[styles.cancelChoiceText, { color: theme.colors.text }]}>
-                  Отмена
-                </Text>
-              </Pressable>
-            </GlassCard>
-          </View>
+    <SafeAreaView style={[styles.safeRoot, { backgroundColor: ui.pageOuter }]} edges={['top', 'left', 'right']}>
+      <View style={[styles.appFrame, { backgroundColor: ui.bgPrimary }]}> 
+        <View style={[styles.header, { backgroundColor: ui.bgSecondary }]}> 
+          <Text style={[styles.headerTitle, { color: ui.textPrimary }]}>Контакты</Text>
+          <Pressable
+            onPress={() => void loadContacts()}
+            accessibilityLabel="Обновить контакты"
+            style={({ pressed }) => [styles.menuTrigger, pressed && { backgroundColor: ui.bgHover }]}
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color={ui.accent} />
+            ) : (
+              <Ionicons name="refresh" size={20} color={ui.textSecondary} />
+            )}
+          </Pressable>
         </View>
-      </Modal>
+
+        <View style={[styles.searchContainer, { backgroundColor: ui.bgPrimary }]}> 
+          <SearchBar
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Поиск контактов"
+            ui={ui}
+          />
+        </View>
+
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => item.key}
+          initialNumToRender={16}
+          maxToRenderPerBatch={12}
+          updateCellsBatchingPeriod={50}
+          windowSize={8}
+          removeClippedSubviews={Platform.OS !== 'web'}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void loadContacts()}
+              tintColor={ui.accent}
+              colors={[ui.accent]}
+            />
+          }
+          contentContainerStyle={styles.listContent}
+          ListHeaderComponent={
+            filtered.length > 0 ? (
+              <Text style={[styles.sectionTitle, { color: ui.textSecondary }]}> 
+                {search.trim() ? `Найдено: ${filtered.length}` : `Всего контактов: ${filtered.length}`}
+              </Text>
+            ) : null
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyWrap}>
+              <Text style={[styles.emptyTitle, { color: ui.textPrimary }]}> 
+                {search.trim() ? 'Контакты не найдены' : 'Контактов пока нет'}
+              </Text>
+              <Text style={[styles.emptySub, { color: ui.textSecondary }]}> 
+                {search.trim()
+                  ? 'Попробуй искать по имени, @username, почте или телефону.'
+                  : 'Здесь автоматически появятся пользователи, которые встретились в твоих чатах.'}
+              </Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <ContactRow
+              item={item}
+              ui={ui}
+              isBusy={actionUuid === item.user_uuid}
+              onOpenProfile={(contact) => void openContactProfile(contact)}
+              onOpenChat={(contact) => void openContactChat(contact)}
+              onOpenCallChooser={openCallChooser}
+              onOpenMenu={openContactMenu}
+            />
+          )}
+        />
+
+        <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
+          <View style={[styles.bottomModalRoot, { backgroundColor: ui.overlay }]}> 
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuVisible(false)} />
+            <View style={styles.bottomSheetWrap}>
+              <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, shadowColor: ui.shadow }]}> 
+                <Text style={[styles.sheetTitle, { color: ui.textPrimary }]}> 
+                  {selectedContact ? fullName(selectedContact) : 'Контакт'}
+                </Text>
+                <Text style={[styles.sheetSub, { color: ui.textSecondary }]}> 
+                  {selectedContact ? getContactSubtitle(selectedContact) : ''}
+                </Text>
+
+                <Pressable
+                  onPress={() => selectedContact ? void openContactChat(selectedContact) : undefined}
+                  disabled={!selectedContact || actionUuid === selectedContact.user_uuid}
+                  style={({ pressed }) => [
+                    styles.sheetItem,
+                    { borderColor: ui.separator, backgroundColor: pressed ? ui.bgHover : 'transparent' },
+                  ]}
+                >
+                  <Ionicons name="chatbubble-ellipses-outline" size={20} color={ui.accent} />
+                  <Text style={[styles.sheetItemText, { color: ui.textPrimary }]}>Открыть чат</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => selectedContact ? void openContactProfile(selectedContact) : undefined}
+                  disabled={!selectedContact || actionUuid === selectedContact.user_uuid}
+                  style={({ pressed }) => [
+                    styles.sheetItem,
+                    { borderColor: ui.separator, backgroundColor: pressed ? ui.bgHover : 'transparent' },
+                  ]}
+                >
+                  <Ionicons name="person-outline" size={20} color={ui.accent} />
+                  <Text style={[styles.sheetItemText, { color: ui.textPrimary }]}>Профиль</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => selectedContact ? openCallChooser(selectedContact) : undefined}
+                  disabled={!selectedContact || actionUuid === selectedContact.user_uuid}
+                  style={({ pressed }) => [
+                    styles.sheetItem,
+                    { borderColor: ui.separator, backgroundColor: pressed ? ui.bgHover : 'transparent' },
+                  ]}
+                >
+                  <Ionicons name="call-outline" size={20} color={ui.accent} />
+                  <Text style={[styles.sheetItemText, { color: ui.textPrimary }]}>Позвонить</Text>
+                </Pressable>
+
+                {selectedContact ? (
+                  <View style={[styles.detailsBox, { borderColor: ui.separator }]}> 
+                    <Text style={[styles.detailText, { color: ui.textSecondary }]}> 
+                      Источник: {formatSource(selectedContact.source)}
+                    </Text>
+                    <Text style={[styles.detailText, { color: ui.textSecondary }]}> 
+                      Последний контакт: {formatDateTime(selectedContact.last_interaction_at)}
+                    </Text>
+                    <Text style={[styles.detailText, { color: ui.textSecondary }]}> 
+                      Телефон: {getPhone(selectedContact) || 'Не указан'}
+                    </Text>
+                    <Text style={[styles.detailText, { color: ui.textSecondary }]}> 
+                      Почта: {selectedContact.email || 'Не указана'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={Boolean(callChooserContact)}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setCallChooserContact(null)}
+        >
+          <View style={[styles.bottomModalRoot, { backgroundColor: ui.overlay }]}> 
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setCallChooserContact(null)} />
+            <View style={styles.bottomSheetWrap}>
+              <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, shadowColor: ui.shadow }]}> 
+                <Text style={[styles.sheetTitle, { color: ui.textPrimary }]}>Позвонить</Text>
+                <Text style={[styles.sheetSub, { color: ui.textSecondary }]}> 
+                  {callChooserContact ? fullName(callChooserContact) : ''}
+                </Text>
+
+                <Pressable
+                  onPress={() => (callChooserContact ? void startContactCall(callChooserContact, 'audio') : undefined)}
+                  disabled={!callChooserContact || actionUuid === callChooserContact.user_uuid}
+                  style={({ pressed }) => [
+                    styles.callChoice,
+                    { backgroundColor: ui.success, opacity: pressed ? 0.8 : actionUuid ? 0.6 : 1 },
+                  ]}
+                >
+                  <Ionicons name="call" size={20} color="#FFFFFF" />
+                  <Text style={styles.callChoiceText}>
+                    {actionUuid === callChooserContact?.user_uuid ? 'Запускаю...' : 'Аудио звонок'}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => (callChooserContact ? void startContactCall(callChooserContact, 'video') : undefined)}
+                  disabled={!callChooserContact || actionUuid === callChooserContact.user_uuid}
+                  style={({ pressed }) => [
+                    styles.callChoice,
+                    { backgroundColor: ui.accent, opacity: pressed ? 0.8 : actionUuid ? 0.6 : 1 },
+                  ]}
+                >
+                  <Ionicons name="videocam" size={20} color="#FFFFFF" />
+                  <Text style={styles.callChoiceText}>
+                    {actionUuid === callChooserContact?.user_uuid ? 'Запускаю...' : 'Видео звонок'}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setCallChooserContact(null)}
+                  style={({ pressed }) => [styles.cancelChoice, { backgroundColor: pressed ? ui.bgHover : ui.bgPrimary }]}
+                >
+                  <Text style={[styles.cancelChoiceText, { color: ui.textPrimary }]}>Отмена</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  safeRoot: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  appFrame: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 480,
+    overflow: 'hidden',
+  },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   header: {
+    minHeight: 64,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  menuTrigger: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchContainer: {
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 6,
+    paddingVertical: 12,
+  },
+  searchBox: {
+    minHeight: 42,
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
   },
-  screenTitle: {
-    fontSize: 24,
-    fontWeight: '800',
+  searchInput: {
+    flex: 1,
+    minHeight: 42,
+    paddingVertical: 0,
+    fontSize: 15,
+    fontWeight: '400',
   },
   listContent: {
+    paddingBottom: 126,
+  },
+  sectionTitle: {
     paddingHorizontal: 16,
-    paddingBottom: 120,
-    gap: 10,
+    paddingTop: 2,
+    paddingBottom: 8,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  avatar: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    backgroundColor: '#E5E7EB',
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  avatarInnerGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 999,
+    borderWidth: 1,
   },
   swipeContainer: {
     position: 'relative',
     overflow: 'hidden',
-    borderRadius: 24,
   },
   hiddenActionWrap: {
     position: 'absolute',
@@ -920,9 +1178,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   hiddenCallButton: {
-    width: 86,
+    width: 92,
     minHeight: 58,
-    borderRadius: 20,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
@@ -933,123 +1191,104 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   swipeForeground: {
-    borderRadius: 24,
+    overflow: 'hidden',
   },
-  row: {
+  contactItem: {
+    minHeight: 74,
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    position: 'relative',
   },
-  content: {
+  contactContent: {
     flex: 1,
     minWidth: 0,
-  },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
+    height: 54,
+    marginLeft: 14,
     justifyContent: 'center',
   },
-  avatarText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  avatarImage: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#E5E7EB',
-  },
-  titleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 4,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
-    minWidth: 0,
-  },
-  name: {
-    fontSize: 16,
-    fontWeight: '700',
-    flexShrink: 1,
-  },
-  username: {
-    fontSize: 13,
-  },
-  quickInfoRow: {
-    marginTop: 8,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  infoChip: {
-    maxWidth: '100%',
-    height: 26,
-    borderRadius: 13,
-    paddingHorizontal: 9,
+  nameLine: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   },
-  infoChipText: {
-    fontSize: 11,
-    fontWeight: '600',
+  contactName: {
     flexShrink: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
   },
-  details: {
-    marginTop: 12,
+  contactSubtitle: {
+    fontSize: 14,
+    fontWeight: '400',
+  },
+  contactMeta: {
+    height: 54,
+    minWidth: 42,
+    marginLeft: 8,
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  contactTime: {
+    fontSize: 12,
+    fontWeight: '400',
+  },
+  contactMetaBottom: {
+    minHeight: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: 6,
   },
-  detailText: {
-    fontSize: 14,
+  profileMiniButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contactSeparator: {
+    position: 'absolute',
+    left: 84,
+    right: 0,
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
+  },
+  emptyWrap: {
+    paddingHorizontal: 24,
+    paddingTop: 48,
+    alignItems: 'center',
   },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
     marginBottom: 6,
+    textAlign: 'center',
   },
   emptySub: {
     fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
   },
-  actionsGrid: {
-    marginTop: 12,
-    gap: 10,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  secondaryButton: {
-    height: 40,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  secondaryButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  swipeHint: {
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 8,
-  },
-  modalOverlay: {
+  bottomModalRoot: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.34)',
     justifyContent: 'flex-end',
   },
   bottomSheetWrap: {
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
     paddingHorizontal: 12,
     paddingBottom: 16,
+  },
+  sheet: {
+    borderRadius: 20,
+    padding: 16,
+    shadowOpacity: 0.24,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 18,
   },
   sheetTitle: {
     fontSize: 19,
@@ -1059,6 +1298,32 @@ const styles = StyleSheet.create({
   sheetSub: {
     fontSize: 14,
     marginBottom: 14,
+  },
+  sheetItem: {
+    minHeight: 50,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  sheetItemText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  detailsBox: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 6,
+    marginTop: 2,
+  },
+  detailText: {
+    fontSize: 12,
+    lineHeight: 17,
   },
   callChoice: {
     minHeight: 54,
