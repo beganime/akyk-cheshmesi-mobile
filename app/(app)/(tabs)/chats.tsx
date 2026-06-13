@@ -23,6 +23,7 @@ import { Image as ExpoImage } from 'expo-image';
 
 import { StoriesStrip } from '@/src/components/stories/StoriesStrip';
 import { useTheme } from '@/src/theme/ThemeProvider';
+import type { AppTheme } from '@/src/theme/themes';
 import { fetchChats, createDirectChat, createGroupChat } from '@/src/lib/api/chats';
 import { searchUsers, type UserShort } from '@/src/lib/api/contacts';
 import { realtimeClient } from '@/src/lib/realtime/socket';
@@ -82,38 +83,25 @@ type ChatRowProps = {
 const SWIPE_ACTION_WIDTH = 104;
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
-const CHAT_UI: Record<'dark' | 'light', ChatUi> = {
-  dark: {
-    bgPrimary: '#0e1621',
-    bgSecondary: '#17212b',
-    bgHover: '#202b36',
-    accent: '#5288c1',
-    textPrimary: '#ffffff',
-    textSecondary: '#7f91a4',
-    separator: 'rgba(255, 255, 255, 0.06)',
-    badgeBg: '#5288c1',
-    shadow: '#000000',
-    overlay: 'rgba(0, 0, 0, 0.34)',
-    danger: '#EF4444',
-    success: '#10B981',
-    pageOuter: '#000000',
-  },
-  light: {
-    bgPrimary: '#ffffff',
-    bgSecondary: '#f4f4f5',
-    bgHover: '#ebebeb',
-    accent: '#3390ec',
-    textPrimary: '#000000',
-    textSecondary: '#707579',
-    separator: '#e4e4e5',
-    badgeBg: '#3390ec',
-    shadow: '#000000',
-    overlay: 'rgba(0, 0, 0, 0.16)',
-    danger: '#EF4444',
-    success: '#10B981',
-    pageOuter: '#f0f2f5',
-  },
-};
+function buildChatUi(theme: AppTheme): ChatUi {
+  const colors = theme.colors;
+
+  return {
+    bgPrimary: colors.background,
+    bgSecondary: colors.cardStrong,
+    bgHover: colors.primarySoft,
+    accent: colors.primary,
+    textPrimary: colors.text,
+    textSecondary: colors.muted,
+    separator: colors.border,
+    badgeBg: colors.primary,
+    shadow: colors.shadow,
+    overlay: theme.isDark ? 'rgba(0, 0, 0, 0.34)' : 'rgba(15, 23, 42, 0.16)',
+    danger: colors.danger,
+    success: colors.success,
+    pageOuter: colors.background,
+  };
+}
 
 const AVATAR_COLORS = ['#5288c1', '#e6683c', '#dc2743', '#cc2366', '#7f91a4', '#10B981'];
 
@@ -521,7 +509,7 @@ function ChatRow({
 }
 
 export default function ChatsScreen() {
-  const { resolvedThemeName, setThemeMode } = useTheme();
+  const { theme, setThemeMode } = useTheme();
   const startOutgoing = useCallStore((state) => state.startOutgoing);
 
   const [data, setData] = useState<ChatListItem[]>([]);
@@ -547,8 +535,7 @@ export default function ChatsScreen() {
   const [groupSearching, setGroupSearching] = useState(false);
   const [groupCreating, setGroupCreating] = useState(false);
 
-  const isLightTheme = resolvedThemeName.toLowerCase().includes('light');
-  const ui = isLightTheme ? CHAT_UI.light : CHAT_UI.dark;
+  const ui = useMemo(() => buildChatUi(theme), [theme]);
 
   const hydrateLocalPreferences = useCallback(async () => {
     const [loadedPrefs, loadedContacts] = await Promise.all([
@@ -749,7 +736,7 @@ export default function ChatsScreen() {
   };
 
   const switchDayNight = async () => {
-    const nextMode = isLightTheme ? 'dark' : 'light';
+    const nextMode = theme.isDark ? 'light' : 'dark';
     await setThemeMode(nextMode);
     setMainMenuVisible(false);
   };

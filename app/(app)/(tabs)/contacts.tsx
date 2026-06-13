@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 
 import { useTheme } from '@/src/theme/ThemeProvider';
+import type { AppTheme } from '@/src/theme/themes';
 import { fetchChats, createDirectChat } from '@/src/lib/api/chats';
 import {
   fetchContactDetail,
@@ -103,38 +104,25 @@ type ContactRowProps = {
 const SWIPE_ACTION_WIDTH = 104;
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
-const CONTACT_UI: Record<'dark' | 'light', ContactUi> = {
-  dark: {
-    bgPrimary: '#0e1621',
-    bgSecondary: '#17212b',
-    bgHover: '#202b36',
-    accent: '#5288c1',
-    textPrimary: '#ffffff',
-    textSecondary: '#7f91a4',
-    separator: 'rgba(255, 255, 255, 0.06)',
-    badgeBg: '#5288c1',
-    shadow: '#000000',
-    overlay: 'rgba(0, 0, 0, 0.34)',
-    danger: '#EF4444',
-    success: '#10B981',
-    pageOuter: '#000000',
-  },
-  light: {
-    bgPrimary: '#ffffff',
-    bgSecondary: '#f4f4f5',
-    bgHover: '#ebebeb',
-    accent: '#3390ec',
-    textPrimary: '#000000',
-    textSecondary: '#707579',
-    separator: '#e4e4e5',
-    badgeBg: '#3390ec',
-    shadow: '#000000',
-    overlay: 'rgba(0, 0, 0, 0.16)',
-    danger: '#EF4444',
-    success: '#10B981',
-    pageOuter: '#f0f2f5',
-  },
-};
+function buildContactUi(theme: AppTheme): ContactUi {
+  const colors = theme.colors;
+
+  return {
+    bgPrimary: colors.background,
+    bgSecondary: colors.cardStrong,
+    bgHover: colors.primarySoft,
+    accent: colors.primary,
+    textPrimary: colors.text,
+    textSecondary: colors.muted,
+    separator: colors.border,
+    badgeBg: colors.primary,
+    shadow: colors.shadow,
+    overlay: theme.isDark ? 'rgba(0, 0, 0, 0.34)' : 'rgba(15, 23, 42, 0.16)',
+    danger: colors.danger,
+    success: colors.success,
+    pageOuter: colors.background,
+  };
+}
 
 const AVATAR_COLORS = ['#5288c1', '#e6683c', '#dc2743', '#cc2366', '#7f91a4', '#10B981'];
 
@@ -661,7 +649,7 @@ function ContactRow({
 }
 
 export default function ContactsScreen() {
-  const { resolvedThemeName } = useTheme();
+  const { theme } = useTheme();
   const currentUserUuid = useAuthStore((s) => s.user?.uuid);
   const startOutgoing = useCallStore((s) => s.startOutgoing);
 
@@ -674,8 +662,7 @@ export default function ContactsScreen() {
   const [selectedContact, setSelectedContact] = useState<ContactItem | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
 
-  const isLightTheme = resolvedThemeName.toLowerCase().includes('light');
-  const ui = isLightTheme ? CONTACT_UI.light : CONTACT_UI.dark;
+  const ui = useMemo(() => buildContactUi(theme), [theme]);
 
   const loadContacts = useCallback(async (options?: { silent?: boolean }) => {
     const silent = Boolean(options?.silent);
