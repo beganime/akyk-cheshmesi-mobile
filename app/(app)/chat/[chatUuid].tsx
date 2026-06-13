@@ -372,6 +372,7 @@ export default function ChatScreen() {
   const [captureVisible, setCaptureVisible] = useState(false);
   const [captureMode, setCaptureMode] = useState<CaptureMode>('audio');
   const [audioRecording, setAudioRecording] = useState<Audio.Recording | null>(null);
+  const [voiceLocked, setVoiceLocked] = useState(false);
   const [audioDurationMs, setAudioDurationMs] = useState(0);
   const [videoRecording, setVideoRecording] = useState(false);
   const [videoDurationMs, setVideoDurationMs] = useState(0);
@@ -1395,6 +1396,7 @@ export default function ChatScreen() {
       }
 
       setAudioDurationMs(0);
+      setVoiceLocked(false);
       setVideoDurationMs(0);
     } finally {
       setCaptureVisible(false);
@@ -1504,6 +1506,7 @@ export default function ChatScreen() {
 
       audioRecordingRef.current = null;
       setAudioRecording(null);
+      setVoiceLocked(false);
 
       if (durationMillis < 650) {
         setAudioDurationMs(0);
@@ -2085,11 +2088,13 @@ export default function ChatScreen() {
 
     audioPressStartedAtRef.current = Date.now();
     setCaptureMode('audio');
+    setVoiceLocked(false);
+    setCaptureVisible(true);
     beginAudioRecording();
   };
 
   const handleAudioPressOut = () => {
-    if (canSend) {
+    if (canSend || voiceLocked) {
       return;
     }
 
@@ -2381,6 +2386,7 @@ export default function ChatScreen() {
                 source={{ uri: stickerImage }}
                 style={styles.stickerImage}
                 contentFit="contain"
+                cachePolicy="memory-disk"
               />
               {!!stickerEmoji && (
                 <Text
@@ -2437,6 +2443,7 @@ export default function ChatScreen() {
             source={{ uri: appearance.backgroundImageUri }}
             style={StyleSheet.absoluteFill}
             contentFit={appearance.backgroundSizeMode === 'contain' ? 'contain' : 'cover'}
+            cachePolicy="memory-disk"
           />
         ) : null}
 
@@ -2485,6 +2492,7 @@ export default function ChatScreen() {
                 source={{ uri: getHeaderAvatarUrl(chat)! }}
                 style={styles.headerAvatarImage}
                 contentFit="cover"
+                cachePolicy="memory-disk"
               />
             ) : (
               <View
@@ -2798,12 +2806,6 @@ export default function ChatScreen() {
             </Pressable>
           </View>
 
-          {!canSend ? (
-            <Text style={[styles.captureHint, { color: theme.colors.muted }]}>
-              Удерживай микрофон — голосовое отправится после отпускания. Кнопка рядом — видео-кружок. Фото и видео из галереи отправляются одной кнопкой.
-            </Text>
-          ) : null}
-
           {composerPanelVisible ? (
             <View
               style={[
@@ -2987,6 +2989,7 @@ export default function ChatScreen() {
                             source={{ uri: sticker.image }}
                             style={styles.stickerTileImage}
                             contentFit="contain"
+                            cachePolicy="memory-disk"
                           />
                           {!!sticker.emoji && (
                             <Text style={styles.stickerTileEmoji}>{sticker.emoji}</Text>
@@ -3050,8 +3053,10 @@ export default function ChatScreen() {
 
               <Text style={[styles.audioHint, { color: theme.colors.muted }]}>
                 {audioRecording
-                  ? 'Нажми “Отправить”, чтобы закончить и отправить запись'
-                  : 'Нажми “Записать”, чтобы начать запись'}
+                  ? voiceLocked
+                    ? 'Запись закреплена. Нажми “Отправить” или “Отмена”.'
+                    : 'Отпустите кнопку для отправки. Нажмите Lock, чтобы закрепить запись.'
+                  : 'Зажмите микрофон, чтобы начать запись.'}
               </Text>
 
               <View style={styles.audioActions}>
@@ -3069,6 +3074,23 @@ export default function ChatScreen() {
                     Отмена
                   </Text>
                 </Pressable>
+
+                {audioRecording && !voiceLocked ? (
+                  <Pressable
+                    onPress={() => setVoiceLocked(true)}
+                    style={[
+                      styles.secondaryBtn,
+                      {
+                        borderColor: theme.colors.borderStrong,
+                        backgroundColor: theme.colors.primarySoft,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.secondaryBtnText, { color: theme.colors.primary }]}>
+                      Lock
+                    </Text>
+                  </Pressable>
+                ) : null}
 
                 {!audioRecording ? (
                   <Pressable

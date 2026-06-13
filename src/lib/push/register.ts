@@ -62,7 +62,7 @@ function buildFallbackDeviceId() {
   return `device-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-async function getOrCreateLocalDeviceId() {
+export async function getOrCreateLocalDeviceId() {
   try {
     const existing = await AsyncStorage.getItem(LOCAL_DEVICE_ID_STORAGE_KEY);
     if (existing && existing.trim()) {

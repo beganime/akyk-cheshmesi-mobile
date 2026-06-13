@@ -9,15 +9,25 @@ import {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from 'react-native';
-import { AppTheme, ThemeName, themes } from './themes';
+import {
+  AppTheme,
+  ThemeName,
+  getThemeFamily,
+  isDarkThemeName,
+  isThemeName,
+  themeNameForFamily,
+  themes,
+} from './themes';
 
 const LEGACY_THEME_STORAGE_KEY = 'app_theme';
 const THEME_MODE_STORAGE_KEY = 'app_theme_mode_v1';
+const THEME_NAME_STORAGE_KEY = 'app_theme_name_v2';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
 type ThemeContextType = {
   themeName: ThemeName;
+  selectedThemeName: ThemeName;
   resolvedThemeName: ThemeName;
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
@@ -31,72 +41,100 @@ function isThemeMode(value: string | null): value is ThemeMode {
   return value === 'system' || value === 'light' || value === 'dark';
 }
 
-function modeToThemeName(mode: Exclude<ThemeMode, 'system'>): ThemeName {
-  return mode === 'dark' ? 'darkGradient' : 'lightGradient';
-}
-
-function themeNameToMode(name: ThemeName): Exclude<ThemeMode, 'system'> {
-  return name === 'darkGradient' || name === 'darkOrange' ? 'dark' : 'light';
+function normalizeLegacyThemeName(value: string | null): ThemeName | null {
+  if (isThemeName(value)) return value;
+  if (value === 'lightGradient') return 'lightGreen';
+  if (value === 'darkGradient') return 'darkGreen';
+  if (value === 'lightOrange') return 'lightOrange';
+  if (value === 'darkOrange') return 'darkOrange';
+  return null;
 }
 
 export function ThemeProvider({ children }: PropsWithChildren) {
   const systemColorScheme = useColorScheme();
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const [selectedThemeName, setSelectedThemeName] = useState<ThemeName>('lightGreen');
 
   useEffect(() => {
-    AsyncStorage.multiGet([THEME_MODE_STORAGE_KEY, LEGACY_THEME_STORAGE_KEY]).then((entries) => {
+    AsyncStorage.multiGet([
+      THEME_MODE_STORAGE_KEY,
+      THEME_NAME_STORAGE_KEY,
+      LEGACY_THEME_STORAGE_KEY,
+    ]).then((entries) => {
       const mode = entries.find(([key]) => key === THEME_MODE_STORAGE_KEY)?.[1] ?? null;
+      const savedThemeName =
+        entries.find(([key]) => key === THEME_NAME_STORAGE_KEY)?.[1] ?? null;
       const legacyThemeName =
         entries.find(([key]) => key === LEGACY_THEME_STORAGE_KEY)?.[1] ?? null;
+      const normalizedTheme = normalizeLegacyThemeName(savedThemeName || legacyThemeName);
+
+      if (normalizedTheme) {
+        setSelectedThemeName(normalizedTheme);
+      }
 
       if (isThemeMode(mode)) {
         setThemeModeState(mode);
         return;
       }
 
-      if (legacyThemeName && legacyThemeName in themes) {
-        setThemeModeState(themeNameToMode(legacyThemeName as ThemeName));
+      if (normalizedTheme) {
+        setThemeModeState(isDarkThemeName(normalizedTheme) ? 'dark' : 'light');
       }
     });
   }, []);
 
   const setThemeMode = useCallback(async (mode: ThemeMode) => {
     setThemeModeState(mode);
+
+    if (mode === 'light' || mode === 'dark') {
+      setSelectedThemeName((current) => {
+        const next = themeNameForFamily(getThemeFamily(current), mode === 'dark');
+        void AsyncStorage.setItem(THEME_NAME_STORAGE_KEY, next);
+        return next;
+      });
+    }
+
     await AsyncStorage.setItem(THEME_MODE_STORAGE_KEY, mode);
   }, []);
 
-  const setThemeName = useCallback(
-    async (name: ThemeName) => {
-      const nextMode = themeNameToMode(name);
-      setThemeModeState(nextMode);
-      await AsyncStorage.multiSet([
-        [THEME_MODE_STORAGE_KEY, nextMode],
-        [LEGACY_THEME_STORAGE_KEY, name],
-      ]);
-    },
-    [],
-  );
+  const setThemeName = useCallback(async (name: ThemeName) => {
+    setSelectedThemeName(name);
+    setThemeModeState(isDarkThemeName(name) ? 'dark' : 'light');
+
+    await AsyncStorage.multiSet([
+      [THEME_NAME_STORAGE_KEY, name],
+      [LEGACY_THEME_STORAGE_KEY, name],
+      [THEME_MODE_STORAGE_KEY, isDarkThemeName(name) ? 'dark' : 'light'],
+    ]);
+  }, []);
 
   const resolvedThemeName = useMemo<ThemeName>(() => {
     if (themeMode === 'system') {
-      return systemColorScheme === 'dark' ? 'darkGradient' : 'lightGradient';
+      return systemColorScheme === 'dark' ? 'darkGreen' : 'lightGreen';
     }
 
-    return modeToThemeName(themeMode);
-  }, [systemColorScheme, themeMode]);
+    if (themeMode === 'light' && isDarkThemeName(selectedThemeName)) {
+      return themeNameForFamily(getThemeFamily(selectedThemeName), false);
+    }
 
-  const themeName = resolvedThemeName;
+    if (themeMode === 'dark' && !isDarkThemeName(selectedThemeName)) {
+      return themeNameForFamily(getThemeFamily(selectedThemeName), true);
+    }
+
+    return selectedThemeName;
+  }, [selectedThemeName, systemColorScheme, themeMode]);
 
   const value = useMemo(
     () => ({
-      themeName,
+      themeName: resolvedThemeName,
+      selectedThemeName,
       resolvedThemeName,
       themeMode,
       setThemeMode,
       setThemeName,
       theme: themes[resolvedThemeName],
     }),
-    [resolvedThemeName, setThemeMode, setThemeName, themeMode, themeName],
+    [resolvedThemeName, selectedThemeName, setThemeMode, setThemeName, themeMode],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

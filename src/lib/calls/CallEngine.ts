@@ -27,7 +27,9 @@ import {
   profileFromNetInfoState,
   type CallVideoProfile,
 } from '@/src/lib/calls/networkQuality';
+import { getOrCreateLocalDeviceId } from '@/src/lib/push/register';
 import type {
+  CallRestSignalPayload,
   CallSession,
   CallSignalPayload,
   CallSocketEvent,
@@ -78,6 +80,49 @@ function createInitialState(): CallEngineState {
     videoEnabled: true,
     error: null,
     socketConnected: false,
+  };
+}
+
+function getDevicePlatform() {
+  if (Platform.OS === 'ios' || Platform.OS === 'android' || Platform.OS === 'web') {
+    return Platform.OS;
+  }
+
+  return 'android';
+}
+
+async function buildCallActionPayload() {
+  return {
+    device_id: await getOrCreateLocalDeviceId(),
+    device_platform: getDevicePlatform(),
+    device_name: 'Akyl Cheshmesi Mobile',
+  };
+}
+
+function normalizeRestSignalType(
+  type: CallSignalPayload['type'],
+): CallRestSignalPayload['signal_type'] {
+  if (type === 'call:ice-candidate' || type === 'call_ice') {
+    return 'ice-candidate';
+  }
+
+  if (type === 'call:offer' || type === 'call_offer') {
+    return 'offer';
+  }
+
+  return 'answer';
+}
+
+function toRestSignalPayload(payload: CallSignalPayload) {
+  const { type, payload: nestedPayload, ...rest } = payload;
+
+  return {
+    signal_type: normalizeRestSignalType(type),
+    payload: {
+      type,
+      ...rest,
+      ...(nestedPayload || {}),
+    },
   };
 }
 
@@ -452,7 +497,7 @@ class CallEngine {
       return;
     }
 
-    void sendCallSignal(callUuid, payload).catch((error) => {
+    void sendCallSignal(callUuid, toRestSignalPayload(payload)).catch((error) => {
       console.warn('CallEngine REST signal fallback failed:', error);
     });
   }
@@ -629,10 +674,7 @@ class CallEngine {
 
     const created = await createChatCall(chatUuid, {
       call_type: callType,
-      metadata: {
-        device_platform: 'mobile',
-        device_name: 'Akyl Cheshmesi Mobile',
-      },
+      metadata: await buildCallActionPayload(),
     });
 
     this.setState({
@@ -671,10 +713,7 @@ class CallEngine {
       callType: call.call_type,
     });
 
-    const accepted = await acceptCall(call.uuid, {
-      device_platform: 'mobile',
-      device_name: 'Akyl Cheshmesi Mobile',
-    });
+    const accepted = await acceptCall(call.uuid, await buildCallActionPayload());
 
     this.setState({
       call: accepted,
@@ -690,16 +729,17 @@ class CallEngine {
   }
 
   async rejectIncoming(callUuid: string) {
+    const payload = await buildCallActionPayload();
     try {
-      await declineCall(callUuid);
+      await declineCall(callUuid, payload);
     } catch {
-      await rejectCall(callUuid);
+      await rejectCall(callUuid, payload);
     }
     await this.cleanup(false);
   }
 
   async cancelOutgoing(callUuid: string) {
-    await cancelCall(callUuid);
+    await cancelCall(callUuid, await buildCallActionPayload());
     await this.cleanup(true);
   }
 
@@ -717,7 +757,7 @@ class CallEngine {
 
     if (currentCall?.uuid) {
       try {
-        await endCall(currentCall.uuid);
+        await endCall(currentCall.uuid, await buildCallActionPayload());
       } catch (error) {
         console.error('endCurrent api error:', error);
       }

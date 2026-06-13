@@ -202,6 +202,7 @@ export function StoriesStrip({ compact = false }: Props) {
                   source={{ uri: item.avatar || item.image || '' }}
                   style={[styles.avatar, { borderColor: ui.bgPrimary }]}
                   contentFit="cover"
+                  cachePolicy="memory-disk"
                 />
               ) : (
                 <View

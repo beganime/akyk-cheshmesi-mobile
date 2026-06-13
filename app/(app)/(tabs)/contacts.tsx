@@ -33,6 +33,9 @@ import { useAuthStore } from '@/src/state/auth';
 import { useCallStore } from '@/src/state/call';
 import type { CallType } from '@/src/types/calls';
 import type { ChatListItem, ChatMember } from '@/src/types/chat';
+import { blockUserLocal } from '@/src/lib/local/blockedUsers';
+import { getLocalContacts, removeLocalContact } from '@/src/lib/local/localContacts';
+import { patchChatListPreference } from '@/src/lib/local/chatListPreferences';
 
 type ContactUser = {
   uuid: string;
@@ -481,7 +484,14 @@ function RoundAvatar({
   };
 
   if (uri) {
-    return <ExpoImage source={{ uri }} style={[styles.avatarImage, frameStyle]} contentFit="cover" />;
+    return (
+      <ExpoImage
+        source={{ uri }}
+        style={[styles.avatarImage, frameStyle]}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+      />
+    );
   }
 
   return (
@@ -675,18 +685,24 @@ export default function ContactsScreen() {
         setRefreshing(true);
       }
 
-      const [serverContacts, chatsResponse] = await Promise.allSettled([
+      const [serverContacts, chatsResponse, localContactUuids] = await Promise.allSettled([
         loadServerContactsWithDetails(),
         fetchChats(1, 100),
+        getLocalContacts(),
       ]);
 
       const fromServer = serverContacts.status === 'fulfilled' ? serverContacts.value : [];
+      const localSet = new Set(
+        localContactUuids.status === 'fulfilled' ? localContactUuids.value : [],
+      );
       const chats =
         chatsResponse.status === 'fulfilled' && Array.isArray(chatsResponse.value?.results)
           ? chatsResponse.value.results
           : [];
 
-      const fromChats = buildContactsFromChats(chats, currentUserUuid);
+      const fromChats = buildContactsFromChats(chats, currentUserUuid).filter((item) =>
+        localSet.has(item.user_uuid),
+      );
       const merged = mergeContactItems(fromServer, fromChats);
 
       setItems(merged);
@@ -696,7 +712,12 @@ export default function ContactsScreen() {
       try {
         const response = await fetchChats(1, 100);
         const chats = Array.isArray(response?.results) ? response.results : [];
-        setItems(buildContactsFromChats(chats, currentUserUuid));
+        const localSet = new Set(await getLocalContacts());
+        setItems(
+          buildContactsFromChats(chats, currentUserUuid).filter((item) =>
+            localSet.has(item.user_uuid),
+          ),
+        );
       } catch (fallbackError) {
         console.error('loadContacts fallback error:', fallbackError);
       }
@@ -868,6 +889,62 @@ export default function ContactsScreen() {
     setMenuVisible(true);
   };
 
+  const removeSelectedContact = async () => {
+    if (!selectedContact) return;
+
+    try {
+      setActionUuid(selectedContact.user_uuid);
+      await removeLocalContact(selectedContact.user_uuid);
+      setItems((current) =>
+        current.filter((item) => item.user_uuid !== selectedContact.user_uuid),
+      );
+      setMenuVisible(false);
+    } catch {
+      Alert.alert('Контакт', 'Не удалось убрать контакт.');
+    } finally {
+      setActionUuid(null);
+    }
+  };
+
+  const muteSelectedContact = async () => {
+    if (!selectedContact) return;
+
+    try {
+      setActionUuid(selectedContact.user_uuid);
+      const chatUuid = selectedContact.chat_uuid || (await ensureDirectChat(selectedContact));
+      await patchChatListPreference(chatUuid, { isMuted: true });
+      setMenuVisible(false);
+    } catch {
+      Alert.alert('Контакт', 'Не удалось включить беззвучный режим.');
+    } finally {
+      setActionUuid(null);
+    }
+  };
+
+  const hideAndBlockSelectedContact = async () => {
+    if (!selectedContact) return;
+
+    try {
+      setActionUuid(selectedContact.user_uuid);
+      await blockUserLocal(selectedContact.user_uuid);
+      await removeLocalContact(selectedContact.user_uuid);
+      const chatUuid = selectedContact.chat_uuid || selectedContact.source_chat_uuid;
+
+      if (chatUuid) {
+        await patchChatListPreference(chatUuid, { isHidden: true, isMuted: true });
+      }
+
+      setItems((current) =>
+        current.filter((item) => item.user_uuid !== selectedContact.user_uuid),
+      );
+      setMenuVisible(false);
+    } catch {
+      Alert.alert('Контакт', 'Не удалось скрыть контакт.');
+    } finally {
+      setActionUuid(null);
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.safeRoot, { backgroundColor: ui.bgPrimary }]}> 
@@ -1001,6 +1078,45 @@ export default function ContactsScreen() {
                 >
                   <Ionicons name="call-outline" size={20} color={ui.accent} />
                   <Text style={[styles.sheetItemText, { color: ui.textPrimary }]}>Позвонить</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => void muteSelectedContact()}
+                  disabled={!selectedContact || actionUuid === selectedContact.user_uuid}
+                  style={({ pressed }) => [
+                    styles.sheetItem,
+                    { borderColor: ui.separator, backgroundColor: pressed ? ui.bgHover : 'transparent' },
+                  ]}
+                >
+                  <Ionicons name="volume-mute-outline" size={20} color={ui.accent} />
+                  <Text style={[styles.sheetItemText, { color: ui.textPrimary }]}>Беззвучно</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => void removeSelectedContact()}
+                  disabled={!selectedContact || actionUuid === selectedContact.user_uuid}
+                  style={({ pressed }) => [
+                    styles.sheetItem,
+                    { borderColor: ui.separator, backgroundColor: pressed ? ui.bgHover : 'transparent' },
+                  ]}
+                >
+                  <Ionicons name="person-remove-outline" size={20} color={ui.accent} />
+                  <Text style={[styles.sheetItemText, { color: ui.textPrimary }]}>Убрать из контактов</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => void hideAndBlockSelectedContact()}
+                  disabled={!selectedContact || actionUuid === selectedContact.user_uuid}
+                  style={({ pressed }) => [
+                    styles.sheetItem,
+                    {
+                      borderColor: 'rgba(239,68,68,0.32)',
+                      backgroundColor: pressed ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.06)',
+                    },
+                  ]}
+                >
+                  <Ionicons name="ban-outline" size={20} color={ui.danger} />
+                  <Text style={[styles.sheetItemText, { color: ui.danger }]}>Скрыть и заблокировать</Text>
                 </Pressable>
 
                 {selectedContact ? (

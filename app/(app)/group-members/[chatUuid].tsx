@@ -226,6 +226,7 @@ export default function GroupMembersScreen() {
                       source={{ uri: member.user.avatar }}
                       style={styles.avatarImage}
                       contentFit="cover"
+                      cachePolicy="memory-disk"
                     />
                   ) : (
                     <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>

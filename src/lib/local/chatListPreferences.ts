@@ -4,6 +4,7 @@ export type LocalChatPreference = {
   isPinned?: boolean;
   isArchived?: boolean;
   isHidden?: boolean;
+  isMuted?: boolean;
   updatedAt?: string;
 };
 

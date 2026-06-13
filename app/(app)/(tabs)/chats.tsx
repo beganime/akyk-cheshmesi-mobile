@@ -37,6 +37,8 @@ import {
   patchChatListPreference,
   type LocalChatPreferencesMap,
 } from '@/src/lib/local/chatListPreferences';
+import { addLocalContact, getLocalContacts, removeLocalContact } from '@/src/lib/local/localContacts';
+import { loadCachedChats, saveCachedChats } from '@/src/lib/db/cache';
 
 type ChatTab = 'all' | 'pinned' | 'archive';
 
@@ -44,9 +46,12 @@ type DecoratedChat = ChatListItem & {
   effectivePinned: boolean;
   effectiveArchived: boolean;
   effectiveHidden: boolean;
+  effectiveMuted: boolean;
   localPinned: boolean;
   localArchived: boolean;
   localHidden: boolean;
+  localMuted: boolean;
+  localContact: boolean;
 };
 
 type ChatUi = {
@@ -171,6 +176,7 @@ function buildPreview(item: ChatListItem) {
 function getDecoratedChats(
   data: ChatListItem[],
   localPreferences: LocalChatPreferencesMap,
+  localContactUuids: Set<string>,
 ): DecoratedChat[] {
   return data.map((item) => {
     const local = getLocalChatPreference(localPreferences, item.uuid);
@@ -182,9 +188,12 @@ function getDecoratedChats(
       localPinned: Boolean(local.isPinned),
       localArchived: Boolean(local.isArchived),
       localHidden: Boolean(local.isHidden),
+      localMuted: Boolean(local.isMuted),
+      localContact: Boolean(item.peer_user?.uuid && localContactUuids.has(item.peer_user.uuid)),
       effectivePinned: serverPinned || Boolean(local.isPinned),
       effectiveArchived: serverArchived || Boolean(local.isArchived),
       effectiveHidden: Boolean(local.isHidden),
+      effectiveMuted: normalizeBoolean(item.is_muted) || Boolean(local.isMuted),
     };
   });
 }
@@ -311,7 +320,14 @@ function RoundAvatar({
   };
 
   if (uri) {
-    return <ExpoImage source={{ uri }} style={[styles.avatarImage, frameStyle]} contentFit="cover" />;
+    return (
+      <ExpoImage
+        source={{ uri }}
+        style={[styles.avatarImage, frameStyle]}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+      />
+    );
   }
 
   return (
@@ -485,6 +501,9 @@ function ChatRow({
               ) : item.effectivePinned ? (
                 <Ionicons name="pin" size={14} color={ui.textSecondary} style={styles.pinIcon} />
               ) : null}
+              {item.effectiveMuted ? (
+                <Ionicons name="volume-mute" size={14} color={ui.textSecondary} />
+              ) : null}
 
               {unread > 0 ? (
                 <View style={[styles.unreadBadge, { backgroundColor: ui.badgeBg }]}> 
@@ -508,6 +527,7 @@ export default function ChatsScreen() {
   const [data, setData] = useState<ChatListItem[]>([]);
   const [people, setPeople] = useState<UserShort[]>([]);
   const [localPreferences, setLocalPreferences] = useState<LocalChatPreferencesMap>({});
+  const [localContactUuids, setLocalContactUuids] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -531,8 +551,20 @@ export default function ChatsScreen() {
   const ui = isLightTheme ? CHAT_UI.light : CHAT_UI.dark;
 
   const hydrateLocalPreferences = useCallback(async () => {
-    const loaded = await loadChatListPreferences();
-    setLocalPreferences(loaded);
+    const [loadedPrefs, loadedContacts] = await Promise.all([
+      loadChatListPreferences(),
+      getLocalContacts(),
+    ]);
+    setLocalPreferences(loadedPrefs);
+    setLocalContactUuids(new Set(loadedContacts));
+  }, []);
+
+  const hydrateCachedChats = useCallback(async () => {
+    const cached = await loadCachedChats();
+    if (cached.length > 0) {
+      setData(cached);
+      setLoading(false);
+    }
   }, []);
 
   const loadChats = useCallback(async (options?: { silent?: boolean }) => {
@@ -544,7 +576,9 @@ export default function ChatsScreen() {
       }
 
       const response = await fetchChats(1, 100);
-      setData(Array.isArray(response?.results) ? response.results : []);
+      const results = Array.isArray(response?.results) ? response.results : [];
+      setData(results);
+      void saveCachedChats(results);
     } catch (error) {
       console.error('loadChats error:', error);
     } finally {
@@ -557,8 +591,9 @@ export default function ChatsScreen() {
 
   useEffect(() => {
     void hydrateLocalPreferences();
+    void hydrateCachedChats();
     void loadChats();
-  }, [hydrateLocalPreferences, loadChats]);
+  }, [hydrateCachedChats, hydrateLocalPreferences, loadChats]);
 
   useFocusEffect(
     useCallback(() => {
@@ -642,8 +677,8 @@ export default function ChatsScreen() {
   }, [groupSearch]);
 
   const decoratedChats = useMemo(() => {
-    return getDecoratedChats(data, localPreferences);
-  }, [data, localPreferences]);
+    return getDecoratedChats(data, localPreferences, localContactUuids);
+  }, [data, localPreferences, localContactUuids]);
 
   const visibleDecoratedChats = useMemo(() => {
     return decoratedChats.filter((item) => !item.effectiveHidden);
@@ -860,6 +895,50 @@ export default function ChatsScreen() {
     setMenuVisible(false);
   };
 
+  const toggleLocalMuted = async () => {
+    if (!selectedChat?.uuid) {
+      return;
+    }
+
+    const next = await patchChatListPreference(selectedChat.uuid, {
+      isMuted: !selectedChat.localMuted,
+    });
+
+    setLocalPreferences(next);
+    setSelectedChat((current) =>
+      current
+        ? {
+            ...current,
+            localMuted: !current.localMuted,
+            effectiveMuted: normalizeBoolean(current.is_muted) || !current.localMuted,
+          }
+        : null,
+    );
+    setMenuVisible(false);
+  };
+
+  const toggleSelectedChatContact = async () => {
+    const peerUuid = selectedChat?.peer_user?.uuid;
+
+    if (!peerUuid) {
+      return;
+    }
+
+    if (selectedChat?.localContact) {
+      await removeLocalContact(peerUuid);
+      setLocalContactUuids((current) => {
+        const next = new Set(current);
+        next.delete(peerUuid);
+        return next;
+      });
+    } else {
+      await addLocalContact(peerUuid);
+      setLocalContactUuids((current) => new Set(current).add(peerUuid));
+    }
+
+    setMenuVisible(false);
+  };
+
   const hideSelectedChat = () => {
     if (!selectedChat?.uuid) {
       return;
@@ -881,7 +960,16 @@ export default function ChatsScreen() {
               const next = await patchChatListPreference(chatUuid, {
                 isHidden: true,
                 isArchived: true,
+                isMuted: true,
               });
+              if (selectedChat?.peer_user?.uuid) {
+                await removeLocalContact(selectedChat.peer_user.uuid);
+                setLocalContactUuids((current) => {
+                  const localNext = new Set(current);
+                  localNext.delete(selectedChat.peer_user!.uuid);
+                  return localNext;
+                });
+              }
 
               setLocalPreferences(next);
               setData((current) => current.filter((item) => item.uuid !== chatUuid));
@@ -1124,6 +1212,42 @@ export default function ChatsScreen() {
                     {selectedChat?.localArchived ? 'Убрать из локального архива' : 'Архивировать локально'}
                   </Text>
                 </Pressable>
+
+                <Pressable
+                  onPress={() => void toggleLocalMuted()}
+                  style={({ pressed }) => [
+                    styles.sheetItem,
+                    { borderColor: ui.separator, backgroundColor: pressed ? ui.bgHover : 'transparent' },
+                  ]}
+                >
+                  <Ionicons
+                    name={selectedChat?.localMuted ? 'volume-high-outline' : 'volume-mute-outline'}
+                    size={20}
+                    color={ui.accent}
+                  />
+                  <Text style={[styles.sheetItemText, { color: ui.textPrimary }]}>
+                    {selectedChat?.localMuted ? 'Включить звук' : 'Беззвучно'}
+                  </Text>
+                </Pressable>
+
+                {selectedChat?.peer_user?.uuid ? (
+                  <Pressable
+                    onPress={() => void toggleSelectedChatContact()}
+                    style={({ pressed }) => [
+                      styles.sheetItem,
+                      { borderColor: ui.separator, backgroundColor: pressed ? ui.bgHover : 'transparent' },
+                    ]}
+                  >
+                    <Ionicons
+                      name={selectedChat.localContact ? 'person-remove-outline' : 'person-add-outline'}
+                      size={20}
+                      color={ui.accent}
+                    />
+                    <Text style={[styles.sheetItemText, { color: ui.textPrimary }]}>
+                      {selectedChat.localContact ? 'Убрать из контактов' : 'Добавить в контакты'}
+                    </Text>
+                  </Pressable>
+                ) : null}
 
                 <Pressable
                   onPress={hideSelectedChat}

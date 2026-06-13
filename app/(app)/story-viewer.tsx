@@ -15,7 +15,7 @@ import {
 import { Image as ExpoImage } from 'expo-image';
 import { Video, ResizeMode } from 'expo-av';
 import { router, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import {
@@ -49,8 +49,14 @@ function getStoryUrl(story: StoryItem | null) {
   return story?.media?.file_url || story?.file_url || null;
 }
 
+function getAuthorAvatar(story: StoryItem | null) {
+  const author = story ? getAuthor(story) : null;
+  return author?.avatar || null;
+}
+
 export default function StoryViewerScreen() {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ storyUuid?: string }>();
 
   const progress = useRef(new Animated.Value(0)).current;
@@ -62,6 +68,7 @@ export default function StoryViewerScreen() {
 
   const current = stories[index] || null;
   const currentUrl = getStoryUrl(current);
+  const authorAvatar = getAuthorAvatar(current);
   const author = current ? getAuthor(current) : null;
   const authorName = getAuthorName(current);
 
@@ -227,7 +234,12 @@ export default function StoryViewerScreen() {
           style={StyleSheet.absoluteFill}
         />
       ) : currentUrl ? (
-        <ExpoImage source={{ uri: currentUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
+        <ExpoImage
+          source={{ uri: currentUrl }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+        />
       ) : (
         <View
           style={[
@@ -243,7 +255,7 @@ export default function StoryViewerScreen() {
       <View style={styles.scrimTop} />
       <View style={styles.scrimBottom} />
 
-      <View style={styles.progressRow}>
+      <View style={[styles.progressRow, { top: Math.max(insets.top + 8, 18) }]}>
         {stories.map((item, itemIndex) => {
           const width =
             itemIndex < index
@@ -263,9 +275,18 @@ export default function StoryViewerScreen() {
         })}
       </View>
 
-      <View style={styles.header}>
+      <View style={[styles.header, { top: Math.max(insets.top + 26, 42) }]}>
         <View style={styles.authorAvatar}>
-          <Text style={styles.authorInitial}>{authorName.slice(0, 1).toUpperCase()}</Text>
+          {authorAvatar ? (
+            <ExpoImage
+              source={{ uri: authorAvatar }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+            />
+          ) : (
+            <Text style={styles.authorInitial}>{authorName.slice(0, 1).toUpperCase()}</Text>
+          )}
         </View>
         <View style={styles.headerText}>
           <Text style={styles.authorName} numberOfLines={1}>
@@ -425,6 +446,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
+    overflow: 'hidden',
     backgroundColor: 'rgba(255,255,255,0.20)',
     alignItems: 'center',
     justifyContent: 'center',

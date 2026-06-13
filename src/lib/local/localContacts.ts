@@ -20,6 +20,16 @@ export async function addLocalContact(userUuid: string) {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify([...current]));
 }
 
+export async function removeLocalContact(userUuid: string) {
+  const current = await readContacts();
+  current.delete(userUuid);
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify([...current]));
+}
+
+export async function getLocalContacts(): Promise<string[]> {
+  return [...(await readContacts())];
+}
+
 export async function isLocalContact(userUuid?: string | null): Promise<boolean> {
   if (!userUuid) return false;
   const current = await readContacts();

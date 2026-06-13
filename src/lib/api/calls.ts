@@ -2,6 +2,7 @@ import { apiClient } from '@/src/lib/api/client';
 import type {
   CallActionPayload,
   CallCreatePayload,
+  CallRestSignalPayload,
   CallSignalPayload,
   CallSession,
 } from '@/src/types/calls';
@@ -145,7 +146,7 @@ export async function endCall(
 
 export async function sendCallSignal(
   callUuid: string,
-  payload: CallSignalPayload,
+  payload: CallSignalPayload | CallRestSignalPayload,
 ) {
   const response = await apiClient.post(`/calls/${callUuid}/signals/`, payload);
   return response.data;

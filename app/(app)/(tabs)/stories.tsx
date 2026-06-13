@@ -28,6 +28,17 @@ import { getApiErrorMessage } from '@/src/utils/apiErrors';
 
 const textBackgrounds = ['#2AABEE', '#5288C1', '#10B981', '#F97316', '#8B5CF6'];
 
+type PendingStoryMedia = {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  width?: number;
+  height?: number;
+  duration?: number | null;
+  fileSize?: number | null;
+  isVideo: boolean;
+};
+
 function getAuthor(story: StoryItem) {
   return story.author || story.user || null;
 }
@@ -44,6 +55,10 @@ function getAuthorName(story: StoryItem) {
 
 function getStoryUrl(story: StoryItem) {
   return story.media?.file_url || story.file_url || null;
+}
+
+function getStoryPreviewUrl(story: StoryItem) {
+  return story.media?.thumbnail_url || story.media?.file_url || story.file_url || null;
 }
 
 function formatExpires(story: StoryItem) {
@@ -67,12 +82,16 @@ export default function StoriesScreen() {
   const [caption, setCaption] = useState('');
   const [textBackground, setTextBackground] = useState(textBackgrounds[0]);
   const [creating, setCreating] = useState(false);
+  const [pendingMedia, setPendingMedia] = useState<PendingStoryMedia | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const myStories = useMemo(() => stories.filter((item) => item.is_own), [stories]);
   const feedStories = useMemo(() => stories.filter((item) => !item.is_own), [stories]);
 
   const closeCreateSheet = useCallback(() => {
     setCreateVisible(false);
+    setPendingMedia(null);
+    setUploadProgress(0);
     if (params.create) {
       router.setParams({ create: undefined });
     }
@@ -131,7 +150,7 @@ export default function StoriesScreen() {
     }
   };
 
-  const createMediaStory = async () => {
+  const chooseMediaStory = async () => {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
@@ -152,31 +171,58 @@ export default function StoriesScreen() {
       const asset = result.assets[0];
       const isVideo = asset.type === 'video' || String(asset.mimeType || '').startsWith('video/');
 
+      setPendingMedia({
+        uri: asset.uri,
+        fileName: asset.fileName || `${isVideo ? 'story-video' : 'story-image'}-${Date.now()}`,
+        mimeType: asset.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
+        width: asset.width,
+        height: asset.height,
+        duration: asset.duration,
+        fileSize: asset.fileSize,
+        isVideo,
+      });
+    } catch (error) {
+      Alert.alert('Story', getApiErrorMessage(error, 'Не удалось выбрать медиа'));
+    }
+  };
+
+  const publishMediaStory = async () => {
+    if (!pendingMedia) {
+      await chooseMediaStory();
+      return;
+    }
+
+    try {
       setCreating(true);
+      setUploadProgress(0);
       const uploaded = await uploadPickedMedia(
         {
-          uri: asset.uri,
-          fileName: asset.fileName || `${isVideo ? 'story-video' : 'story-image'}-${Date.now()}`,
-          mimeType: asset.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
-          width: asset.width,
-          height: asset.height,
-          duration: asset.duration,
-          fileSize: asset.fileSize,
+          uri: pendingMedia.uri,
+          fileName: pendingMedia.fileName,
+          mimeType: pendingMedia.mimeType,
+          width: pendingMedia.width,
+          height: pendingMedia.height,
+          duration: pendingMedia.duration,
+          fileSize: pendingMedia.fileSize,
         },
         {
-          filenamePrefix: isVideo ? 'story-video' : 'story-image',
-          fallbackContentType: isVideo ? 'video/mp4' : 'image/jpeg',
+          filenamePrefix: pendingMedia.isVideo ? 'story-video' : 'story-image',
+          fallbackContentType: pendingMedia.isVideo ? 'video/mp4' : 'image/jpeg',
           isPublic: false,
+          onProgress: (value) =>
+            setUploadProgress(Math.round(Math.max(0, Math.min(1, value)) * 100)),
         },
       );
 
       await createStory({
-        media_type: isVideo ? 'video' : 'image',
+        media_type: pendingMedia.isVideo ? 'video' : 'image',
         media_uuid: uploaded.uuid,
         caption: caption.trim() || undefined,
       });
 
       setCaption('');
+      setPendingMedia(null);
+      setUploadProgress(0);
       closeCreateSheet();
       await load(true);
     } catch (error) {
@@ -235,6 +281,8 @@ export default function StoriesScreen() {
       <FlatList
         data={[...myStories, ...feedStories]}
         keyExtractor={(item) => item.uuid}
+        numColumns={2}
+        columnWrapperStyle={styles.storyGridRow}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load()} />}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
@@ -246,11 +294,13 @@ export default function StoriesScreen() {
           </GlassCard>
         }
         renderItem={({ item }) => {
-          const url = getStoryUrl(item);
+          const url = getStoryPreviewUrl(item);
+          const fullUrl = getStoryUrl(item);
           const authorName = getAuthorName(item);
 
           return (
             <Pressable
+              style={styles.storyPressable}
               onPress={() =>
                 router.push({
                   pathname: '/(app)/story-viewer' as any,
@@ -259,17 +309,30 @@ export default function StoriesScreen() {
               }
               onLongPress={() => (item.is_own ? handleDelete(item) : undefined)}
             >
-              <GlassCard style={styles.storyCard}>
+              <View
+                style={[
+                  styles.storyCard,
+                  {
+                    backgroundColor: theme.colors.cardSolid,
+                    borderColor: theme.colors.border,
+                  },
+                ]}
+              >
                 <View style={styles.storyPreview}>
-                  {item.media_type === 'video' && url ? (
+                  {item.media_type === 'video' && fullUrl ? (
                     <Video
-                      source={{ uri: url }}
+                      source={{ uri: fullUrl }}
                       resizeMode={ResizeMode.COVER}
                       shouldPlay={false}
                       style={StyleSheet.absoluteFill}
                     />
                   ) : url ? (
-                    <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                    <ExpoImage
+                      source={{ uri: url }}
+                      style={StyleSheet.absoluteFill}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                    />
                   ) : (
                     <View
                       style={[
@@ -302,8 +365,10 @@ export default function StoriesScreen() {
                   ) : null}
                 </View>
 
-                <Ionicons name="chevron-forward" size={20} color={theme.colors.muted} />
-              </GlassCard>
+                <View style={[styles.storyOpenIcon, { backgroundColor: theme.colors.cardStrong }]}>
+                  <Ionicons name="chevron-forward" size={16} color={theme.colors.muted} />
+                </View>
+              </View>
             </Pressable>
           );
         }}
@@ -347,6 +412,47 @@ export default function StoriesScreen() {
                 ))}
               </ScrollView>
 
+              {pendingMedia ? (
+                <View style={[styles.pendingPreview, { borderColor: theme.colors.borderStrong }]}>
+                  {pendingMedia.isVideo ? (
+                    <Video
+                      source={{ uri: pendingMedia.uri }}
+                      resizeMode={ResizeMode.COVER}
+                      shouldPlay={false}
+                      style={StyleSheet.absoluteFill}
+                    />
+                  ) : (
+                    <ExpoImage
+                      source={{ uri: pendingMedia.uri }}
+                      style={StyleSheet.absoluteFill}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                    />
+                  )}
+
+                  <Pressable
+                    onPress={() => {
+                      setPendingMedia(null);
+                      setUploadProgress(0);
+                    }}
+                    disabled={creating}
+                    style={styles.removePendingButton}
+                    hitSlop={10}
+                  >
+                    <Ionicons name="close" size={18} color="#FFFFFF" />
+                  </Pressable>
+
+                  {creating && uploadProgress > 0 ? (
+                    <View style={styles.uploadOverlay}>
+                      <View style={styles.uploadTrack}>
+                        <View style={[styles.uploadFill, { width: `${uploadProgress}%` }]} />
+                      </View>
+                      <Text style={styles.uploadText}>{uploadProgress}%</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+
               <View style={styles.createActions}>
                 <Pressable
                   onPress={() => void createTextStory()}
@@ -363,12 +469,20 @@ export default function StoriesScreen() {
                   )}
                 </Pressable>
                 <Pressable
-                  onPress={() => void createMediaStory()}
+                  onPress={() => void (pendingMedia ? publishMediaStory() : chooseMediaStory())}
                   disabled={creating}
                   style={[styles.createButton, { backgroundColor: '#10B981' }]}
                 >
-                  <Ionicons name="images" size={18} color="#FFFFFF" />
-                  <Text style={styles.createButtonText}>Фото/видео</Text>
+                  {creating && pendingMedia ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name={pendingMedia ? 'cloud-upload' : 'images'} size={18} color="#FFFFFF" />
+                      <Text style={styles.createButtonText}>
+                        {pendingMedia ? 'Опубликовать' : 'Фото/видео'}
+                      </Text>
+                    </>
+                  )}
                 </Pressable>
               </View>
             </GlassCard>
@@ -421,15 +535,22 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
     gap: 10,
   },
+  storyGridRow: {
+    gap: 10,
+  },
+  storyPressable: {
+    flex: 1,
+  },
   storyCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    flex: 1,
+    minHeight: 256,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    marginBottom: 10,
   },
   storyPreview: {
-    width: 68,
-    height: 92,
-    borderRadius: 18,
+    width: '100%',
+    height: 178,
     overflow: 'hidden',
     backgroundColor: '#111827',
   },
@@ -446,8 +567,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   storyInfo: {
-    flex: 1,
+    minHeight: 78,
     minWidth: 0,
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 12,
   },
   storyTitle: {
     fontSize: 16,
@@ -462,6 +586,16 @@ const styles = StyleSheet.create({
   storyCaption: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  storyOpenIcon: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyTitle: {
     fontSize: 17,
@@ -504,6 +638,48 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: 17,
     borderWidth: 3,
+  },
+  pendingPreview: {
+    height: 220,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 14,
+    backgroundColor: '#111827',
+  },
+  removePendingButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.52)',
+  },
+  uploadOverlay: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 12,
+    gap: 6,
+  },
+  uploadTrack: {
+    height: 5,
+    borderRadius: 3,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.28)',
+  },
+  uploadFill: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: '#FFFFFF',
+  },
+  uploadText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'right',
   },
   createActions: {
     flexDirection: 'row',

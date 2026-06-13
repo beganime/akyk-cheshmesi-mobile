@@ -109,6 +109,26 @@ export type CallSignalPayload = {
   payload?: Record<string, unknown> | null;
 };
 
+export type CallRestSignalPayload = {
+  signal_type:
+    | 'invite'
+    | 'accept'
+    | 'decline'
+    | 'end'
+    | 'missed'
+    | 'offer'
+    | 'answer'
+    | 'ice-candidate'
+    | 'call:offer'
+    | 'call:answer'
+    | 'call:ice-candidate'
+    | 'call_offer'
+    | 'call_answer'
+    | 'call_ice';
+  target_user_uuid?: string;
+  payload?: Record<string, unknown> | null;
+};
+
 export type CallSignalMessage =
   | {
       type: 'join_call';

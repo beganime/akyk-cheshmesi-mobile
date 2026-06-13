@@ -37,6 +37,7 @@ export default function AppLayout() {
     >
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="settings" />
+      <Stack.Screen name="settings/[section]" />
       <Stack.Screen name="profile-edit" />
       <Stack.Screen name="blocked-users" />
       <Stack.Screen name="bots" />

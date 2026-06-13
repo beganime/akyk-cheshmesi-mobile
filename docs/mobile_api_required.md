@@ -122,6 +122,12 @@ Used endpoints:
 
 When reply/reaction returns `chat_uuid`, mobile opens the direct chat context.
 
+Story media publishing uses the same media pipeline as chat attachments:
+
+1. upload image/video through `POST /api/media/upload-local/` or the presigned
+   upload fallback;
+2. create the story with `media_type=image|video` and `media_uuid`.
+
 ## Calls
 
 Used endpoints/events:
@@ -144,6 +150,22 @@ Mobile has native WebRTC integration through `react-native-webrtc`. Production
 quality still depends on real device builds, TURN/STUN credentials, and FCM/APNS
 credentials.
 
+The mobile create/action payload now follows the backend contract:
+
+```json
+{
+  "call_type": "audio",
+  "metadata": {
+    "device_id": "local-device-id",
+    "device_platform": "android|ios|web",
+    "device_name": "Akyl Cheshmesi Mobile"
+  }
+}
+```
+
+REST signaling fallback sends `signal_type` (`offer`, `answer`,
+`ice-candidate`) with the SDP/candidate inside `payload`.
+
 ## Bots
 
 Used endpoints:
@@ -164,6 +186,58 @@ Mobile screens:
 - bot detail/update/delete/rotate token;
 - add/remove bot in chat;
 - test send message as bot by pasted token.
+
+## Local UX and Cache
+
+Implemented locally in the mobile client:
+
+- profile is now a focused account screen;
+- settings are split into dedicated screens: language, bots, devices, storage,
+  notifications, chat settings, appearance, privacy, security;
+- language screen shows Russian as the default language;
+- eight app themes are available: light/dark green, orange, blue, and red;
+- first-time chat senders are shown in chats only until the user adds them to
+  contacts;
+- local contact add/remove, muted chats, hidden chats, and hidden users are
+  persisted in AsyncStorage;
+- chat list cache is shown first and refreshed from the server;
+- avatars, story previews, chat media, stickers, and profile images use the
+  Expo image memory/disk cache;
+- storage settings can clear JSON cache, image cache, or all app cache.
+
+## Backend APIs Still Needed
+
+These flows are prepared in the mobile UI, but still need backend endpoints if
+they should sync across devices and survive reinstall:
+
+- contacts:
+  - `GET /api/contacts/`
+  - `POST /api/contacts/` with `user_uuid`
+  - `DELETE /api/contacts/{user_uuid}/`
+- real block/unblock users:
+  - `POST /api/users/{user_uuid}/block/`
+  - `DELETE /api/users/{user_uuid}/block/`
+  - blocked users must not be able to message or call the current user;
+- per-chat and per-user notification preferences:
+  - mute/unmute chat;
+  - hide/unhide chat;
+  - list muted chats/users;
+- device/session management:
+  - `GET /api/devices/`
+  - `DELETE /api/devices/{device_id}/`
+  - current session marker and last active timestamps;
+- synced settings:
+  - appearance/theme preferences;
+  - chat settings;
+  - notification settings;
+  - privacy settings;
+- security settings:
+  - change password;
+  - 2FA setup/disable;
+  - active session revoke;
+- optional storage/account stats:
+  - media usage by type;
+  - server-side cache/storage cleanup if backend stores user-owned media quotas.
 
 ## Still Needs Production Verification
 

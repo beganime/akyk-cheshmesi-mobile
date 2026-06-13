@@ -231,6 +231,7 @@ export default function ProfileEditScreen() {
                   source={{ uri: avatarPreviewUri }}
                   style={styles.avatarImage}
                   contentFit="cover"
+                  cachePolicy="memory-disk"
                 />
               ) : (
                 <View
