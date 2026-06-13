@@ -1148,8 +1148,8 @@ export default function ChatsScreen() {
               />
               <View style={[styles.dropdownDivider, { backgroundColor: ui.separator }]} />
               <DropdownItem
-                icon={isLightTheme ? 'moon-outline' : 'sunny-outline'}
-                label={isLightTheme ? 'Ночной режим' : 'Дневной режим'}
+                icon={theme.isDark ? 'sunny-outline' : 'moon-outline'}
+                label={theme.isDark ? 'Дневной режим' : 'Ночной режим'}
                 ui={ui}
                 onPress={() => void switchDayNight()}
               />

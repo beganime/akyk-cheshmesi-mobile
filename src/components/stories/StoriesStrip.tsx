@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { fetchStories } from '@/src/lib/api/stories';
 import type { StoryItem } from '@/src/types/stories';
 import { useTheme } from '@/src/theme/ThemeProvider';
+import type { AppTheme } from '@/src/theme/themes';
 
 type Props = {
   compact?: boolean;
@@ -24,24 +25,27 @@ type StoryPreview = {
   viewed: boolean;
 };
 
-const UI = {
-  dark: {
-    bgPrimary: '#0e1621',
-    bgSecondary: '#17212b',
-    accent: '#5288c1',
-    textPrimary: '#ffffff',
-    textSecondary: '#7f91a4',
-    separator: 'rgba(255, 255, 255, 0.06)',
-  },
-  light: {
-    bgPrimary: '#ffffff',
-    bgSecondary: '#f4f4f5',
-    accent: '#3390ec',
-    textPrimary: '#000000',
-    textSecondary: '#707579',
-    separator: '#e4e4e5',
-  },
-} as const;
+type StoriesStripUi = {
+  bgPrimary: string;
+  bgSecondary: string;
+  accent: string;
+  textPrimary: string;
+  textSecondary: string;
+  separator: string;
+};
+
+function buildStoriesStripUi(theme: AppTheme): StoriesStripUi {
+  const colors = theme.colors;
+
+  return {
+    bgPrimary: colors.background,
+    bgSecondary: colors.cardStrong,
+    accent: colors.primary,
+    textPrimary: colors.text,
+    textSecondary: colors.muted,
+    separator: colors.border,
+  };
+}
 
 function getAuthor(story: StoryItem) {
   return story.author || story.user || null;
@@ -108,9 +112,8 @@ function buildAuthorStories(stories: StoryItem[], limit: number): StoryPreview[]
 }
 
 export function StoriesStrip({ compact = false }: Props) {
-  const { resolvedThemeName } = useTheme();
-  const isLightTheme = resolvedThemeName.toLowerCase().includes('light');
-  const ui = isLightTheme ? UI.light : UI.dark;
+  const { theme } = useTheme();
+  const ui = useMemo(() => buildStoriesStripUi(theme), [theme]);
   const [stories, setStories] = useState<StoryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
