@@ -231,7 +231,11 @@ callEngine.subscribe((engineState) => {
 
   let nextPhase = currentStore.phase;
 
-  if (engineState.status === 'starting' || engineState.status === 'connecting') {
+  if (
+    engineState.status === 'starting' ||
+    engineState.status === 'connecting' ||
+    engineState.status === 'ringing'
+  ) {
     if (currentStore.phase !== 'incoming') {
       nextPhase = 'outgoing';
     }

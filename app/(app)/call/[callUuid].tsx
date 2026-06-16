@@ -103,12 +103,14 @@ export default function CallScreen() {
   const callStatusText = useMemo(() => {
     if (Platform.OS === 'web') return 'Звонки доступны только в Android/iOS приложении';
     if (phase === 'incoming') return 'Входящий звонок';
-    if (phase === 'outgoing') return 'Соединение...';
+    if (phase === 'outgoing') {
+      return engineState.socketConnected ? 'Соединение...' : 'Звонок создан';
+    }
     if (phase === 'active') return 'Вызов активен';
     if (phase === 'ended') return 'Звонок завершён';
     if (phase === 'error') return lastError || 'Ошибка звонка';
     return 'Подготовка звонка...';
-  }, [phase, lastError]);
+  }, [engineState.socketConnected, phase, lastError]);
 
   const handleClose = async () => {
     await clear();
@@ -189,7 +191,9 @@ export default function CallScreen() {
                 : phase === 'incoming'
                 ? 'Хочет связаться с тобой'
                 : phase === 'outgoing'
-                ? 'Ожидаем ответ...'
+                ? engineState.socketConnected
+                  ? 'Ожидаем ответ...'
+                  : 'Собеседник получит уведомление, если он не в сети'
                 : phase === 'active'
                 ? 'Разговор идёт'
                 : phase === 'ended'

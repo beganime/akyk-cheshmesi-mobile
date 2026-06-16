@@ -209,6 +209,7 @@ export default function StoriesScreen() {
           filenamePrefix: pendingMedia.isVideo ? 'story-video' : 'story-image',
           fallbackContentType: pendingMedia.isVideo ? 'video/mp4' : 'image/jpeg',
           isPublic: false,
+          mediaKind: pendingMedia.isVideo ? 'video' : 'image',
           onProgress: (value) =>
             setUploadProgress(Math.round(Math.max(0, Math.min(1, value)) * 100)),
         },
@@ -378,12 +379,98 @@ export default function StoriesScreen() {
         <View style={styles.modalOverlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={closeCreateSheet} />
           <View style={styles.sheet}>
-            <GlassCard>
-              <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>Новая story</Text>
+            <View
+              style={[
+                styles.createPanel,
+                {
+                  backgroundColor: theme.colors.cardSolid,
+                  borderColor: theme.colors.borderStrong,
+                },
+              ]}
+            >
+              <View style={styles.createHeader}>
+                <View style={styles.createHeaderText}>
+                  <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>Новая story</Text>
+                  <Text style={[styles.sheetSubtitle, { color: theme.colors.muted }]}>Фото, видео или короткий текст</Text>
+                </View>
+                <Pressable
+                  onPress={closeCreateSheet}
+                  disabled={creating}
+                  style={[styles.sheetCloseButton, { backgroundColor: theme.colors.backgroundTertiary }]}
+                >
+                  <Ionicons name="close" size={20} color={theme.colors.text} />
+                </Pressable>
+              </View>
+
+              <Pressable
+                onPress={() => void chooseMediaStory()}
+                disabled={creating}
+                style={[
+                  styles.mediaPicker,
+                  {
+                    borderColor: pendingMedia ? 'transparent' : theme.colors.borderStrong,
+                    backgroundColor: pendingMedia ? '#111827' : theme.colors.backgroundSecondary,
+                  },
+                ]}
+              >
+                {pendingMedia ? (
+                  <>
+                    {pendingMedia.isVideo ? (
+                      <Video
+                        source={{ uri: pendingMedia.uri }}
+                        resizeMode={ResizeMode.COVER}
+                        shouldPlay={false}
+                        style={StyleSheet.absoluteFill}
+                      />
+                    ) : (
+                      <ExpoImage
+                        source={{ uri: pendingMedia.uri }}
+                        style={StyleSheet.absoluteFill}
+                        contentFit="cover"
+                        cachePolicy="memory-disk"
+                      />
+                    )}
+                    <View style={styles.mediaPickerShade} />
+                    <View style={styles.mediaPickerBadge}>
+                      <Ionicons name="images" size={16} color="#FFFFFF" />
+                      <Text style={styles.mediaPickerBadgeText}>Заменить</Text>
+                    </View>
+                    <Pressable
+                      onPress={() => {
+                        setPendingMedia(null);
+                        setUploadProgress(0);
+                      }}
+                      disabled={creating}
+                      style={styles.removePendingButton}
+                      hitSlop={10}
+                    >
+                      <Ionicons name="close" size={18} color="#FFFFFF" />
+                    </Pressable>
+                  </>
+                ) : (
+                  <View style={styles.emptyPickerContent}>
+                    <View style={[styles.emptyPickerIcon, { backgroundColor: theme.colors.primarySoft }]}>
+                      <Ionicons name="images-outline" size={26} color={theme.colors.primary} />
+                    </View>
+                    <Text style={[styles.emptyPickerTitle, { color: theme.colors.text }]}>Выбрать фото или видео</Text>
+                    <Text style={[styles.emptyPickerText, { color: theme.colors.muted }]}>Без медиа будет опубликована текстовая story</Text>
+                  </View>
+                )}
+
+                {creating && uploadProgress > 0 ? (
+                  <View style={styles.uploadOverlay}>
+                    <View style={styles.uploadTrack}>
+                      <View style={[styles.uploadFill, { width: `${uploadProgress}%` }]} />
+                    </View>
+                    <Text style={styles.uploadText}>{uploadProgress}%</Text>
+                  </View>
+                ) : null}
+              </Pressable>
+
               <TextInput
                 value={caption}
                 onChangeText={setCaption}
-                placeholder="Текст или подпись"
+                placeholder={pendingMedia ? 'Добавить подпись' : 'Текст story'}
                 placeholderTextColor={theme.colors.muted}
                 multiline
                 style={[
@@ -396,96 +483,57 @@ export default function StoriesScreen() {
                 ]}
               />
 
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.swatches}>
-                {textBackgrounds.map((color) => (
-                  <Pressable
-                    key={color}
-                    onPress={() => setTextBackground(color)}
-                    style={[
-                      styles.swatch,
-                      {
-                        backgroundColor: color,
-                        borderColor: textBackground === color ? '#FFFFFF' : 'transparent',
-                      },
-                    ]}
-                  />
-                ))}
-              </ScrollView>
-
-              {pendingMedia ? (
-                <View style={[styles.pendingPreview, { borderColor: theme.colors.borderStrong }]}>
-                  {pendingMedia.isVideo ? (
-                    <Video
-                      source={{ uri: pendingMedia.uri }}
-                      resizeMode={ResizeMode.COVER}
-                      shouldPlay={false}
-                      style={StyleSheet.absoluteFill}
+              {!pendingMedia ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.swatches}>
+                  {textBackgrounds.map((color) => (
+                    <Pressable
+                      key={color}
+                      onPress={() => setTextBackground(color)}
+                      style={[
+                        styles.swatch,
+                        {
+                          backgroundColor: color,
+                          borderColor: textBackground === color ? '#FFFFFF' : 'transparent',
+                        },
+                      ]}
                     />
-                  ) : (
-                    <ExpoImage
-                      source={{ uri: pendingMedia.uri }}
-                      style={StyleSheet.absoluteFill}
-                      contentFit="cover"
-                      cachePolicy="memory-disk"
-                    />
-                  )}
-
-                  <Pressable
-                    onPress={() => {
-                      setPendingMedia(null);
-                      setUploadProgress(0);
-                    }}
-                    disabled={creating}
-                    style={styles.removePendingButton}
-                    hitSlop={10}
-                  >
-                    <Ionicons name="close" size={18} color="#FFFFFF" />
-                  </Pressable>
-
-                  {creating && uploadProgress > 0 ? (
-                    <View style={styles.uploadOverlay}>
-                      <View style={styles.uploadTrack}>
-                        <View style={[styles.uploadFill, { width: `${uploadProgress}%` }]} />
-                      </View>
-                      <Text style={styles.uploadText}>{uploadProgress}%</Text>
-                    </View>
-                  ) : null}
-                </View>
+                  ))}
+                </ScrollView>
               ) : null}
 
               <View style={styles.createActions}>
                 <Pressable
-                  onPress={() => void createTextStory()}
+                  onPress={() => void chooseMediaStory()}
                   disabled={creating}
-                  style={[styles.createButton, { backgroundColor: theme.colors.primary }]}
+                  style={[styles.secondaryCreateButton, { borderColor: theme.colors.borderStrong }]}
+                >
+                  <Ionicons name="images-outline" size={18} color={theme.colors.text} />
+                  <Text style={[styles.secondaryCreateButtonText, { color: theme.colors.text }]}>
+                    {pendingMedia ? 'Заменить' : 'Медиа'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void (pendingMedia ? publishMediaStory() : createTextStory())}
+                  disabled={creating || (!pendingMedia && !caption.trim())}
+                  style={[
+                    styles.createButton,
+                    {
+                      backgroundColor: '#10B981',
+                      opacity: creating || (!pendingMedia && !caption.trim()) ? 0.55 : 1,
+                    },
+                  ]}
                 >
                   {creating ? (
                     <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <>
-                      <Ionicons name="text" size={18} color="#FFFFFF" />
-                      <Text style={styles.createButtonText}>Текст</Text>
-                    </>
-                  )}
-                </Pressable>
-                <Pressable
-                  onPress={() => void (pendingMedia ? publishMediaStory() : chooseMediaStory())}
-                  disabled={creating}
-                  style={[styles.createButton, { backgroundColor: '#10B981' }]}
-                >
-                  {creating && pendingMedia ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <Ionicons name={pendingMedia ? 'cloud-upload' : 'images'} size={18} color="#FFFFFF" />
-                      <Text style={styles.createButtonText}>
-                        {pendingMedia ? 'Опубликовать' : 'Фото/видео'}
-                      </Text>
+                      <Ionicons name="cloud-upload" size={18} color="#FFFFFF" />
+                      <Text style={styles.createButtonText}>Опубликовать</Text>
                     </>
                   )}
                 </Pressable>
               </View>
-            </GlassCard>
+            </View>
           </View>
         </View>
       </Modal>
@@ -615,14 +663,98 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: 18,
   },
+  createPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 20,
+    padding: 14,
+  },
+  createHeader: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 12,
+  },
+  createHeaderText: {
+    flex: 1,
+    minWidth: 0,
+  },
   sheetTitle: {
     fontSize: 20,
     fontWeight: '800',
+  },
+  sheetSubtitle: {
+    marginTop: 2,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  sheetCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaPicker: {
+    height: 214,
+    borderWidth: 1,
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaPickerShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+  mediaPickerBadge: {
+    position: 'absolute',
+    left: 12,
+    bottom: 12,
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: 'rgba(0,0,0,0.48)',
+  },
+  mediaPickerBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  emptyPickerContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  emptyPickerIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 12,
   },
+  emptyPickerTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  emptyPickerText: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   captionInput: {
-    minHeight: 120,
-    borderRadius: 18,
+    minHeight: 82,
+    maxHeight: 120,
+    borderRadius: 16,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -685,10 +817,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
+  secondaryCreateButton: {
+    minWidth: 112,
+    minHeight: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  secondaryCreateButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
   createButton: {
     flex: 1,
     minHeight: 52,
-    borderRadius: 18,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',

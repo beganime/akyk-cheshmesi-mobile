@@ -42,6 +42,7 @@ export type CallEngineStatus =
   | 'idle'
   | 'starting'
   | 'connecting'
+  | 'ringing'
   | 'joined'
   | 'ended'
   | 'error';
@@ -674,19 +675,33 @@ class CallEngine {
 
     const created = await createChatCall(chatUuid, {
       call_type: callType,
-      metadata: await buildCallActionPayload(),
+      metadata: {
+        ...(await buildCallActionPayload()),
+        notify_offline: true,
+        create_even_if_offline: true,
+      },
     });
 
     this.setState({
       call: created,
-      status: 'connecting',
+      status: 'ringing',
     });
 
-    await this.createPeerConnection(callType);
+    try {
+      await this.createPeerConnection(callType);
 
-    const ws = await this.connectSocket();
-    await this.waitForJoin(ws, created);
-    await this.createAndSendOffer();
+      const ws = await this.connectSocket();
+      await this.waitForJoin(ws, created);
+      await this.createAndSendOffer();
+    } catch (error) {
+      console.warn('Call signaling is not connected yet; call was created and will rely on push/history:', error);
+      this.setState({
+        call: created,
+        status: 'ringing',
+        socketConnected: false,
+        error: null,
+      });
+    }
 
     return created;
   }

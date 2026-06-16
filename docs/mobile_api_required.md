@@ -158,7 +158,9 @@ The mobile create/action payload now follows the backend contract:
   "metadata": {
     "device_id": "local-device-id",
     "device_platform": "android|ios|web",
-    "device_name": "Akyl Cheshmesi Mobile"
+    "device_name": "Akyl Cheshmesi Mobile",
+    "notify_offline": true,
+    "create_even_if_offline": true
   }
 }
 ```
@@ -244,5 +246,7 @@ they should sync across devices and survive reinstall:
 - real Android/iOS dev build with Firebase files and app identifiers;
 - push delivery from backend workers in a production-like environment;
 - audio/video calls on two physical devices with TURN configured;
+- offline/background call delivery using backend push tokens and
+  `type=call`/`type=missed_call` payloads;
 - large media upload limits with real backend storage settings;
 - backend-enforced group removal visibility verified with two real accounts.

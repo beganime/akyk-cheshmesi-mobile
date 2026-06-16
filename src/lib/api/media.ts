@@ -13,6 +13,7 @@ export type PickedMediaAsset = {
   height?: number;
   duration?: number | null;
   waveformData?: number[] | null;
+  mediaKind?: 'image' | 'video' | 'audio' | 'file' | 'video_note' | string | null;
   file?: File;
 };
 
@@ -43,6 +44,7 @@ type UploadPickedMediaOptions = {
   filenamePrefix: string;
   fallbackContentType: string;
   isPublic?: boolean;
+  mediaKind?: 'image' | 'video' | 'audio' | 'file' | 'video_note' | string;
   onProgress?: UploadProgressCallback;
 };
 
@@ -323,6 +325,11 @@ async function uploadLocal(
 
   formData.append('is_public', String(Boolean(options.isPublic)));
 
+  const mediaKind = asset.mediaKind || options.mediaKind;
+  if (mediaKind) {
+    formData.append('media_kind', String(mediaKind));
+  }
+
   if (durationSeconds) {
     formData.append('duration_seconds', String(durationSeconds));
   }
@@ -369,6 +376,9 @@ async function uploadViaPresign(
     content_type: contentType,
     ...(uploadSize ? { size: uploadSize } : {}),
     is_public: Boolean(options.isPublic),
+    ...(asset.mediaKind || options.mediaKind
+      ? { media_kind: asset.mediaKind || options.mediaKind }
+      : {}),
     ...(durationSeconds ? { duration_seconds: durationSeconds } : {}),
     ...(asset.width ? { width: asset.width } : {}),
     ...(asset.height ? { height: asset.height } : {}),

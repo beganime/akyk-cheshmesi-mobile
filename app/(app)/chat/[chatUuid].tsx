@@ -162,6 +162,7 @@ async function uploadChatAsset(
     filenamePrefix: string;
     fallbackContentType: string;
     fallbackExtension: string;
+    mediaKind?: 'image' | 'video' | 'audio' | 'file' | 'video_note' | string;
     durationSeconds?: number;
     onProgress?: (progress: number) => void;
   },
@@ -172,11 +173,13 @@ async function uploadChatAsset(
       duration: options.durationSeconds ?? asset.duration,
       mimeType: normalizeUploadMimeType(asset.mimeType, options.fallbackContentType),
       fileName: buildUploadFilename(asset, options.filenamePrefix, options.fallbackExtension),
+      mediaKind: options.mediaKind,
     },
     {
       filenamePrefix: options.filenamePrefix,
       fallbackContentType: options.fallbackContentType,
       isPublic: false,
+      mediaKind: options.mediaKind,
       onProgress: options.onProgress,
     },
   );
@@ -1297,11 +1300,17 @@ export default function ChatScreen() {
         filenamePrefix: mediaType === 'audio' ? 'voice' : 'video',
         fallbackContentType: mediaType === 'audio' ? 'audio/mp4' : 'video/mp4',
         fallbackExtension: mediaType === 'audio' ? (Platform.OS === 'web' ? '.webm' : '.m4a') : '.mp4',
+        mediaKind: mediaType === 'audio' ? 'audio' : 'video',
         durationSeconds: Math.max(1, Math.ceil(Number(asset.duration || 1))),
         onProgress: (progress) => setUploadProgress(clientUuid, progress),
       });
 
-      const serverMetadata = getServerMetadata(metadata);
+      const serverMetadata = getServerMetadata({
+        ...(metadata || {}),
+        ...(mediaType === 'audio'
+          ? { duration_seconds: Math.max(1, Math.ceil(Number(asset.duration || 1))) }
+          : {}),
+      });
       const savedMessage = await sendChatMessage(chatUuid, {
         client_uuid: clientUuid,
         message_type: mediaType,
@@ -1713,6 +1722,7 @@ export default function ChatScreen() {
         filenamePrefix,
         fallbackContentType,
         fallbackExtension: messageType === 'video' ? '.mp4' : '.jpg',
+        mediaKind: messageType,
         durationSeconds:
           messageType === 'video'
             ? Math.max(1, Math.ceil(Number(asset.duration || 1)))
@@ -2041,11 +2051,13 @@ export default function ChatScreen() {
           uri: localUri,
           fileName: attachment.original_name || undefined,
           mimeType: attachment.content_type || fallbackContentType,
+          mediaKind: messageType === 'video_note' ? 'video' : messageType,
         },
         {
           filenamePrefix,
           fallbackContentType,
           fallbackExtension,
+          mediaKind: messageType === 'video_note' ? 'video' : messageType,
           onProgress: (progress) => setUploadProgress(message.client_uuid!, progress),
         },
       );
@@ -2435,8 +2447,8 @@ export default function ChatScreen() {
     <SafeAreaView style={[styles.container, buildChatBackgroundStyle(theme, appearance)]}>
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
       >
         {appearance.backgroundImageUri ? (
           <ExpoImage
@@ -2675,7 +2687,7 @@ export default function ChatScreen() {
             {
               borderTopColor: theme.colors.borderStrong,
               backgroundColor: theme.colors.background,
-              paddingBottom: Math.max(insets.bottom, 12),
+              paddingBottom: Platform.OS === 'ios' ? insets.bottom : 0,
             },
           ]}
         >
@@ -2736,10 +2748,7 @@ export default function ChatScreen() {
             >
               <TextInput
                 value={draft}
-                onChangeText={(value) => {
-                  animateLayout();
-                  setDraft(value);
-                }}
+                onChangeText={setDraft}
                 onFocus={() => {
                   if (composerPanelVisible) {
                     closeComposerPanel();
