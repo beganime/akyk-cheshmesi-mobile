@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import { Platform } from 'react-native';
 
 import { ENV } from '@/src/config/env';
 import {
@@ -24,6 +25,8 @@ type RefreshResponse = {
   access: string;
   refresh?: string;
 };
+
+export type PublicPayload = Record<string, string | number | boolean | null | undefined>;
 
 let isHandlingUnauthorized = false;
 let refreshPromise: Promise<string | null> | null = null;
@@ -74,12 +77,50 @@ function removeContentTypeHeader(headers: any) {
   delete headers['content-type'];
 }
 
+export function createPublicRequestConfig(payload: PublicPayload) {
+  if (Platform.OS !== 'web') {
+    return {
+      data: payload,
+      config: {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    };
+  }
+
+  const body = new URLSearchParams();
+
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      body.append(key, String(value));
+    }
+  });
+
+  return {
+    data: body,
+    config: {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    },
+  };
+}
+
 const refreshClient = axios.create({
   baseURL: ENV.API_BASE_URL,
   timeout: 30000,
   headers: {
     Accept: 'application/json',
     'Content-Type': 'application/json',
+  },
+});
+
+export const publicApiClient = axios.create({
+  baseURL: ENV.API_BASE_URL,
+  timeout: 90000,
+  headers: {
+    Accept: 'application/json',
   },
 });
 
@@ -148,7 +189,7 @@ apiClient.interceptors.request.use(async (config) => {
     removeContentTypeHeader(requestConfig.headers);
   }
 
-  if (token) {
+  if (token && !shouldIgnoreUnauthorized(requestConfig.url)) {
     setAuthorizationHeader(requestConfig, token);
   }
 
