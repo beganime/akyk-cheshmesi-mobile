@@ -1,4 +1,4 @@
-import { Alert, Text, TextInput } from 'react-native';
+import { Alert, Text, TextInput, type AlertButton, type AlertOptions } from 'react-native';
 
 type AnyProps = Record<string, unknown> | null | undefined;
 
@@ -244,19 +244,19 @@ function patchAlert() {
   (Alert as any).alert = (
     title: string,
     message?: string,
-    buttons?: Array<Record<string, unknown>>,
-    options?: Record<string, unknown>,
+    buttons?: AlertButton[],
+    options?: AlertOptions,
   ) =>
     originalAlert(
       decodeMojibakeText(title),
       typeof message === 'string' ? decodeMojibakeText(message) : message,
       Array.isArray(buttons)
-        ? buttons.map((button) => ({
+        ? buttons.map((button): AlertButton => ({
             ...button,
             text:
               typeof button.text === 'string'
                 ? decodeMojibakeText(button.text)
-                : button.text,
+                : undefined,
           }))
         : buttons,
       options,

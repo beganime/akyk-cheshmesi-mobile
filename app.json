@@ -79,7 +79,7 @@
         "backgroundColor": "#061A12"
       },
       "edgeToEdgeEnabled": true,
-      "softwareKeyboardLayoutMode": "pan",
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "POST_NOTIFICATIONS",
         "RECORD_AUDIO",

@@ -6,6 +6,9 @@ function humanizeField(field: string) {
     password_confirm: 'Подтверждение пароля',
     phone: 'Телефон',
     phone_number: 'Телефон',
+    file: 'Файл',
+    attachment_uuids: 'Вложения',
+    call_type: 'Тип звонка',
     detail: 'Ошибка',
     non_field_errors: 'Ошибка',
   };
@@ -51,6 +54,15 @@ function translateKnownMessage(message: string): string {
       'Username должен быть 4-32 символа: буквы, цифры, _ или .',
     'verification email service is temporarily unavailable. please try again in 1-2 minutes.':
       'Сервис писем временно недоступен. Попробуйте через 1-2 минуты',
+    'there is already an active call in this chat':
+      'В этом чате уже есть активный звонок. Завершите его и попробуйте снова',
+    'you are not a member of this chat': 'Вы не участник этого чата',
+    'only chat members can start calls': 'Звонки могут начинать только участники чата',
+    'call already ended': 'Звонок уже завершён',
+    'call is not active': 'Звонок уже не активен',
+    'unsupported file type': 'Этот тип файла не поддерживается',
+    'file is too large': 'Файл слишком большой',
+    'no file was submitted': 'Файл не был выбран',
   };
 
   return known[normalized] || message;

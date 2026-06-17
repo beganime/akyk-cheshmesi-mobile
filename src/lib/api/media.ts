@@ -325,11 +325,6 @@ async function uploadLocal(
 
   formData.append('is_public', String(Boolean(options.isPublic)));
 
-  const mediaKind = asset.mediaKind || options.mediaKind;
-  if (mediaKind) {
-    formData.append('media_kind', String(mediaKind));
-  }
-
   if (durationSeconds) {
     formData.append('duration_seconds', String(durationSeconds));
   }
