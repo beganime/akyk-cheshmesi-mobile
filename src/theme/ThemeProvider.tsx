@@ -111,6 +111,8 @@ export function ThemeProvider({ children }: PropsWithChildren) {
   }, []);
 
   const resolvedThemeName = useMemo<ThemeName>(() => {
+    const current = selectedThemeName;
+
     if (themeMode === 'system') {
       return systemColorScheme === 'dark' ? 'darkGreen' : 'lightGreen';
     }
