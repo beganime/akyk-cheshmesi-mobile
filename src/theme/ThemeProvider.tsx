@@ -1,3 +1,5 @@
+import '../lib/mojibakeRuntimeFix';
+
 import {
   PropsWithChildren,
   createContext,
@@ -118,7 +120,7 @@ export function ThemeProvider({ children }: PropsWithChildren) {
     }
 
     if (themeMode === 'dark' && !isDarkThemeName(selectedThemeName)) {
-      return themeNameForFamily(getThemeFamily(selectedThemeName), true);
+      return themeNameForFamily(getThemeFamily(current), true);
     }
 
     return selectedThemeName;
