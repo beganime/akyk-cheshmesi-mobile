@@ -241,7 +241,7 @@ function patchAlert() {
 
   const originalAlert = Alert.alert.bind(Alert);
 
-  Alert.alert = (
+  (Alert as any).alert = (
     title: string,
     message?: string,
     buttons?: Array<Record<string, unknown>>,
