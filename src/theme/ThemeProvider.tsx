@@ -52,7 +52,7 @@ function normalizeLegacyThemeName(value: string | null): ThemeName | null {
 
 export function ThemeProvider({ children }: PropsWithChildren) {
   const systemColorScheme = useColorScheme();
-  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('light');
   const [selectedThemeName, setSelectedThemeName] = useState<ThemeName>('lightGreen');
 
   useEffect(() => {

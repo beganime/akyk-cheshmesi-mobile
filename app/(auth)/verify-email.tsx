@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,12 +15,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 import { GlassCard } from '@/src/components/GlassCard';
+import {
+  AuthErrorBanner,
+  AuthHeader,
+  AuthPrimaryButton,
+  AuthThemeToggle,
+} from '@/src/features/auth/AuthUi';
 import { registerRequest, verifyEmailRequest } from '@/src/lib/api/auth';
 import { useTheme } from '@/src/theme/ThemeProvider';
-
-function getErrorMessage(error: any, fallback: string) {
-  return error?.response?.data?.detail || error?.message || fallback;
-}
+import { getApiErrorMessage } from '@/src/utils/apiErrors';
 
 function getFirstParam(value: string | string[] | undefined) {
   if (Array.isArray(value)) {
@@ -44,18 +46,23 @@ export default function VerifyEmailScreen() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   const onVerify = async () => {
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedCode = code.replace(/\D/g, '').slice(0, 6);
 
+    setErrorMessage(null);
+    setInfoMessage(null);
+
     if (!normalizedEmail) {
-      Alert.alert('Ошибка', 'Введите email');
+      setErrorMessage('Введите email');
       return;
     }
 
     if (normalizedCode.length !== 6) {
-      Alert.alert('Ошибка', 'Введите 6-значный код');
+      setErrorMessage('Введите 6-значный код');
       return;
     }
 
@@ -66,7 +73,8 @@ export default function VerifyEmailScreen() {
       const verificationToken = data?.verification_token;
 
       if (!verificationToken) {
-        throw new Error('Backend did not return verification token');
+        setErrorMessage('Сервер не вернул токен подтверждения. Запросите код заново');
+        return;
       }
 
       router.push({
@@ -77,10 +85,7 @@ export default function VerifyEmailScreen() {
         },
       });
     } catch (error: any) {
-      Alert.alert(
-        'Ошибка подтверждения',
-        getErrorMessage(error, 'Не удалось подтвердить email'),
-      );
+      setErrorMessage(getApiErrorMessage(error, 'Не удалось подтвердить email'));
     } finally {
       setLoading(false);
     }
@@ -89,27 +94,28 @@ export default function VerifyEmailScreen() {
   const onResend = async () => {
     const normalizedEmail = email.trim().toLowerCase();
 
+    setErrorMessage(null);
+    setInfoMessage(null);
+
     if (!normalizedEmail) {
-      Alert.alert('Ошибка', 'Введите email');
+      setErrorMessage('Введите email');
       return;
     }
 
     try {
       setResending(true);
       await registerRequest(normalizedEmail);
-      Alert.alert('Готово', 'Новый код отправлен на почту');
+      setInfoMessage('Новый код отправлен на почту');
     } catch (error: any) {
-      Alert.alert(
-        'Ошибка повторной отправки',
-        getErrorMessage(error, 'Не удалось отправить код повторно'),
-      );
+      setErrorMessage(getApiErrorMessage(error, 'Не удалось отправить код повторно'));
     } finally {
       setResending(false);
     }
   };
 
   return (
-    <LinearGradient colors={['#0B1020', '#141B32', '#1A2545']} style={styles.gradient}>
+    <LinearGradient colors={theme.colors.heroGradient} style={styles.gradient}>
+      <AuthThemeToggle />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -119,23 +125,24 @@ export default function VerifyEmailScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.hero}>
-            <View style={[styles.logoCircle, { backgroundColor: theme.colors.primary }]}>
-              <Ionicons name="mail-open-outline" size={28} color="#FFFFFF" />
-            </View>
-
-            <Text style={styles.brandTitle}>Подтверждение email</Text>
-            <Text style={styles.brandSubtitle}>
-              Введи код из письма, чтобы перейти к созданию аккаунта
-            </Text>
-          </View>
+          <AuthHeader
+            icon="mail-open-outline"
+            title="Подтверждение email"
+            subtitle="Введите код из письма, чтобы перейти к созданию аккаунта"
+          />
 
           <GlassCard>
             <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Шаг 2 из 3</Text>
             <Text style={[styles.cardSubtitle, { color: theme.colors.muted }]}>
-              На эту почту приходит проверочный код. Если письма нет — проверь спам и отправь
-              код ещё раз.
+              Если письма нет, проверьте спам или отправьте код повторно.
             </Text>
+
+            <AuthErrorBanner message={errorMessage} />
+            {infoMessage ? (
+              <Text style={[styles.infoText, { color: theme.colors.primary }]}>
+                {infoMessage}
+              </Text>
+            ) : null}
 
             <View
               style={[
@@ -149,7 +156,11 @@ export default function VerifyEmailScreen() {
               <Ionicons name="mail-outline" size={18} color={theme.colors.muted} />
               <TextInput
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(value) => {
+                  setEmail(value);
+                  setErrorMessage(null);
+                  setInfoMessage(null);
+                }}
                 placeholder="Email"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.input, { color: theme.colors.text }]}
@@ -158,6 +169,7 @@ export default function VerifyEmailScreen() {
                 autoCorrect={false}
                 autoComplete="email"
                 textContentType="emailAddress"
+                editable={!loading && !resending}
               />
             </View>
 
@@ -173,7 +185,10 @@ export default function VerifyEmailScreen() {
               <Ionicons name="key-outline" size={18} color={theme.colors.muted} />
               <TextInput
                 value={code}
-                onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 6))}
+                onChangeText={(value) => {
+                  setCode(value.replace(/\D/g, '').slice(0, 6));
+                  setErrorMessage(null);
+                }}
                 placeholder="6-значный код"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.input, { color: theme.colors.text }]}
@@ -185,28 +200,22 @@ export default function VerifyEmailScreen() {
                 maxLength={6}
                 returnKeyType="done"
                 onSubmitEditing={() => void onVerify()}
+                editable={!loading && !resending}
               />
             </View>
 
-            <Pressable onPress={() => void onVerify()} disabled={loading}>
-              <LinearGradient
-                colors={['#4F6BFF', '#6E7BFF']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.button, loading && styles.buttonDisabled]}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Text style={styles.buttonText}>Подтвердить</Text>
-                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-                  </>
-                )}
-              </LinearGradient>
-            </Pressable>
+            <AuthPrimaryButton
+              title="Подтвердить"
+              loading={loading}
+              disabled={loading || resending}
+              onPress={() => void onVerify()}
+            />
 
-            <Pressable style={styles.secondaryAction} onPress={() => void onResend()} disabled={resending}>
+            <Pressable
+              style={styles.secondaryAction}
+              onPress={() => void onResend()}
+              disabled={loading || resending}
+            >
               {resending ? (
                 <ActivityIndicator color={theme.colors.primary} />
               ) : (
@@ -236,30 +245,6 @@ const styles = StyleSheet.create({
     paddingVertical: 32,
     gap: 18,
   },
-  hero: {
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  logoCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  brandTitle: {
-    color: '#FFFFFF',
-    fontSize: 30,
-    fontWeight: '800',
-    marginBottom: 6,
-  },
-  brandSubtitle: {
-    color: 'rgba(255,255,255,0.72)',
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 21,
-  },
   cardTitle: {
     fontSize: 24,
     fontWeight: '800',
@@ -273,7 +258,7 @@ const styles = StyleSheet.create({
   inputWrap: {
     minHeight: 54,
     borderWidth: 1,
-    borderRadius: 18,
+    borderRadius: 16,
     paddingHorizontal: 14,
     marginBottom: 12,
     flexDirection: 'row',
@@ -284,22 +269,10 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
   },
-  button: {
-    minHeight: 54,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
-  },
-  buttonDisabled: {
-    opacity: 0.9,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+  infoText: {
+    fontSize: 13,
     fontWeight: '800',
+    marginBottom: 12,
   },
   secondaryAction: {
     alignSelf: 'center',

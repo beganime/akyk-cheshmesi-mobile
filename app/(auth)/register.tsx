@@ -1,7 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,21 +14,39 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 import { GlassCard } from '@/src/components/GlassCard';
+import {
+  AuthErrorBanner,
+  AuthHeader,
+  AuthPrimaryButton,
+  AuthThemeToggle,
+} from '@/src/features/auth/AuthUi';
 import { registerRequest } from '@/src/lib/api/auth';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { getApiErrorMessage } from '@/src/utils/apiErrors';
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
 
 export default function RegisterScreen() {
   const { theme } = useTheme();
 
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const onRegister = async () => {
     const normalizedEmail = email.trim().toLowerCase();
 
+    setErrorMessage(null);
+
     if (!normalizedEmail) {
-      Alert.alert('Ошибка', 'Введите email');
+      setErrorMessage('Введите email');
+      return;
+    }
+
+    if (!isValidEmail(normalizedEmail)) {
+      setErrorMessage('Введите корректный email');
       return;
     }
 
@@ -46,7 +62,7 @@ export default function RegisterScreen() {
         },
       });
     } catch (error: any) {
-      Alert.alert('Ошибка регистрации', getApiErrorMessage(error, 'Не удалось отправить код'));
+      setErrorMessage(getApiErrorMessage(error, 'Не удалось отправить код подтверждения'));
     } finally {
       setLoading(false);
     }
@@ -54,6 +70,7 @@ export default function RegisterScreen() {
 
   return (
     <LinearGradient colors={theme.colors.heroGradient} style={styles.gradient}>
+      <AuthThemeToggle />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -63,22 +80,19 @@ export default function RegisterScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.hero}>
-            <View style={[styles.logoCircle, { backgroundColor: theme.colors.primary }]}>
-              <Ionicons name="person-add" size={28} color="#FFFFFF" />
-            </View>
-
-            <Text style={[styles.brandTitle, { color: theme.colors.text }]}>Регистрация</Text>
-            <Text style={[styles.brandSubtitle, { color: theme.colors.muted }]}>
-              Создай аккаунт и получи код подтверждения на почту
-            </Text>
-          </View>
+          <AuthHeader
+            icon="person-add"
+            title="Регистрация"
+            subtitle="Создайте аккаунт и получите код подтверждения на почту"
+          />
 
           <GlassCard>
             <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Шаг 1 из 3</Text>
             <Text style={[styles.cardSubtitle, { color: theme.colors.muted }]}>
-              Укажи email. Мы отправим на него 6-значный код подтверждения.
+              Укажите email. Мы отправим на него 6-значный код подтверждения.
             </Text>
+
+            <AuthErrorBanner message={errorMessage} />
 
             <View
               style={[
@@ -92,7 +106,10 @@ export default function RegisterScreen() {
               <Ionicons name="mail-outline" size={18} color={theme.colors.muted} />
               <TextInput
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(value) => {
+                  setEmail(value);
+                  if (errorMessage) setErrorMessage(null);
+                }}
                 placeholder="Email"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.input, { color: theme.colors.text }]}
@@ -103,26 +120,16 @@ export default function RegisterScreen() {
                 textContentType="emailAddress"
                 returnKeyType="done"
                 onSubmitEditing={() => void onRegister()}
+                editable={!loading}
               />
             </View>
 
-            <Pressable onPress={() => void onRegister()} disabled={loading}>
-              <LinearGradient
-                colors={[theme.colors.primary, '#60BDF2']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.button, loading && styles.buttonDisabled]}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Text style={styles.buttonText}>Отправить код</Text>
-                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-                  </>
-                )}
-              </LinearGradient>
-            </Pressable>
+            <AuthPrimaryButton
+              title="Отправить код"
+              loading={loading}
+              disabled={loading}
+              onPress={() => void onRegister()}
+            />
 
             <Pressable
               style={styles.secondaryAction}
@@ -154,28 +161,6 @@ const styles = StyleSheet.create({
     paddingVertical: 32,
     gap: 18,
   },
-  hero: {
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  logoCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  brandTitle: {
-    fontSize: 30,
-    fontWeight: '800',
-    marginBottom: 6,
-  },
-  brandSubtitle: {
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 21,
-  },
   cardTitle: {
     fontSize: 24,
     fontWeight: '800',
@@ -189,7 +174,7 @@ const styles = StyleSheet.create({
   inputWrap: {
     minHeight: 54,
     borderWidth: 1,
-    borderRadius: 18,
+    borderRadius: 16,
     paddingHorizontal: 14,
     marginBottom: 12,
     flexDirection: 'row',
@@ -199,23 +184,6 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 15,
-  },
-  button: {
-    minHeight: 54,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
-  },
-  buttonDisabled: {
-    opacity: 0.9,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
   },
   secondaryAction: {
     alignSelf: 'center',

@@ -1,7 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,10 +14,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 import { GlassCard } from '@/src/components/GlassCard';
+import {
+  AuthErrorBanner,
+  AuthHeader,
+  AuthPrimaryButton,
+  AuthThemeToggle,
+} from '@/src/features/auth/AuthUi';
 import { loginRequest } from '@/src/lib/api/auth';
 import { useAuthStore } from '@/src/state/auth';
 import { useTheme } from '@/src/theme/ThemeProvider';
-import { getApiErrorMessage } from '@/src/utils/apiErrors';
+import { getLoginErrorMessage } from '@/src/utils/apiErrors';
 
 export default function LoginScreen() {
   const { theme } = useTheme();
@@ -29,12 +33,15 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const onLogin = async () => {
     const normalizedEmail = email.trim().toLowerCase();
 
+    setErrorMessage(null);
+
     if (!normalizedEmail || !password.trim()) {
-      Alert.alert('Ошибка', 'Введите email и пароль');
+      setErrorMessage('Введите email и пароль');
       return;
     }
 
@@ -48,7 +55,8 @@ export default function LoginScreen() {
       const user = data?.user ?? null;
 
       if (!accessToken) {
-        throw new Error('Backend did not return access token');
+        setErrorMessage('Сервер не вернул токен доступа. Попробуйте позже');
+        return;
       }
 
       await setSession({
@@ -59,7 +67,7 @@ export default function LoginScreen() {
 
       router.replace('/(app)/(tabs)/chats');
     } catch (error: any) {
-      Alert.alert('Ошибка входа', getApiErrorMessage(error, 'Не удалось войти'));
+      setErrorMessage(getLoginErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -67,6 +75,7 @@ export default function LoginScreen() {
 
   return (
     <LinearGradient colors={theme.colors.heroGradient} style={styles.gradient}>
+      <AuthThemeToggle />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -76,24 +85,19 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.hero}>
-            <View style={[styles.logoCircle, { backgroundColor: theme.colors.primary }]}>
-              <Ionicons name="paper-plane" size={28} color="#FFFFFF" />
-            </View>
-
-            <Text style={[styles.brandTitle, { color: theme.colors.text }]}>
-              Akyl Çeşmesi Messenger
-            </Text>
-            <Text style={[styles.brandSubtitle, { color: theme.colors.muted }]}>
-              Безопасное общение для своих
-            </Text>
-          </View>
+          <AuthHeader
+            icon="paper-plane"
+            title="Akyl Çeşmesi Messenger"
+            subtitle="Безопасное общение для своих"
+          />
 
           <GlassCard>
             <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Вход</Text>
             <Text style={[styles.cardSubtitle, { color: theme.colors.muted }]}>
-              Войди в аккаунт и продолжи с того места, где остановился.
+              Войдите в аккаунт, чтобы продолжить общение.
             </Text>
+
+            <AuthErrorBanner message={errorMessage} />
 
             <View
               style={[
@@ -107,7 +111,10 @@ export default function LoginScreen() {
               <Ionicons name="mail-outline" size={18} color={theme.colors.muted} />
               <TextInput
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(value) => {
+                  setEmail(value);
+                  if (errorMessage) setErrorMessage(null);
+                }}
                 placeholder="Email"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.input, { color: theme.colors.text }]}
@@ -117,6 +124,7 @@ export default function LoginScreen() {
                 autoComplete="email"
                 textContentType="emailAddress"
                 returnKeyType="next"
+                editable={!loading}
               />
             </View>
 
@@ -132,7 +140,10 @@ export default function LoginScreen() {
               <Ionicons name="lock-closed-outline" size={18} color={theme.colors.muted} />
               <TextInput
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(value) => {
+                  setPassword(value);
+                  if (errorMessage) setErrorMessage(null);
+                }}
                 placeholder="Пароль"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.input, { color: theme.colors.text }]}
@@ -143,11 +154,13 @@ export default function LoginScreen() {
                 textContentType="password"
                 returnKeyType="done"
                 onSubmitEditing={() => void onLogin()}
+                editable={!loading}
               />
               <Pressable
                 onPress={() => setPasswordVisible((value) => !value)}
                 hitSlop={10}
                 style={styles.eyeButton}
+                disabled={loading}
               >
                 <Ionicons
                   name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
@@ -157,23 +170,12 @@ export default function LoginScreen() {
               </Pressable>
             </View>
 
-            <Pressable onPress={() => void onLogin()} disabled={loading}>
-              <LinearGradient
-                colors={[theme.colors.primary, '#60BDF2']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.button, loading && styles.buttonDisabled]}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Text style={styles.buttonText}>Войти</Text>
-                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-                  </>
-                )}
-              </LinearGradient>
-            </Pressable>
+            <AuthPrimaryButton
+              title="Войти"
+              loading={loading}
+              disabled={loading}
+              onPress={() => void onLogin()}
+            />
 
             <Pressable
               style={styles.secondaryAction}
@@ -205,29 +207,6 @@ const styles = StyleSheet.create({
     paddingVertical: 32,
     gap: 18,
   },
-  hero: {
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  logoCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  brandTitle: {
-    fontSize: 30,
-    fontWeight: '800',
-    marginBottom: 6,
-    textAlign: 'center',
-  },
-  brandSubtitle: {
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 21,
-  },
   cardTitle: {
     fontSize: 24,
     fontWeight: '800',
@@ -241,7 +220,7 @@ const styles = StyleSheet.create({
   inputWrap: {
     minHeight: 54,
     borderWidth: 1,
-    borderRadius: 18,
+    borderRadius: 16,
     paddingHorizontal: 14,
     marginBottom: 12,
     flexDirection: 'row',
@@ -258,23 +237,6 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  button: {
-    minHeight: 54,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
-  },
-  buttonDisabled: {
-    opacity: 0.9,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
   },
   secondaryAction: {
     alignSelf: 'center',

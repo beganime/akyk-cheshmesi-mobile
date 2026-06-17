@@ -1,7 +1,5 @@
 import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,13 +14,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 import { GlassCard } from '@/src/components/GlassCard';
+import {
+  AuthErrorBanner,
+  AuthHeader,
+  AuthPrimaryButton,
+  AuthThemeToggle,
+} from '@/src/features/auth/AuthUi';
 import { setPasswordRequest } from '@/src/lib/api/auth';
 import { useAuthStore } from '@/src/state/auth';
 import { useTheme } from '@/src/theme/ThemeProvider';
-
-function getErrorMessage(error: any, fallback: string) {
-  return error?.response?.data?.detail || error?.message || fallback;
-}
+import { getApiErrorMessage } from '@/src/utils/apiErrors';
 
 function getFirstParam(value: string | string[] | undefined) {
   if (Array.isArray(value)) {
@@ -30,6 +31,10 @@ function getFirstParam(value: string | string[] | undefined) {
   }
 
   return value ?? '';
+}
+
+function isValidUsername(value: string) {
+  return /^[a-zA-Z0-9_.]{4,32}$/.test(value);
 }
 
 export default function SetPasswordScreen() {
@@ -52,26 +57,48 @@ export default function SetPasswordScreen() {
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [passwordConfirmVisible, setPasswordConfirmVisible] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const clearError = () => {
+    if (errorMessage) setErrorMessage(null);
+  };
 
   const onFinish = async () => {
+    const normalizedUsername = username.trim().toLowerCase();
+    const normalizedDateOfBirth = dateOfBirth.trim();
+
+    setErrorMessage(null);
+
     if (!verificationToken) {
-      Alert.alert('Ошибка', 'Не найден verification token. Повтори подтверждение email.');
+      setErrorMessage('Не найден токен подтверждения. Повторите подтверждение email');
       return;
     }
 
-    if (!username.trim()) {
-      Alert.alert('Ошибка', 'Введите username');
+    if (!normalizedUsername) {
+      setErrorMessage('Введите username');
       return;
     }
 
-    if (!password.trim() || !passwordConfirm.trim()) {
-      Alert.alert('Ошибка', 'Введите пароль и подтверждение');
+    if (!isValidUsername(normalizedUsername)) {
+      setErrorMessage('Username должен быть 4-32 символа: буквы, цифры, _ или .');
+      return;
+    }
+
+    if (!password || !passwordConfirm) {
+      setErrorMessage('Введите пароль и подтверждение');
+      return;
+    }
+
+    if (password.length < 8) {
+      setErrorMessage('Пароль должен быть не короче 8 символов');
       return;
     }
 
     if (password !== passwordConfirm) {
-      Alert.alert('Ошибка', 'Пароли не совпадают');
+      setErrorMessage('Пароли не совпадают');
       return;
     }
 
@@ -80,12 +107,12 @@ export default function SetPasswordScreen() {
 
       const data = await setPasswordRequest({
         verificationToken,
-        username,
+        username: normalizedUsername,
         password,
         passwordConfirm,
         firstName: firstName.trim() || undefined,
         lastName: lastName.trim() || undefined,
-        dateOfBirth: dateOfBirth.trim() || undefined,
+        dateOfBirth: normalizedDateOfBirth || undefined,
       });
 
       const accessToken = data?.tokens?.access;
@@ -93,7 +120,8 @@ export default function SetPasswordScreen() {
       const user = data?.user ?? null;
 
       if (!accessToken) {
-        throw new Error('Backend did not return access token');
+        setErrorMessage('Сервер не вернул токен доступа. Попробуйте войти вручную');
+        return;
       }
 
       await setSession({
@@ -104,17 +132,15 @@ export default function SetPasswordScreen() {
 
       router.replace('/(app)/(tabs)/chats');
     } catch (error: any) {
-      Alert.alert(
-        'Ошибка завершения регистрации',
-        getErrorMessage(error, 'Не удалось завершить регистрацию'),
-      );
+      setErrorMessage(getApiErrorMessage(error, 'Не удалось завершить регистрацию'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <LinearGradient colors={['#0B1020', '#141B32', '#1A2545']} style={styles.gradient}>
+    <LinearGradient colors={theme.colors.heroGradient} style={styles.gradient}>
+      <AuthThemeToggle />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -124,22 +150,19 @@ export default function SetPasswordScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.hero}>
-            <View style={[styles.logoCircle, { backgroundColor: theme.colors.primary }]}>
-              <Ionicons name="checkmark-circle-outline" size={28} color="#FFFFFF" />
-            </View>
-
-            <Text style={styles.brandTitle}>Создание аккаунта</Text>
-            <Text style={styles.brandSubtitle}>
-              Заполни профиль и задай пароль, чтобы завершить регистрацию
-            </Text>
-          </View>
+          <AuthHeader
+            icon="checkmark-circle-outline"
+            title="Создание аккаунта"
+            subtitle="Заполните профиль и задайте пароль"
+          />
 
           <GlassCard>
             <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Шаг 3 из 3</Text>
             <Text style={[styles.cardSubtitle, { color: theme.colors.muted }]}>
               {email ? `Подтверждённый email: ${email}` : 'Email уже подтверждён.'}
             </Text>
+
+            <AuthErrorBanner message={errorMessage} />
 
             <View
               style={[
@@ -153,7 +176,10 @@ export default function SetPasswordScreen() {
               <Ionicons name="at-outline" size={18} color={theme.colors.muted} />
               <TextInput
                 value={username}
-                onChangeText={setUsername}
+                onChangeText={(value) => {
+                  setUsername(value);
+                  clearError();
+                }}
                 placeholder="Username"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.input, { color: theme.colors.text }]}
@@ -161,6 +187,7 @@ export default function SetPasswordScreen() {
                 autoCorrect={false}
                 autoComplete="username"
                 textContentType="username"
+                editable={!loading}
               />
             </View>
 
@@ -176,13 +203,17 @@ export default function SetPasswordScreen() {
               <Ionicons name="person-outline" size={18} color={theme.colors.muted} />
               <TextInput
                 value={firstName}
-                onChangeText={setFirstName}
+                onChangeText={(value) => {
+                  setFirstName(value);
+                  clearError();
+                }}
                 placeholder="Имя"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.input, { color: theme.colors.text }]}
                 autoCapitalize="words"
                 autoCorrect={false}
                 textContentType="givenName"
+                editable={!loading}
               />
             </View>
 
@@ -198,13 +229,17 @@ export default function SetPasswordScreen() {
               <Ionicons name="person-outline" size={18} color={theme.colors.muted} />
               <TextInput
                 value={lastName}
-                onChangeText={setLastName}
+                onChangeText={(value) => {
+                  setLastName(value);
+                  clearError();
+                }}
                 placeholder="Фамилия"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.input, { color: theme.colors.text }]}
                 autoCapitalize="words"
                 autoCorrect={false}
                 textContentType="familyName"
+                editable={!loading}
               />
             </View>
 
@@ -220,12 +255,16 @@ export default function SetPasswordScreen() {
               <Ionicons name="calendar-outline" size={18} color={theme.colors.muted} />
               <TextInput
                 value={dateOfBirth}
-                onChangeText={setDateOfBirth}
-                placeholder="Дата рождения (YYYY-MM-DD, не обязательно)"
+                onChangeText={(value) => {
+                  setDateOfBirth(value);
+                  clearError();
+                }}
+                placeholder="Дата рождения (YYYY-MM-DD, необязательно)"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.input, { color: theme.colors.text }]}
                 autoCapitalize="none"
                 autoCorrect={false}
+                editable={!loading}
               />
             </View>
 
@@ -241,16 +280,32 @@ export default function SetPasswordScreen() {
               <Ionicons name="lock-closed-outline" size={18} color={theme.colors.muted} />
               <TextInput
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(value) => {
+                  setPassword(value);
+                  clearError();
+                }}
                 placeholder="Пароль"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.input, { color: theme.colors.text }]}
-                secureTextEntry
+                secureTextEntry={!passwordVisible}
                 autoCapitalize="none"
                 autoCorrect={false}
                 autoComplete="new-password"
                 textContentType="newPassword"
+                editable={!loading}
               />
+              <Pressable
+                onPress={() => setPasswordVisible((value) => !value)}
+                hitSlop={10}
+                style={styles.eyeButton}
+                disabled={loading}
+              >
+                <Ionicons
+                  name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={theme.colors.muted}
+                />
+              </Pressable>
             </View>
 
             <View
@@ -265,37 +320,43 @@ export default function SetPasswordScreen() {
               <Ionicons name="shield-checkmark-outline" size={18} color={theme.colors.muted} />
               <TextInput
                 value={passwordConfirm}
-                onChangeText={setPasswordConfirm}
+                onChangeText={(value) => {
+                  setPasswordConfirm(value);
+                  clearError();
+                }}
                 placeholder="Подтверждение пароля"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.input, { color: theme.colors.text }]}
-                secureTextEntry
+                secureTextEntry={!passwordConfirmVisible}
                 autoCapitalize="none"
                 autoCorrect={false}
                 autoComplete="new-password"
                 textContentType="newPassword"
                 returnKeyType="done"
                 onSubmitEditing={() => void onFinish()}
+                editable={!loading}
               />
+              <Pressable
+                onPress={() => setPasswordConfirmVisible((value) => !value)}
+                hitSlop={10}
+                style={styles.eyeButton}
+                disabled={loading}
+              >
+                <Ionicons
+                  name={passwordConfirmVisible ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={theme.colors.muted}
+                />
+              </Pressable>
             </View>
 
-            <Pressable onPress={() => void onFinish()} disabled={loading}>
-              <LinearGradient
-                colors={['#4F6BFF', '#6E7BFF']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.button, loading && styles.buttonDisabled]}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Text style={styles.buttonText}>Завершить регистрацию</Text>
-                    <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-                  </>
-                )}
-              </LinearGradient>
-            </Pressable>
+            <AuthPrimaryButton
+              title="Завершить регистрацию"
+              icon="checkmark"
+              loading={loading}
+              disabled={loading}
+              onPress={() => void onFinish()}
+            />
           </GlassCard>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -317,30 +378,6 @@ const styles = StyleSheet.create({
     paddingVertical: 32,
     gap: 18,
   },
-  hero: {
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  logoCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  brandTitle: {
-    color: '#FFFFFF',
-    fontSize: 30,
-    fontWeight: '800',
-    marginBottom: 6,
-  },
-  brandSubtitle: {
-    color: 'rgba(255,255,255,0.72)',
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 21,
-  },
   cardTitle: {
     fontSize: 24,
     fontWeight: '800',
@@ -354,7 +391,7 @@ const styles = StyleSheet.create({
   inputWrap: {
     minHeight: 54,
     borderWidth: 1,
-    borderRadius: 18,
+    borderRadius: 16,
     paddingHorizontal: 14,
     marginBottom: 12,
     flexDirection: 'row',
@@ -365,21 +402,11 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
   },
-  button: {
-    minHeight: 54,
-    borderRadius: 18,
+  eyeButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
-  },
-  buttonDisabled: {
-    opacity: 0.9,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
   },
 });

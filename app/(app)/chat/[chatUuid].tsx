@@ -103,16 +103,16 @@ const reportReasons: ComplaintReason[] = ['spam', 'abuse', 'fraud', 'harassment'
 
 const emojiGroups = [
   {
-    title: 'Часто используемые',
-    items: ['👍', '❤️', '😂', '🔥', '🙏', '👏', '😎', '😅', '😮', '🥹', '🎉', '✅'],
+    title: 'Р§Р°СЃС‚Рѕ РёСЃРїРѕР»СЊР·СѓРµРјС‹Рµ',
+    items: ['рџ‘Ќ', 'вќ¤пёЏ', 'рџ‚', 'рџ”Ґ', 'рџ™Џ', 'рџ‘Џ', 'рџЋ', 'рџ…', 'рџ®', 'рџҐ№', 'рџЋ‰', 'вњ…'],
   },
   {
-    title: 'Эмоции',
-    items: ['😀', '😁', '😄', '😊', '🙂', '😉', '😍', '🤗', '🤔', '😴', '🥲', '😭'],
+    title: 'Р­РјРѕС†РёРё',
+    items: ['рџЂ', 'рџЃ', 'рџ„', 'рџЉ', 'рџ™‚', 'рџ‰', 'рџЌ', 'рџ¤—', 'рџ¤”', 'рџґ', 'рџҐІ', 'рџ­'],
   },
   {
-    title: 'Реакции',
-    items: ['💯', '💪', '👌', '🤝', '👏', '🙌', '🤍', '💙', '💜', '💥', '✨', '⚡'],
+    title: 'Р РµР°РєС†РёРё',
+    items: ['рџ’Ї', 'рџ’Є', 'рџ‘Њ', 'рџ¤ќ', 'рџ‘Џ', 'рџ™Њ', 'рџ¤Ќ', 'рџ’™', 'рџ’њ', 'рџ’Ґ', 'вњЁ', 'вљЎ'],
   },
 ];
 
@@ -198,13 +198,13 @@ function animateLayout() {
 }
 
 function formatChatTitle(chat: ChatListItem | null) {
-  return chat?.display_title || chat?.title || chat?.peer_user?.full_name || 'Чат';
+  return chat?.display_title || chat?.title || chat?.peer_user?.full_name || 'Р§Р°С‚';
 }
 
 function formatLastSeen(lastSeenAt?: string | null) {
-  if (!lastSeenAt) return 'был(а) давно';
+  if (!lastSeenAt) return 'Р±С‹Р»(Р°) РґР°РІРЅРѕ';
   const date = new Date(lastSeenAt);
-  if (Number.isNaN(date.getTime())) return 'был(а) недавно';
+  if (Number.isNaN(date.getTime())) return 'Р±С‹Р»(Р°) РЅРµРґР°РІРЅРѕ';
 
   const now = new Date();
   const sameDay = date.toDateString() === now.toDateString();
@@ -212,25 +212,25 @@ function formatLastSeen(lastSeenAt?: string | null) {
   yesterday.setDate(yesterday.getDate() - 1);
 
   if (sameDay) {
-    return `был(а) сегодня в ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    return `Р±С‹Р»(Р°) СЃРµРіРѕРґРЅСЏ РІ ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   }
 
   if (date.toDateString() === yesterday.toDateString()) {
-    return `был(а) вчера в ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    return `Р±С‹Р»(Р°) РІС‡РµСЂР° РІ ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   }
 
-  return `был(а) ${date.toLocaleDateString([], { day: '2-digit', month: '2-digit' })} в ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  return `Р±С‹Р»(Р°) ${date.toLocaleDateString([], { day: '2-digit', month: '2-digit' })} РІ ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 function formatChatSub(chat: ChatListItem | null, presence: PresenceDetail | null) {
-  if (!chat) return 'Переписка';
+  if (!chat) return 'РџРµСЂРµРїРёСЃРєР°';
 
-  if (chat.is_muted) return 'Без звука';
-  if (chat.is_pinned) return 'Закреплён';
-  if (chat.is_archived) return 'В архиве';
+  if (chat.is_muted) return 'Р‘РµР· Р·РІСѓРєР°';
+  if (chat.is_pinned) return 'Р—Р°РєСЂРµРїР»С‘РЅ';
+  if (chat.is_archived) return 'Р’ Р°СЂС…РёРІРµ';
 
-  if (chat.chat_type === 'group') return 'Групповой чат';
-  if (presence?.status === 'online') return 'В сети';
+  if (chat.chat_type === 'group') return 'Р“СЂСѓРїРїРѕРІРѕР№ С‡Р°С‚';
+  if (presence?.status === 'online') return 'Р’ СЃРµС‚Рё';
   return formatLastSeen(presence?.last_seen_at || null);
 }
 
@@ -257,17 +257,17 @@ function formatTime(dateString?: string | null) {
 }
 
 function getMessagePreviewText(message: MessageItem) {
-  if (message.is_deleted) return 'Сообщение удалено';
+  if (message.is_deleted) return 'РЎРѕРѕР±С‰РµРЅРёРµ СѓРґР°Р»РµРЅРѕ';
   if (message.text?.trim()) return message.text;
 
-  if (message.message_type === 'sticker') return 'Стикер';
-  if (message.message_type === 'image') return 'Фото';
-  if (message.message_type === 'video') return 'Видео';
-  if (message.message_type === 'video_note') return 'Видеокружок';
-  if (message.message_type === 'audio') return 'Голосовое сообщение';
-  if (message.message_type === 'file') return 'Файл';
+  if (message.message_type === 'sticker') return 'РЎС‚РёРєРµСЂ';
+  if (message.message_type === 'image') return 'Р¤РѕС‚Рѕ';
+  if (message.message_type === 'video') return 'Р’РёРґРµРѕ';
+  if (message.message_type === 'video_note') return 'Р’РёРґРµРѕРєСЂСѓР¶РѕРє';
+  if (message.message_type === 'audio') return 'Р“РѕР»РѕСЃРѕРІРѕРµ СЃРѕРѕР±С‰РµРЅРёРµ';
+  if (message.message_type === 'file') return 'Р¤Р°Р№Р»';
 
-  return 'Сообщение';
+  return 'РЎРѕРѕР±С‰РµРЅРёРµ';
 }
 
 function getStickerImage(message: MessageItem) {
@@ -332,6 +332,8 @@ export default function ChatScreen() {
   const sendLockRef = useRef(false);
   const audioRecordingRef = useRef<Audio.Recording | null>(null);
   const audioStartPromiseRef = useRef<Promise<Audio.Recording | null> | null>(null);
+  const audioCancelRequestedRef = useRef(false);
+  const lastAudioDurationMsRef = useRef(0);
   const videoStartedAtRef = useRef<number | null>(null);
 
   const startOutgoing = useCallStore((state) => state.startOutgoing);
@@ -383,7 +385,6 @@ export default function ChatScreen() {
   const [cameraTorch, setCameraTorch] = useState(false);
   const [captureBusy, setCaptureBusy] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
-  const audioStatusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [reportType, setReportType] = useState<'user' | 'chat'>('chat');
   const [reportReason, setReportReason] = useState<ComplaintReason>('other');
@@ -439,22 +440,8 @@ export default function ChatScreen() {
       setCameraTorch(false);
       setCameraFacing('front');
       setCameraReady(false);
-
-      if (audioStatusIntervalRef.current) {
-        clearInterval(audioStatusIntervalRef.current);
-        audioStatusIntervalRef.current = null;
-      }
     }
   }, [captureVisible]);
-
-  useEffect(() => {
-    return () => {
-      if (audioStatusIntervalRef.current) {
-        clearInterval(audioStatusIntervalRef.current);
-        audioStatusIntervalRef.current = null;
-      }
-    };
-  }, []);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
@@ -829,7 +816,7 @@ export default function ChatScreen() {
 
     try {
       await Share.share({
-        message: `${chat.peer_user.full_name || chat.peer_user.username || 'Пользователь'}${
+        message: `${chat.peer_user.full_name || chat.peer_user.username || 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ'}${
           chat.peer_user.username ? ` (@${chat.peer_user.username})` : ''
         }`,
       });
@@ -961,14 +948,14 @@ export default function ChatScreen() {
 
     const sentAt = selectedMessage.created_at
       ? new Date(selectedMessage.created_at).toLocaleString()
-      : 'Нет данных';
+      : 'РќРµС‚ РґР°РЅРЅС‹С…';
     const editedAt = selectedMessage.edited_at
       ? new Date(selectedMessage.edited_at).toLocaleString()
-      : 'Не редактировалось';
+      : 'РќРµ СЂРµРґР°РєС‚РёСЂРѕРІР°Р»РѕСЃСЊ';
 
     Alert.alert(
-      'Информация о сообщении',
-      `Отправлено: ${sentAt}\nИзменено: ${editedAt}\nСтатус: ${selectedMessage.delivery_status || 'sent'}`,
+      'РРЅС„РѕСЂРјР°С†РёСЏ Рѕ СЃРѕРѕР±С‰РµРЅРёРё',
+      `РћС‚РїСЂР°РІР»РµРЅРѕ: ${sentAt}\nРР·РјРµРЅРµРЅРѕ: ${editedAt}\nРЎС‚Р°С‚СѓСЃ: ${selectedMessage.delivery_status || 'sent'}`,
     );
   };
 
@@ -984,7 +971,7 @@ export default function ChatScreen() {
     await blockUserLocal(chat.peer_user.uuid);
     setIsBlocked(true);
     setShowQuickActions(false);
-    Alert.alert('Пользователь заблокирован', 'Новые входящие сообщения от него скрыты локально.');
+    Alert.alert('РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ', 'РќРѕРІС‹Рµ РІС…РѕРґСЏС‰РёРµ СЃРѕРѕР±С‰РµРЅРёСЏ РѕС‚ РЅРµРіРѕ СЃРєСЂС‹С‚С‹ Р»РѕРєР°Р»СЊРЅРѕ.');
   };
 
   const updateAppearance = async (patch: Partial<typeof appearance>) => {
@@ -1046,7 +1033,7 @@ export default function ChatScreen() {
     const nextText = editingText.trim();
 
     if (!nextText) {
-      Alert.alert('Ошибка', 'Текст сообщения не может быть пустым');
+      Alert.alert('РћС€РёР±РєР°', 'РўРµРєСЃС‚ СЃРѕРѕР±С‰РµРЅРёСЏ РЅРµ РјРѕР¶РµС‚ Р±С‹С‚СЊ РїСѓСЃС‚С‹Рј');
       return;
     }
 
@@ -1081,8 +1068,8 @@ export default function ChatScreen() {
     } catch (error: any) {
       console.error('handleSaveEditedMessage error:', error);
       Alert.alert(
-        'Ошибка',
-        error?.response?.data?.detail || 'Не удалось изменить сообщение',
+        'РћС€РёР±РєР°',
+        error?.response?.data?.detail || 'РќРµ СѓРґР°Р»РѕСЃСЊ РёР·РјРµРЅРёС‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ',
       );
     } finally {
       setEditingLoading(false);
@@ -1133,8 +1120,8 @@ export default function ChatScreen() {
     } catch (error: any) {
       console.error('performDeleteSelectedMessage error:', error);
       Alert.alert(
-        'Ошибка',
-        error?.response?.data?.detail || 'Не удалось удалить сообщение',
+        'РћС€РёР±РєР°',
+        error?.response?.data?.detail || 'РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ',
       );
     }
   };
@@ -1143,17 +1130,17 @@ export default function ChatScreen() {
     if (!selectedMessage) return;
 
     Alert.alert(
-      deleteFor === 'everyone' ? 'Удалить у всех?' : 'Удалить у себя?',
+      deleteFor === 'everyone' ? 'РЈРґР°Р»РёС‚СЊ Сѓ РІСЃРµС…?' : 'РЈРґР°Р»РёС‚СЊ Сѓ СЃРµР±СЏ?',
       deleteFor === 'everyone'
-        ? 'Сообщение будет удалено на сервере для всех участников.'
-        : 'Сообщение будет скрыто у тебя.',
+        ? 'РЎРѕРѕР±С‰РµРЅРёРµ Р±СѓРґРµС‚ СѓРґР°Р»РµРЅРѕ РЅР° СЃРµСЂРІРµСЂРµ РґР»СЏ РІСЃРµС… СѓС‡Р°СЃС‚РЅРёРєРѕРІ.'
+        : 'РЎРѕРѕР±С‰РµРЅРёРµ Р±СѓРґРµС‚ СЃРєСЂС‹С‚Рѕ Сѓ С‚РµР±СЏ.',
       [
         {
-          text: 'Отмена',
+          text: 'РћС‚РјРµРЅР°',
           style: 'cancel',
         },
         {
-          text: 'Удалить',
+          text: 'РЈРґР°Р»РёС‚СЊ',
           style: 'destructive',
           onPress: () => {
             void performDeleteSelectedMessage(deleteFor);
@@ -1355,12 +1342,12 @@ export default function ChatScreen() {
       });
 
       Alert.alert(
-        'Ошибка',
+        'РћС€РёР±РєР°',
         getApiErrorMessage(
           error,
           mediaType === 'audio'
-            ? 'Не удалось отправить голосовое сообщение'
-            : 'Не удалось отправить видео-сообщение',
+            ? 'РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ РіРѕР»РѕСЃРѕРІРѕРµ СЃРѕРѕР±С‰РµРЅРёРµ'
+            : 'РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ РІРёРґРµРѕ-СЃРѕРѕР±С‰РµРЅРёРµ',
         ),
       );
     }
@@ -1384,7 +1371,12 @@ export default function ChatScreen() {
     if (captureBusy) return;
 
     try {
-      const recording = audioRecordingRef.current || audioRecording;
+      audioCancelRequestedRef.current = true;
+      const pendingStart = audioStartPromiseRef.current;
+      const recording =
+        audioRecordingRef.current ||
+        audioRecording ||
+        (pendingStart ? await pendingStart.catch(() => null) : null);
 
       if (recording) {
         await recording.stopAndUnloadAsync().catch(() => null);
@@ -1398,6 +1390,7 @@ export default function ChatScreen() {
       }
 
       audioStartPromiseRef.current = null;
+      lastAudioDurationMsRef.current = 0;
 
       if (videoRecording) {
         cameraRef.current?.stopRecording?.();
@@ -1419,44 +1412,47 @@ export default function ChatScreen() {
 
     try {
       setCaptureBusy(true);
+      audioCancelRequestedRef.current = false;
+      lastAudioDurationMsRef.current = 0;
+      setAudioDurationMs(0);
 
-      const permission = audioPermission?.granted
-        ? audioPermission
-        : await requestAudioPermission();
+      let permission = await Audio.getPermissionsAsync();
+      if (!permission.granted) {
+        permission = await Audio.requestPermissionsAsync();
+      }
 
-      if (!permission?.granted) {
-        Alert.alert('Нет доступа', 'Разреши микрофон для записи голосовых сообщений.');
+      if (!permission.granted) {
+        Alert.alert('Нет доступа', 'Разрешите микрофон для записи голосовых сообщений.');
         return null;
       }
 
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
       });
 
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recording.startAsync();
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        (status) => {
+          const nextDuration =
+            typeof status.durationMillis === 'number' ? status.durationMillis : 0;
+          lastAudioDurationMsRef.current = nextDuration;
+          setAudioDurationMs(nextDuration);
+        },
+        100,
+      );
 
-      if (audioStatusIntervalRef.current) {
-        clearInterval(audioStatusIntervalRef.current);
+      if (audioCancelRequestedRef.current) {
+        await recording.stopAndUnloadAsync().catch(() => null);
+        return null;
       }
 
-      audioStatusIntervalRef.current = setInterval(async () => {
-        try {
-          const status = await recording.getStatusAsync();
-
-          setAudioDurationMs(
-            typeof status.durationMillis === 'number' ? status.durationMillis : 0,
-          );
-        } catch (error) {
-          console.error('audio status poll error:', error);
-        }
-      }, 200);
-
-      setAudioDurationMs(0);
       audioRecordingRef.current = recording;
       setAudioRecording(recording);
+      audioPressStartedAtRef.current = Date.now();
 
       return recording;
     } catch (error) {
@@ -1490,15 +1486,10 @@ export default function ChatScreen() {
     try {
       setCaptureBusy(true);
       audioStartPromiseRef.current = null;
-
-      if (audioStatusIntervalRef.current) {
-        clearInterval(audioStatusIntervalRef.current);
-        audioStatusIntervalRef.current = null;
-      }
+      audioCancelRequestedRef.current = false;
 
       const statusBeforeStop = await recording.getStatusAsync().catch(() => null);
       await recording.stopAndUnloadAsync();
-      const statusAfterStop = await recording.getStatusAsync().catch(() => null);
 
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
@@ -1507,18 +1498,20 @@ export default function ChatScreen() {
 
       const uri = recording.getURI();
       const durationMillis =
-        Number((statusAfterStop as any)?.durationMillis || 0) ||
         Number((statusBeforeStop as any)?.durationMillis || 0) ||
-        audioDurationMs ||
+        lastAudioDurationMsRef.current ||
+        (audioPressStartedAtRef.current ? Date.now() - audioPressStartedAtRef.current : 0) ||
         1000;
       const durationSeconds = Math.max(1, Math.ceil(durationMillis / 1000));
 
       audioRecordingRef.current = null;
       setAudioRecording(null);
       setVoiceLocked(false);
+      audioPressStartedAtRef.current = null;
 
-      if (durationMillis < 650) {
+      if (durationMillis < 350) {
         setAudioDurationMs(0);
+        lastAudioDurationMsRef.current = 0;
         setCaptureVisible(false);
         return;
       }
@@ -1533,9 +1526,11 @@ export default function ChatScreen() {
         fileName: `voice-${Date.now()}${Platform.OS === 'web' ? '.webm' : '.m4a'}`,
         mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/mp4',
         duration: durationSeconds,
+        mediaKind: 'audio',
       });
 
       setAudioDurationMs(0);
+      lastAudioDurationMsRef.current = 0;
       setCaptureVisible(false);
     } catch (error) {
       console.error('stopAudioRecordingAndSend error:', error);
@@ -1551,7 +1546,7 @@ export default function ChatScreen() {
       : await requestCameraPermission();
 
     if (!cameraStatus?.granted) {
-      Alert.alert('Нет доступа', 'Разреши камеру для записи видео.');
+      Alert.alert('РќРµС‚ РґРѕСЃС‚СѓРїР°', 'Р Р°Р·СЂРµС€Рё РєР°РјРµСЂСѓ РґР»СЏ Р·Р°РїРёСЃРё РІРёРґРµРѕ.');
       return false;
     }
 
@@ -1560,7 +1555,7 @@ export default function ChatScreen() {
       : await requestMicrophonePermission();
 
     if (!micStatus?.granted) {
-      Alert.alert('Нет доступа', 'Разреши микрофон для записи видео.');
+      Alert.alert('РќРµС‚ РґРѕСЃС‚СѓРїР°', 'Р Р°Р·СЂРµС€Рё РјРёРєСЂРѕС„РѕРЅ РґР»СЏ Р·Р°РїРёСЃРё РІРёРґРµРѕ.');
       return false;
     }
 
@@ -1588,7 +1583,7 @@ export default function ChatScreen() {
       }
 
       if (!cameraRef.current || !cameraReady) {
-        Alert.alert('Камера не готова', 'Подожди секунду и попробуй снова.');
+        Alert.alert('РљР°РјРµСЂР° РЅРµ РіРѕС‚РѕРІР°', 'РџРѕРґРѕР¶РґРё СЃРµРєСѓРЅРґСѓ Рё РїРѕРїСЂРѕР±СѓР№ СЃРЅРѕРІР°.');
         return;
       }
 
@@ -1615,7 +1610,7 @@ export default function ChatScreen() {
       setVideoRecording(false);
 
       if (!result?.uri) {
-        Alert.alert('Ошибка', 'Не удалось записать видео');
+        Alert.alert('РћС€РёР±РєР°', 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїРёСЃР°С‚СЊ РІРёРґРµРѕ');
         return;
       }
 
@@ -1631,7 +1626,7 @@ export default function ChatScreen() {
     } catch (error) {
       console.error('startVideoRecording error:', error);
       setVideoRecording(false);
-      Alert.alert('Ошибка', 'Не удалось записать видео');
+      Alert.alert('РћС€РёР±РєР°', 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїРёСЃР°С‚СЊ РІРёРґРµРѕ');
     } finally {
       setCaptureBusy(false);
     }
@@ -1654,7 +1649,7 @@ export default function ChatScreen() {
         const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
         if (!permission.granted) {
-          Alert.alert('Нет доступа', 'Разреши доступ к фото и видео, чтобы отправлять медиа в чат.');
+          Alert.alert('РќРµС‚ РґРѕСЃС‚СѓРїР°', 'Р Р°Р·СЂРµС€Рё РґРѕСЃС‚СѓРї Рє С„РѕС‚Рѕ Рё РІРёРґРµРѕ, С‡С‚РѕР±С‹ РѕС‚РїСЂР°РІР»СЏС‚СЊ РјРµРґРёР° РІ С‡Р°С‚.');
           return;
         }
       }
@@ -1775,12 +1770,12 @@ export default function ChatScreen() {
       }
 
       Alert.alert(
-        'Ошибка',
+        'РћС€РёР±РєР°',
         getApiErrorMessage(
           error,
           pickedKind === 'video'
-            ? 'Не удалось отправить видео'
-            : 'Не удалось отправить фото',
+            ? 'РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ РІРёРґРµРѕ'
+            : 'РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ С„РѕС‚Рѕ',
         ),
       );
     }
@@ -1854,7 +1849,7 @@ export default function ChatScreen() {
       });
     } catch (error) {
       console.error('handleSendSticker error:', error);
-      Alert.alert('Ошибка', 'Не удалось отправить стикер');
+      Alert.alert('РћС€РёР±РєР°', 'РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ СЃС‚РёРєРµСЂ');
     }
   };
 
@@ -2004,7 +1999,7 @@ export default function ChatScreen() {
     const localUri = attachment?.file_url;
 
     if (!localUri) {
-      Alert.alert('Не удалось повторить', 'Локальный файл больше недоступен. Выберите медиа заново.');
+      Alert.alert('РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРІС‚РѕСЂРёС‚СЊ', 'Р›РѕРєР°Р»СЊРЅС‹Р№ С„Р°Р№Р» Р±РѕР»СЊС€Рµ РЅРµРґРѕСЃС‚СѓРїРµРЅ. Р’С‹Р±РµСЂРёС‚Рµ РјРµРґРёР° Р·Р°РЅРѕРІРѕ.');
       return;
     }
 
@@ -2089,7 +2084,7 @@ export default function ChatScreen() {
     }
   };
 
-  const handleAudioPressIn = () => {
+  const openAudioRecorder = () => {
     if (canSend || captureBusy || audioRecordingRef.current || audioStartPromiseRef.current) {
       return;
     }
@@ -2098,41 +2093,13 @@ export default function ChatScreen() {
       closeComposerPanel();
     }
 
-    audioPressStartedAtRef.current = Date.now();
+    audioCancelRequestedRef.current = false;
+    audioPressStartedAtRef.current = null;
+    lastAudioDurationMsRef.current = 0;
+    setAudioDurationMs(0);
+    setVoiceLocked(true);
     setCaptureMode('audio');
-    setVoiceLocked(false);
     setCaptureVisible(true);
-    beginAudioRecording();
-  };
-
-  const handleAudioPressOut = () => {
-    if (canSend || voiceLocked) {
-      return;
-    }
-
-    void (async () => {
-      const pendingStart = audioStartPromiseRef.current;
-
-      if (pendingStart) {
-        const recording = await pendingStart;
-        audioStartPromiseRef.current = null;
-
-        if (recording) {
-          await stopAudioRecordingAndSend(recording);
-        }
-
-        return;
-      }
-
-      const recording = audioRecordingRef.current;
-
-      if (!recording) {
-        audioPressStartedAtRef.current = null;
-        return;
-      }
-
-      await stopAudioRecordingAndSend(recording);
-    })();
   };
 
   const openVideoNoteRecorder = () => {
@@ -2160,7 +2127,7 @@ export default function ChatScreen() {
       : await requestAudioPermission();
 
     if (!permission?.granted) {
-      Alert.alert('Нет доступа', 'Разреши микрофон для аудио-звонков.');
+      Alert.alert('РќРµС‚ РґРѕСЃС‚СѓРїР°', 'Р Р°Р·СЂРµС€Рё РјРёРєСЂРѕС„РѕРЅ РґР»СЏ Р°СѓРґРёРѕ-Р·РІРѕРЅРєРѕРІ.');
       return false;
     }
 
@@ -2191,8 +2158,8 @@ export default function ChatScreen() {
     } catch (error: any) {
       console.error('startChatCall error:', error);
       Alert.alert(
-        'Звонок не запущен',
-        error?.message || 'Не удалось начать звонок. Проверь Android/iOS build и WebSocket.',
+        'Р—РІРѕРЅРѕРє РЅРµ Р·Р°РїСѓС‰РµРЅ',
+        error?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°С‡Р°С‚СЊ Р·РІРѕРЅРѕРє. РџСЂРѕРІРµСЂСЊ Android/iOS build Рё WebSocket.',
       );
     } finally {
       setCallingKey(null);
@@ -2223,7 +2190,7 @@ export default function ChatScreen() {
               },
             ]}
           >
-            изменено
+            РёР·РјРµРЅРµРЅРѕ
           </Text>
         ) : null}
 
@@ -2309,7 +2276,7 @@ export default function ChatScreen() {
 
             {item.local_status === 'failed' ? (
               <Text style={[styles.uploadRetryText, { color: theme.colors.danger }]}>
-                Не отправлено. Нажмите, чтобы повторить.
+                РќРµ РѕС‚РїСЂР°РІР»РµРЅРѕ. РќР°Р¶РјРёС‚Рµ, С‡С‚РѕР±С‹ РїРѕРІС‚РѕСЂРёС‚СЊ.
               </Text>
             ) : null}
 
@@ -2424,7 +2391,7 @@ export default function ChatScreen() {
                 },
               ]}
             >
-              {item.is_deleted ? 'Сообщение удалено' : item.text || ''}
+              {item.is_deleted ? 'РЎРѕРѕР±С‰РµРЅРёРµ СѓРґР°Р»РµРЅРѕ' : item.text || ''}
             </Text>
           )}
 
@@ -2591,7 +2558,7 @@ export default function ChatScreen() {
                 style={[styles.quickActionBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}
               >
                 <Text style={[styles.quickActionText, { color: theme.colors.text }]}>
-                  Добавить в контакты
+                  Р”РѕР±Р°РІРёС‚СЊ РІ РєРѕРЅС‚Р°РєС‚С‹
                 </Text>
               </Pressable>
             ) : null}
@@ -2601,7 +2568,7 @@ export default function ChatScreen() {
               style={[styles.quickActionBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}
             >
               <Text style={[styles.quickActionText, { color: theme.colors.danger }]}>
-                Заблокировать
+                Р—Р°Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ
               </Text>
             </Pressable>
           </View>
@@ -2641,12 +2608,12 @@ export default function ChatScreen() {
                 ]}
               >
                 <Text style={{ color: theme.colors.text, fontWeight: '700' }}>
-                  {loadingEarlier ? 'Загрузка...' : 'Загрузить более ранние'}
+                  {loadingEarlier ? 'Р—Р°РіСЂСѓР·РєР°...' : 'Р—Р°РіСЂСѓР·РёС‚СЊ Р±РѕР»РµРµ СЂР°РЅРЅРёРµ'}
                 </Text>
               </Pressable>
             ) : (
               <View style={styles.historyStart}>
-                <Text style={{ color: theme.colors.muted }}>Начало истории</Text>
+                <Text style={{ color: theme.colors.muted }}>РќР°С‡Р°Р»Рѕ РёСЃС‚РѕСЂРёРё</Text>
               </View>
             )
           }
@@ -2654,10 +2621,10 @@ export default function ChatScreen() {
             <View style={styles.emptyWrap}>
               <GlassCard>
                 <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
-                  Пока пусто
+                  РџРѕРєР° РїСѓСЃС‚Рѕ
                 </Text>
                 <Text style={[styles.emptyText, { color: theme.colors.muted }]}>
-                  Отправь первое сообщение в этот чат.
+                  РћС‚РїСЂР°РІСЊ РїРµСЂРІРѕРµ СЃРѕРѕР±С‰РµРЅРёРµ РІ СЌС‚РѕС‚ С‡Р°С‚.
                 </Text>
               </GlassCard>
             </View>
@@ -2703,7 +2670,7 @@ export default function ChatScreen() {
             >
               <View style={{ flex: 1 }}>
                 <Text style={[styles.replyComposerTitle, { color: theme.colors.text }]}>
-                  Ответ
+                  РћС‚РІРµС‚
                 </Text>
                 <Text
                   style={[styles.replyComposerText, { color: theme.colors.muted }]}
@@ -2754,7 +2721,7 @@ export default function ChatScreen() {
                     closeComposerPanel();
                   }
                 }}
-                placeholder="Сообщение"
+                placeholder="РЎРѕРѕР±С‰РµРЅРёРµ"
                 placeholderTextColor={theme.colors.muted}
                 style={[
                   styles.input,
@@ -2792,25 +2759,28 @@ export default function ChatScreen() {
             ) : null}
 
             <Pressable
-              onPressIn={handleAudioPressIn}
-              onPressOut={handleAudioPressOut}
               onPress={() => {
                 if (canSend) {
                   void handleSend();
+                  return;
                 }
+
+                openAudioRecorder();
               }}
+              disabled={captureBusy}
               style={[
                 styles.primaryActionButton,
                 {
-                  backgroundColor: canSend || audioRecording ? theme.colors.primary : theme.colors.cardStrong,
-                  borderColor: canSend || audioRecording ? 'transparent' : theme.colors.borderStrong,
+                  backgroundColor: canSend ? theme.colors.primary : theme.colors.cardStrong,
+                  borderColor: canSend ? 'transparent' : theme.colors.borderStrong,
+                  opacity: captureBusy ? 0.6 : 1,
                 },
               ]}
             >
               <Ionicons
                 name={composerActionIcon as any}
                 size={20}
-                color={canSend || audioRecording ? '#FFFFFF' : theme.colors.text}
+                color={canSend ? '#FFFFFF' : theme.colors.text}
               />
             </Pressable>
           </View>
@@ -2859,7 +2829,7 @@ export default function ChatScreen() {
                         },
                       ]}
                     >
-                      Стикеры
+                      РЎС‚РёРєРµСЂС‹
                     </Text>
                   </Pressable>
 
@@ -2895,7 +2865,7 @@ export default function ChatScreen() {
                         },
                       ]}
                     >
-                      Эмодзи
+                      Р­РјРѕРґР·Рё
                     </Text>
                   </Pressable>
                 </View>
@@ -2971,7 +2941,7 @@ export default function ChatScreen() {
                       })
                     ) : (
                       <Text style={[styles.helperText, { color: theme.colors.muted }]}>
-                        Пакеты стикеров загружаются…
+                        РџР°РєРµС‚С‹ СЃС‚РёРєРµСЂРѕРІ Р·Р°РіСЂСѓР¶Р°СЋС‚СЃСЏвЂ¦
                       </Text>
                     )}
                   </View>
@@ -3008,7 +2978,7 @@ export default function ChatScreen() {
                     </View>
                   ) : (
                     <Text style={[styles.helperText, { color: theme.colors.muted }]}>
-                      Стикеры пока недоступны
+                      РЎС‚РёРєРµСЂС‹ РїРѕРєР° РЅРµРґРѕСЃС‚СѓРїРЅС‹
                     </Text>
                   )}
                 </View>
@@ -3063,9 +3033,9 @@ export default function ChatScreen() {
               <Text style={[styles.audioHint, { color: theme.colors.muted }]}>
                 {audioRecording
                   ? voiceLocked
-                    ? 'Запись закреплена. Нажми “Отправить” или “Отмена”.'
-                    : 'Отпустите кнопку для отправки. Нажмите Lock, чтобы закрепить запись.'
-                  : 'Зажмите микрофон, чтобы начать запись.'}
+                    ? 'Запись идёт. Нажмите “Отправить” или “Отмена”.'
+                    : 'Отпустите кнопку для отправки или закрепите запись.'
+                  : 'Нажмите “Записать”, затем отправьте или отмените голосовое.'}
               </Text>
 
               <View style={styles.audioActions}>
@@ -3096,7 +3066,7 @@ export default function ChatScreen() {
                     ]}
                   >
                     <Text style={[styles.secondaryBtnText, { color: theme.colors.primary }]}>
-                      Lock
+                      Закрепить
                     </Text>
                   </Pressable>
                 ) : null}
@@ -3190,7 +3160,7 @@ export default function ChatScreen() {
                   <Text style={[styles.videoPillText, { color: theme.colors.text }]}>
                     {videoRecording
                       ? formatSecondsRemaining(Math.max(0, VIDEO_MAX_DURATION_SECONDS * 1000 - videoDurationMs))
-                      : 'Лимит 00:30'}
+                      : 'Р›РёРјРёС‚ 00:30'}
                   </Text>
                 </View>
 
@@ -3238,10 +3208,10 @@ export default function ChatScreen() {
                   <View style={styles.cameraFallback}>
                     <Ionicons name="videocam-outline" size={42} color={theme.colors.primary} />
                     <Text style={[styles.cameraFallbackTitle, { color: theme.colors.text }]}>
-                      Нужен доступ
+                      РќСѓР¶РµРЅ РґРѕСЃС‚СѓРї
                     </Text>
                     <Text style={[styles.cameraFallbackText, { color: theme.colors.muted }]}>
-                      Разреши камеру и микрофон для записи видео-сообщений
+                      Р Р°Р·СЂРµС€Рё РєР°РјРµСЂСѓ Рё РјРёРєСЂРѕС„РѕРЅ РґР»СЏ Р·Р°РїРёСЃРё РІРёРґРµРѕ-СЃРѕРѕР±С‰РµРЅРёР№
                     </Text>
 
                     <Pressable
@@ -3253,14 +3223,14 @@ export default function ChatScreen() {
                         },
                       ]}
                     >
-                      <Text style={styles.permissionBtnText}>Разрешить</Text>
+                      <Text style={styles.permissionBtnText}>Р Р°Р·СЂРµС€РёС‚СЊ</Text>
                     </Pressable>
                   </View>
                 )}
               </View>
 
               <Text style={[styles.videoCaption, { color: theme.colors.muted }]}>
-                Видео записывается в кружке, до 30 секунд, в лёгком качестве для меньшего веса.
+                Р’РёРґРµРѕ Р·Р°РїРёСЃС‹РІР°РµС‚СЃСЏ РІ РєСЂСѓР¶РєРµ, РґРѕ 30 СЃРµРєСѓРЅРґ, РІ Р»С‘РіРєРѕРј РєР°С‡РµСЃС‚РІРµ РґР»СЏ РјРµРЅСЊС€РµРіРѕ РІРµСЃР°.
               </Text>
 
               <View style={styles.videoBottomRow}>
@@ -3343,13 +3313,13 @@ export default function ChatScreen() {
           <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <GlassCard>
               <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
-                Изменить сообщение
+                РР·РјРµРЅРёС‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ
               </Text>
 
               <TextInput
                 value={editingText}
                 onChangeText={setEditingText}
-                placeholder="Новый текст"
+                placeholder="РќРѕРІС‹Р№ С‚РµРєСЃС‚"
                 placeholderTextColor={theme.colors.muted}
                 multiline
                 style={[
@@ -3374,7 +3344,7 @@ export default function ChatScreen() {
                   ]}
                 >
                   <Text style={[styles.editSecondaryButtonText, { color: theme.colors.text }]}>
-                    Отмена
+                    РћС‚РјРµРЅР°
                   </Text>
                 </Pressable>
 
@@ -3391,7 +3361,7 @@ export default function ChatScreen() {
                   {editingLoading ? (
                     <ActivityIndicator color="#FFFFFF" />
                   ) : (
-                    <Text style={styles.editPrimaryButtonText}>Сохранить</Text>
+                    <Text style={styles.editPrimaryButtonText}>РЎРѕС…СЂР°РЅРёС‚СЊ</Text>
                   )}
                 </Pressable>
               </View>
@@ -3412,7 +3382,7 @@ export default function ChatScreen() {
           <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <GlassCard>
               <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
-                Действия с сообщением
+                Р”РµР№СЃС‚РІРёСЏ СЃ СЃРѕРѕР±С‰РµРЅРёРµРј
               </Text>
 
               <Pressable
@@ -3421,7 +3391,7 @@ export default function ChatScreen() {
               >
                 <Ionicons name="arrow-undo-outline" size={18} color={theme.colors.primary} />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  Ответить
+                  РћС‚РІРµС‚РёС‚СЊ
                 </Text>
               </Pressable>
 
@@ -3431,7 +3401,7 @@ export default function ChatScreen() {
               >
                 <Ionicons name="copy-outline" size={18} color={theme.colors.primary} />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  Копировать
+                  РљРѕРїРёСЂРѕРІР°С‚СЊ
                 </Text>
               </Pressable>
 
@@ -3441,7 +3411,7 @@ export default function ChatScreen() {
               >
                 <Ionicons name="share-social-outline" size={18} color={theme.colors.primary} />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  Поделиться
+                  РџРѕРґРµР»РёС‚СЊСЃСЏ
                 </Text>
               </Pressable>
 
@@ -3451,7 +3421,7 @@ export default function ChatScreen() {
               >
                 <Ionicons name="eye-off-outline" size={18} color={theme.colors.primary} />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  Скрыть у себя
+                  РЎРєСЂС‹С‚СЊ Сѓ СЃРµР±СЏ
                 </Text>
               </Pressable>
 
@@ -3464,7 +3434,7 @@ export default function ChatScreen() {
               >
                 <Ionicons name="information-circle-outline" size={18} color={theme.colors.primary} />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  Информация
+                  РРЅС„РѕСЂРјР°С†РёСЏ
                 </Text>
               </Pressable>
 
@@ -3475,7 +3445,7 @@ export default function ChatScreen() {
                 >
                   <Ionicons name="create-outline" size={18} color={theme.colors.primary} />
                   <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                    Изменить
+                    РР·РјРµРЅРёС‚СЊ
                   </Text>
                 </Pressable>
               ) : null}
@@ -3486,7 +3456,7 @@ export default function ChatScreen() {
               >
                 <Ionicons name="trash-outline" size={18} color={theme.colors.danger} />
                 <Text style={[styles.sheetDangerText, { color: theme.colors.danger }]}>
-                  Удалить у себя
+                  РЈРґР°Р»РёС‚СЊ Сѓ СЃРµР±СЏ
                 </Text>
               </Pressable>
 
@@ -3497,7 +3467,7 @@ export default function ChatScreen() {
                 >
                   <Ionicons name="trash-bin-outline" size={18} color={theme.colors.danger} />
                   <Text style={[styles.sheetDangerText, { color: theme.colors.danger }]}>
-                    Удалить у всех
+                    РЈРґР°Р»РёС‚СЊ Сѓ РІСЃРµС…
                   </Text>
                 </Pressable>
               ) : null}
@@ -3518,7 +3488,7 @@ export default function ChatScreen() {
           <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <GlassCard>
               <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
-                Настройки чата
+                РќР°СЃС‚СЂРѕР№РєРё С‡Р°С‚Р°
               </Text>
 
               {chat?.peer_user?.uuid ? (
@@ -3531,7 +3501,7 @@ export default function ChatScreen() {
                 >
                   <Ionicons name="person-outline" size={18} color={theme.colors.primary} />
                   <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                    Профиль собеседника
+                    РџСЂРѕС„РёР»СЊ СЃРѕР±РµСЃРµРґРЅРёРєР°
                   </Text>
                 </Pressable>
               ) : null}
@@ -3542,7 +3512,7 @@ export default function ChatScreen() {
               >
                 <Ionicons name="share-outline" size={18} color={theme.colors.primary} />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  Поделиться профилем
+                  РџРѕРґРµР»РёС‚СЊСЃСЏ РїСЂРѕС„РёР»РµРј
                 </Text>
               </Pressable>
 
@@ -3555,7 +3525,7 @@ export default function ChatScreen() {
               >
                 <Ionicons name="color-palette-outline" size={18} color={theme.colors.primary} />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  Оформление этого чата
+                  РћС„РѕСЂРјР»РµРЅРёРµ СЌС‚РѕРіРѕ С‡Р°С‚Р°
                 </Text>
               </Pressable>
 
@@ -3602,7 +3572,7 @@ export default function ChatScreen() {
               >
                 <Ionicons name="ban-outline" size={18} color={theme.colors.primary} />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  Черный список
+                  Р§РµСЂРЅС‹Р№ СЃРїРёСЃРѕРє
                 </Text>
               </Pressable>
 
@@ -3617,7 +3587,7 @@ export default function ChatScreen() {
                   color={theme.colors.primary}
                 />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  {chat?.is_muted ? 'Включить звук' : 'Без звука'}
+                  {chat?.is_muted ? 'Р’РєР»СЋС‡РёС‚СЊ Р·РІСѓРє' : 'Р‘РµР· Р·РІСѓРєР°'}
                 </Text>
               </Pressable>
 
@@ -3632,7 +3602,7 @@ export default function ChatScreen() {
                   color={theme.colors.primary}
                 />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  {chat?.is_pinned ? 'Убрать из закрепа' : 'Закрепить чат'}
+                  {chat?.is_pinned ? 'РЈР±СЂР°С‚СЊ РёР· Р·Р°РєСЂРµРїР°' : 'Р—Р°РєСЂРµРїРёС‚СЊ С‡Р°С‚'}
                 </Text>
               </Pressable>
 
@@ -3647,7 +3617,7 @@ export default function ChatScreen() {
                   color={theme.colors.primary}
                 />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  {chat?.is_archived ? 'Разархивировать' : 'Архивировать чат'}
+                  {chat?.is_archived ? 'Р Р°Р·Р°СЂС…РёРІРёСЂРѕРІР°С‚СЊ' : 'РђСЂС…РёРІРёСЂРѕРІР°С‚СЊ С‡Р°С‚'}
                 </Text>
               </Pressable>
 
@@ -3661,7 +3631,7 @@ export default function ChatScreen() {
                 >
                   <Ionicons name="warning-outline" size={18} color={theme.colors.danger} />
                   <Text style={[styles.sheetDangerText, { color: theme.colors.danger }]}>
-                    Пожаловаться на пользователя
+                    РџРѕР¶Р°Р»РѕРІР°С‚СЊСЃСЏ РЅР° РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
                   </Text>
                 </Pressable>
               ) : null}
@@ -3675,7 +3645,7 @@ export default function ChatScreen() {
               >
                 <Ionicons name="warning-outline" size={18} color={theme.colors.danger} />
                 <Text style={[styles.sheetDangerText, { color: theme.colors.danger }]}>
-                  Пожаловаться на чат
+                  РџРѕР¶Р°Р»РѕРІР°С‚СЊСЃСЏ РЅР° С‡Р°С‚
                 </Text>
               </Pressable>
             </GlassCard>
@@ -3695,7 +3665,7 @@ export default function ChatScreen() {
           <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <GlassCard>
               <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
-                Оформление этого чата
+                РћС„РѕСЂРјР»РµРЅРёРµ СЌС‚РѕРіРѕ С‡Р°С‚Р°
               </Text>
 
               <Pressable
@@ -3704,7 +3674,7 @@ export default function ChatScreen() {
               >
                 <Ionicons name="image-outline" size={18} color={theme.colors.primary} />
                 <Text style={[styles.sheetItemText, { color: theme.colors.text }]}>
-                  Фон из галереи
+                  Р¤РѕРЅ РёР· РіР°Р»РµСЂРµРё
                 </Text>
               </Pressable>
 
@@ -3734,7 +3704,7 @@ export default function ChatScreen() {
               <TextInput
                 value={appearance.customBackgroundColor || ''}
                 onChangeText={(value) => void updateAppearance({ customBackgroundColor: value })}
-                placeholder="#0F172A фон"
+                placeholder="#0F172A С„РѕРЅ"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.reportInput, { borderColor: theme.colors.borderStrong, color: theme.colors.text }]}
               />
@@ -3742,7 +3712,7 @@ export default function ChatScreen() {
               <TextInput
                 value={appearance.customOwnBubbleColor || ''}
                 onChangeText={(value) => void updateAppearance({ customOwnBubbleColor: value })}
-                placeholder="#F97316 мои сообщения"
+                placeholder="#F97316 РјРѕРё СЃРѕРѕР±С‰РµРЅРёСЏ"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.reportInput, { borderColor: theme.colors.borderStrong, color: theme.colors.text }]}
               />
@@ -3750,7 +3720,7 @@ export default function ChatScreen() {
               <TextInput
                 value={appearance.customPeerBubbleColor || ''}
                 onChangeText={(value) => void updateAppearance({ customPeerBubbleColor: value })}
-                placeholder="#1F2937 сообщения собеседника"
+                placeholder="#1F2937 СЃРѕРѕР±С‰РµРЅРёСЏ СЃРѕР±РµСЃРµРґРЅРёРєР°"
                 placeholderTextColor={theme.colors.muted}
                 style={[styles.reportInput, { borderColor: theme.colors.borderStrong, color: theme.colors.text }]}
               />
@@ -3771,7 +3741,7 @@ export default function ChatScreen() {
           <View style={[styles.sheetWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <GlassCard>
               <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>
-                {reportType === 'user' ? 'Жалоба на пользователя' : 'Жалоба на чат'}
+                {reportType === 'user' ? 'Р–Р°Р»РѕР±Р° РЅР° РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ' : 'Р–Р°Р»РѕР±Р° РЅР° С‡Р°С‚'}
               </Text>
 
               <View style={styles.reasonWrap}>
@@ -3806,7 +3776,7 @@ export default function ChatScreen() {
               <TextInput
                 value={reportDescription}
                 onChangeText={setReportDescription}
-                placeholder="Описание (необязательно)"
+                placeholder="РћРїРёСЃР°РЅРёРµ (РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)"
                 placeholderTextColor={theme.colors.muted}
                 multiline
                 style={[
@@ -3830,7 +3800,7 @@ export default function ChatScreen() {
                 ]}
               >
                 <Text style={styles.submitReportButtonText}>
-                  {actionLoading ? 'Отправка...' : 'Отправить жалобу'}
+                  {actionLoading ? 'РћС‚РїСЂР°РІРєР°...' : 'РћС‚РїСЂР°РІРёС‚СЊ Р¶Р°Р»РѕР±Сѓ'}
                 </Text>
               </Pressable>
             </GlassCard>

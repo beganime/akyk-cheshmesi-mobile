@@ -119,8 +119,7 @@ async function refreshAccessToken(): Promise<string | null> {
       });
 
       return nextAccessToken;
-    } catch (error) {
-      console.error('refreshAccessToken error:', error);
+    } catch {
       await clearTokens();
       return null;
     } finally {

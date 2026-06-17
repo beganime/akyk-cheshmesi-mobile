@@ -72,9 +72,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           user,
           hydrated: true,
         });
-      } catch (error) {
-        console.error('Bootstrap /users/me error:', error);
-
+      } catch {
         set({
           accessToken: await getAccessToken(),
           refreshToken: await getRefreshToken(),
@@ -82,9 +80,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           hydrated: true,
         });
       }
-    } catch (error) {
-      console.error('Auth bootstrap error:', error);
-
+    } catch {
       set({
         accessToken: null,
         refreshToken: null,
@@ -131,8 +127,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const user = await fetchMe();
       set({ user });
-    } catch (error) {
-      console.error('refreshProfile error:', error);
+    } catch {
+      // Keep the current cached profile if the network request fails.
     }
   },
 

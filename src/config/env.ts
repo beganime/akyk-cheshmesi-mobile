@@ -12,6 +12,15 @@ type ExtraConfig = {
 
 const extra = (Constants.expoConfig?.extra ?? {}) as ExtraConfig;
 
+function cleanBaseUrl(value?: string | null) {
+  const normalized = String(value || '').trim();
+  return normalized ? normalized.replace(/\/+$/, '') : undefined;
+}
+
+function readPublicEnv(name: string) {
+  return cleanBaseUrl(process.env[name]);
+}
+
 function normalizeIceUrls(value?: string | string[]) {
   if (Array.isArray(value)) {
     return value.map((item) => String(item).trim()).filter(Boolean);
@@ -75,13 +84,24 @@ function buildIceServers(
 const callIceUrls = normalizeIceUrls(extra.callIceServers);
 const callTurnUsername = extra.callTurnUsername?.trim() || undefined;
 const callTurnCredential = extra.callTurnCredential?.trim() || undefined;
+const apiBaseUrl =
+  readPublicEnv('EXPO_PUBLIC_API_BASE_URL') ||
+  cleanBaseUrl(extra.apiBaseUrl) ||
+  'https://akyl-cheshmesi.ru/api/v1';
+const wsBaseUrl =
+  readPublicEnv('EXPO_PUBLIC_WS_BASE_URL') ||
+  cleanBaseUrl(extra.wsBaseUrl) ||
+  'wss://akyl-cheshmesi.ru/ws';
+const callWsBaseUrl =
+  readPublicEnv('EXPO_PUBLIC_CALL_WS_BASE_URL') ||
+  cleanBaseUrl(extra.callWsBaseUrl);
 
 export const ENV = {
-  API_BASE_URL: extra.apiBaseUrl ?? 'https://akyl-cheshmesi.ru/api/v1',
-  WS_BASE_URL: extra.wsBaseUrl ?? 'wss://akyl-cheshmesi.ru/ws',
+  API_BASE_URL: apiBaseUrl,
+  WS_BASE_URL: wsBaseUrl,
   CALL_WS_BASE_URL: buildCallWsBaseUrl(
-    extra.wsBaseUrl,
-    extra.callWsBaseUrl,
+    wsBaseUrl,
+    callWsBaseUrl,
   ),
   CALL_ICE_URLS: callIceUrls,
   CALL_TURN_USERNAME: callTurnUsername,
