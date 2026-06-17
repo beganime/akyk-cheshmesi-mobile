@@ -9,12 +9,13 @@ const extraExpoArgs = process.argv.slice(2);
 const children = [];
 let shuttingDown = false;
 
-function startProcess(name, command, args, options = {}) {
+process.env.AKYL_USE_LOCAL_API_PROXY = process.env.AKYL_USE_LOCAL_API_PROXY || '1';
+
+function startProcess(name, command, args) {
   const child = spawn(command, args, {
     stdio: 'inherit',
-    shell: false,
+    shell: isWindows,
     env: process.env,
-    ...options,
   });
 
   children.push(child);
