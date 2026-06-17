@@ -1,9 +1,11 @@
-import React from 'react';
 import { Alert, Text, TextInput } from 'react-native';
 
 type AnyProps = Record<string, unknown> | null | undefined;
 
-const patchFlag = '__akylMojibakeRuntimeFixPatched';
+type RenderableComponent = {
+  __akylMojibakeRuntimeFixPatched?: boolean;
+  render?: (props: Record<string, unknown>, ref?: unknown) => unknown;
+};
 
 const cp1251Extra: Record<string, number> = {
   '\u0402': 0x80,
@@ -71,7 +73,7 @@ const cp1251Extra: Record<string, number> = {
   '\u0457': 0xbf,
 };
 
-const mojibakePattern = /(?:[РС][\u0400-\u04ff\u00a0-\u00bf]|рџ|в[ЂЃ‚ѓ„…†‡€‰Љ‹ЊЌЋЏђ‘’“”•–—™љ›њќћџњќ]|пё)/u;
+const mojibakePattern = /(?:[РС][\u0400-\u04ff\u00a0-\u00bf]|рџ|в[ЂЃ‚ѓ„…†‡€‰Љ‹ЊЌЋЏђ‘’“”•–—™љ›њќћџ]|пё)/u;
 
 function getCp1251Byte(char: string): number | null {
   const code = char.charCodeAt(0);
@@ -89,11 +91,7 @@ function stringToCp1251Bytes(value: string): number[] | null {
 
   for (const char of value) {
     const byte = getCp1251Byte(char);
-
-    if (byte === null) {
-      return null;
-    }
-
+    if (byte === null) return null;
     bytes.push(byte);
   }
 
@@ -113,7 +111,7 @@ function decodeUtf8(bytes: number[]): string | null {
 
     if (first >= 0xc2 && first <= 0xdf) {
       const second = bytes[index + 1];
-      if ((second & 0xc0) !== 0x80) return null;
+      if (second === undefined || (second & 0xc0) !== 0x80) return null;
       result += String.fromCharCode(((first & 0x1f) << 6) | (second & 0x3f));
       index += 1;
       continue;
@@ -122,7 +120,14 @@ function decodeUtf8(bytes: number[]): string | null {
     if (first >= 0xe0 && first <= 0xef) {
       const second = bytes[index + 1];
       const third = bytes[index + 2];
-      if ((second & 0xc0) !== 0x80 || (third & 0xc0) !== 0x80) return null;
+      if (
+        second === undefined ||
+        third === undefined ||
+        (second & 0xc0) !== 0x80 ||
+        (third & 0xc0) !== 0x80
+      ) {
+        return null;
+      }
       result += String.fromCharCode(
         ((first & 0x0f) << 12) | ((second & 0x3f) << 6) | (third & 0x3f),
       );
@@ -135,6 +140,9 @@ function decodeUtf8(bytes: number[]): string | null {
       const third = bytes[index + 2];
       const fourth = bytes[index + 3];
       if (
+        second === undefined ||
+        third === undefined ||
+        fourth === undefined ||
         (second & 0xc0) !== 0x80 ||
         (third & 0xc0) !== 0x80 ||
         (fourth & 0xc0) !== 0x80
@@ -186,12 +194,8 @@ function decodeNode(node: unknown): unknown {
   return node;
 }
 
-function cloneProps(props: AnyProps): Record<string, unknown> {
-  return props ? { ...props } : {};
-}
-
 function decodeTextProps(props: AnyProps): Record<string, unknown> {
-  const next = cloneProps(props);
+  const next = props ? { ...props } : {};
   next.children = decodeNode(next.children);
 
   if (typeof next.accessibilityLabel === 'string') {
@@ -202,7 +206,7 @@ function decodeTextProps(props: AnyProps): Record<string, unknown> {
 }
 
 function decodeTextInputProps(props: AnyProps): Record<string, unknown> {
-  const next = cloneProps(props);
+  const next = props ? { ...props } : {};
 
   if (typeof next.placeholder === 'string') {
     next.placeholder = decodeMojibakeText(next.placeholder);
@@ -219,67 +223,25 @@ function patchRenderableComponent(
   component: unknown,
   transformProps: (props: AnyProps) => Record<string, unknown>,
 ) {
-  const target = component as {
-    [patchFlag]?: boolean;
-    render?: (...args: unknown[]) => unknown;
-    prototype?: { render?: (...args: unknown[]) => unknown; [patchFlag]?: boolean };
-  };
+  const target = component as RenderableComponent;
 
-  if (!target || target[patchFlag]) return;
-
-  if (typeof target.render === 'function') {
-    const originalRender = target.render;
-    target.render = function patchedRender(props: AnyProps, ref: unknown) {
-      return originalRender.call(this, transformProps(props), ref);
-    };
-    target[patchFlag] = true;
+  if (!target || target.__akylMojibakeRuntimeFixPatched || typeof target.render !== 'function') {
     return;
   }
 
-  if (target.prototype && typeof target.prototype.render === 'function' && !target.prototype[patchFlag]) {
-    const originalRender = target.prototype.render;
-    target.prototype.render = function patchedPrototypeRender(this: { props?: AnyProps }) {
-      const originalProps = this.props;
-      this.props = transformProps(originalProps);
+  const originalRender = target.render;
 
-      try {
-        return originalRender.call(this);
-      } finally {
-        this.props = originalProps;
-      }
-    };
-    target.prototype[patchFlag] = true;
-  }
-}
-
-function patchCreateElementFallback() {
-  const reactWithFlag = React as typeof React & { [patchFlag]?: boolean };
-  if (reactWithFlag[patchFlag]) return;
-
-  const originalCreateElement = React.createElement;
-
-  React.createElement = function patchedCreateElement(type, props, ...children) {
-    if (type === Text) {
-      return originalCreateElement(type, decodeTextProps({ ...(props || {}), children }), ...[]);
-    }
-
-    if (type === TextInput) {
-      return originalCreateElement(type, decodeTextInputProps(props), ...children);
-    }
-
-    return originalCreateElement(type, props, ...children);
-  } as typeof React.createElement;
-
-  reactWithFlag[patchFlag] = true;
+  target.render = (props, ref) => originalRender(transformProps(props), ref);
+  target.__akylMojibakeRuntimeFixPatched = true;
 }
 
 function patchAlert() {
-  const alertWithFlag = Alert as typeof Alert & { [patchFlag]?: boolean };
-  if (alertWithFlag[patchFlag]) return;
+  const alertWithFlag = Alert as typeof Alert & { __akylMojibakeRuntimeFixPatched?: boolean };
+  if (alertWithFlag.__akylMojibakeRuntimeFixPatched) return;
 
   const originalAlert = Alert.alert.bind(Alert);
 
-  (Alert as any).alert = (
+  Alert.alert = (
     title: string,
     message?: string,
     buttons?: Array<Record<string, unknown>>,
@@ -300,10 +262,9 @@ function patchAlert() {
       options,
     );
 
-  alertWithFlag[patchFlag] = true;
+  alertWithFlag.__akylMojibakeRuntimeFixPatched = true;
 }
 
 patchRenderableComponent(Text, decodeTextProps);
 patchRenderableComponent(TextInput, decodeTextInputProps);
-patchCreateElementFallback();
 patchAlert();
