@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 import { apiClient } from '@/src/lib/api/client';
 import type { PickedMediaAsset } from '@/src/lib/api/media';
 import type { UserProfile } from '@/src/types/user';
@@ -26,9 +28,40 @@ function appendBoolean(formData: FormData, key: string, value?: boolean) {
   formData.append(key, String(value));
 }
 
-function appendAvatar(formData: FormData, asset: PickedMediaAsset) {
+function getAvatarFilename(asset: PickedMediaAsset) {
+  return asset.fileName?.trim() || `avatar-${Date.now()}.jpg`;
+}
+
+function getAvatarMimeType(asset: PickedMediaAsset) {
+  const mimeType = asset.mimeType?.trim();
+  if (mimeType === 'image/jpg') return 'image/jpeg';
+  return mimeType || 'image/jpeg';
+}
+
+async function appendAvatar(formData: FormData, asset: PickedMediaAsset) {
+  const filename = getAvatarFilename(asset);
+  const mimeType = getAvatarMimeType(asset);
+
   if (asset.file) {
-    formData.append('avatar', asset.file);
+    formData.append('avatar', asset.file, filename);
+    return;
+  }
+
+  if (Platform.OS === 'web') {
+    const response = await fetch(asset.uri);
+
+    if (!response.ok) {
+      throw new Error(`Не удалось прочитать аватар: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+
+    if (typeof File !== 'undefined') {
+      formData.append('avatar', new File([blob], filename, { type: mimeType }), filename);
+      return;
+    }
+
+    formData.append('avatar', blob, filename);
     return;
   }
 
@@ -36,8 +69,8 @@ function appendAvatar(formData: FormData, asset: PickedMediaAsset) {
     'avatar',
     {
       uri: asset.uri,
-      name: asset.fileName?.trim() || `avatar-${Date.now()}.jpg`,
-      type: asset.mimeType?.trim() || 'image/jpeg',
+      name: filename,
+      type: mimeType,
     } as any
   );
 }
@@ -57,7 +90,7 @@ function buildJsonPayload(payload: UpdateMePayload): Record<string, unknown> {
   return data;
 }
 
-function buildMultipartPayload(payload: UpdateMePayload): FormData {
+async function buildMultipartPayload(payload: UpdateMePayload): Promise<FormData> {
   const formData = new FormData();
 
   appendString(formData, 'first_name', payload.first_name);
@@ -75,7 +108,7 @@ function buildMultipartPayload(payload: UpdateMePayload): FormData {
   }
 
   if (payload.avatarAsset) {
-    appendAvatar(formData, payload.avatarAsset);
+    await appendAvatar(formData, payload.avatarAsset);
   }
 
   return formData;
@@ -83,13 +116,9 @@ function buildMultipartPayload(payload: UpdateMePayload): FormData {
 
 export async function updateMe(payload: UpdateMePayload): Promise<UserProfile> {
   if (hasAvatarAsset(payload.avatarAsset)) {
-    const formData = buildMultipartPayload(payload);
+    const formData = await buildMultipartPayload(payload);
 
-    const response = await apiClient.put<UserProfile>('/users/me/', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    const response = await apiClient.put<UserProfile>('/users/me/', formData);
 
     return response.data;
   }
