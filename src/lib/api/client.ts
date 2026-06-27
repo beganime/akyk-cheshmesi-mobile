@@ -12,6 +12,7 @@ import {
   notifySessionExpired,
   notifySessionTokensChanged,
 } from '@/src/lib/auth/session';
+import { normalizeRemoteMediaUrl } from '@/src/lib/media/remoteUrl';
 
 type RetryableRequestConfig = {
   _retry?: boolean;
@@ -27,6 +28,17 @@ type RefreshResponse = {
 
 let isHandlingUnauthorized = false;
 let refreshPromise: Promise<string | null> | null = null;
+
+const MEDIA_URL_KEYS = new Set([
+  'avatar',
+  'file_url',
+  'thumbnail_url',
+  'image',
+  'photo',
+  'video',
+  'audio',
+  'sticker_image',
+]);
 
 function shouldIgnoreUnauthorized(url?: string) {
   if (!url) {
@@ -72,6 +84,34 @@ function removeContentTypeHeader(headers: any) {
 
   delete headers['Content-Type'];
   delete headers['content-type'];
+}
+
+function normalizeApiMediaUrls(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeApiMediaUrls(item));
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const input = value as Record<string, unknown>;
+  const output: Record<string, unknown> = { ...input };
+
+  Object.keys(output).forEach((key) => {
+    const current = output[key];
+
+    if (typeof current === 'string' && MEDIA_URL_KEYS.has(key)) {
+      output[key] = normalizeRemoteMediaUrl(current) || current;
+      return;
+    }
+
+    if (current && typeof current === 'object') {
+      output[key] = normalizeApiMediaUrls(current);
+    }
+  });
+
+  return output;
 }
 
 const refreshClient = axios.create({
@@ -155,7 +195,10 @@ apiClient.interceptors.request.use(async (config) => {
 });
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    response.data = normalizeApiMediaUrls(response.data) as any;
+    return response;
+  },
   async (error: AxiosError) => {
     const status = error?.response?.status;
     const originalRequest = error?.config as (typeof error.config & RetryableRequestConfig) | undefined;
