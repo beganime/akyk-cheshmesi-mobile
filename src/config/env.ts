@@ -12,13 +12,23 @@ type ExtraConfig = {
 
 const extra = (Constants.expoConfig?.extra ?? {}) as ExtraConfig;
 
+const DEFAULT_CALL_ICE_URLS = [
+  'stun:stun.l.google.com:19302',
+  'stun:stun1.l.google.com:19302',
+];
+
 function cleanBaseUrl(value?: string | null) {
   const normalized = String(value || '').trim();
   return normalized ? normalized.replace(/\/+$/, '') : undefined;
 }
 
+function readPublicRaw(name: string) {
+  const value = process.env[name];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
 function readPublicEnv(name: string) {
-  return cleanBaseUrl(process.env[name]);
+  return cleanBaseUrl(readPublicRaw(name));
 }
 
 function normalizeIceUrls(value?: string | string[]) {
@@ -34,6 +44,25 @@ function normalizeIceUrls(value?: string | string[]) {
   }
 
   return [];
+}
+
+function cleanTurnSecret(value?: string | null) {
+  const normalized = String(value || '').trim();
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  const upper = normalized.toUpperCase();
+  if (
+    upper.includes('PASTE_YOUR_TURN_PASSWORD_HERE') ||
+    upper === 'PASTE_YOUR_TURN_USERNAME_HERE' ||
+    upper === 'CHANGE_ME'
+  ) {
+    return undefined;
+  }
+
+  return normalized;
 }
 
 function buildCallWsBaseUrl(wsBaseUrl?: string, callWsBaseUrl?: string) {
@@ -54,6 +83,11 @@ type CallIceServer = {
   credential?: string;
 };
 
+function buildCallIceUrls(value?: string | string[]) {
+  const configuredUrls = normalizeIceUrls(value);
+  return configuredUrls.length > 0 ? configuredUrls : DEFAULT_CALL_ICE_URLS;
+}
+
 function buildIceServers(
   urls: string[],
   username?: string,
@@ -70,7 +104,10 @@ function buildIceServers(
     servers.push({ urls: stunUrls });
   }
 
-  if (turnUrls.length > 0) {
+  // TURN needs real credentials. Shipping the placeholder from app.json makes
+  // WebRTC try a relay that can never authenticate, so we include TURN only
+  // when EAS/app config provides a valid username and credential.
+  if (turnUrls.length > 0 && username && credential) {
     servers.push({
       urls: turnUrls,
       username,
@@ -81,9 +118,6 @@ function buildIceServers(
   return servers;
 }
 
-const callIceUrls = normalizeIceUrls(extra.callIceServers);
-const callTurnUsername = extra.callTurnUsername?.trim() || undefined;
-const callTurnCredential = extra.callTurnCredential?.trim() || undefined;
 const apiBaseUrl =
   readPublicEnv('EXPO_PUBLIC_API_BASE_URL') ||
   cleanBaseUrl(extra.apiBaseUrl) ||
@@ -95,6 +129,15 @@ const wsBaseUrl =
 const callWsBaseUrl =
   readPublicEnv('EXPO_PUBLIC_CALL_WS_BASE_URL') ||
   cleanBaseUrl(extra.callWsBaseUrl);
+const callIceUrls = buildCallIceUrls(
+  readPublicRaw('EXPO_PUBLIC_CALL_ICE_SERVERS') || extra.callIceServers,
+);
+const callTurnUsername = cleanTurnSecret(
+  readPublicRaw('EXPO_PUBLIC_CALL_TURN_USERNAME') || extra.callTurnUsername,
+);
+const callTurnCredential = cleanTurnSecret(
+  readPublicRaw('EXPO_PUBLIC_CALL_TURN_CREDENTIAL') || extra.callTurnCredential,
+);
 
 export const ENV = {
   API_BASE_URL: apiBaseUrl,
