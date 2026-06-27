@@ -1,6 +1,18 @@
 import { getDb } from '@/src/lib/db';
+import { normalizeRemoteMediaUrl } from '@/src/lib/media/remoteUrl';
 import type { ChatListItem } from '@/src/types/chat';
 import type { MessageItem } from '@/src/types/message';
+
+const MEDIA_URL_KEYS = new Set([
+  'avatar',
+  'file_url',
+  'thumbnail_url',
+  'image',
+  'photo',
+  'video',
+  'audio',
+  'sticker_image',
+]);
 
 function chatSortTs(chat: ChatListItem) {
   return new Date(chat.last_message_at || chat.updated_at || chat.created_at || 0).getTime() || 0;
@@ -10,6 +22,34 @@ function messageSortTs(message: MessageItem) {
   return new Date(message.created_at || 0).getTime() || 0;
 }
 
+function normalizeCachedMediaUrls<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeCachedMediaUrls(item)) as T;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const input = value as Record<string, unknown>;
+  const output: Record<string, unknown> = { ...input };
+
+  Object.keys(output).forEach((key) => {
+    const current = output[key];
+
+    if (typeof current === 'string' && MEDIA_URL_KEYS.has(key)) {
+      output[key] = normalizeRemoteMediaUrl(current) || current;
+      return;
+    }
+
+    if (current && typeof current === 'object') {
+      output[key] = normalizeCachedMediaUrls(current);
+    }
+  });
+
+  return output as T;
+}
+
 export async function loadCachedChats(): Promise<ChatListItem[]> {
   try {
     const db = await getDb();
@@ -17,7 +57,7 @@ export async function loadCachedChats(): Promise<ChatListItem[]> {
       'SELECT payload_json FROM chat_cache ORDER BY sort_ts DESC'
     );
 
-    return rows.map((row) => JSON.parse(row.payload_json));
+    return rows.map((row) => normalizeCachedMediaUrls(JSON.parse(row.payload_json)));
   } catch (error) {
     console.error('loadCachedChats error:', error);
     return [];
@@ -59,7 +99,7 @@ export async function loadCachedChatDetail(chatUuid: string): Promise<ChatListIt
       chatUuid
     );
 
-    return row ? JSON.parse(row.payload_json) : null;
+    return row ? normalizeCachedMediaUrls(JSON.parse(row.payload_json)) : null;
   } catch (error) {
     console.error('loadCachedChatDetail error:', error);
     return null;
@@ -88,7 +128,7 @@ export async function loadCachedChatMessages(chatUuid: string): Promise<MessageI
       chatUuid
     );
 
-    return rows.map((row) => JSON.parse(row.payload_json));
+    return rows.map((row) => normalizeCachedMediaUrls(JSON.parse(row.payload_json)));
   } catch (error) {
     console.error('loadCachedChatMessages error:', error);
     return [];
