@@ -54,6 +54,17 @@ type CallIceServer = {
   credential?: string;
 };
 
+function isUsableTurnCredential(username?: string, credential?: string) {
+  const normalizedCredential = String(credential || '').trim();
+  const normalizedUsername = String(username || '').trim();
+
+  if (!normalizedUsername || !normalizedCredential) {
+    return false;
+  }
+
+  return !normalizedCredential.toUpperCase().includes('PASTE_YOUR_TURN_PASSWORD_HERE');
+}
+
 function buildIceServers(
   urls: string[],
   username?: string,
@@ -70,7 +81,7 @@ function buildIceServers(
     servers.push({ urls: stunUrls });
   }
 
-  if (turnUrls.length > 0) {
+  if (turnUrls.length > 0 && isUsableTurnCredential(username, credential)) {
     servers.push({
       urls: turnUrls,
       username,
