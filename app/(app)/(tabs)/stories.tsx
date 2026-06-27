@@ -150,19 +150,33 @@ export default function StoriesScreen() {
     }
   };
 
-  const chooseMediaStory = async () => {
+  const chooseMediaStory = async (source: 'library' | 'camera' = 'library') => {
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const permission =
+        source === 'camera'
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
       if (!permission.granted) {
-        Alert.alert('Доступ к галерее', 'Разреши доступ к фото и видео для публикации story.');
+        Alert.alert(
+          source === 'camera' ? 'Доступ к камере' : 'Доступ к галерее',
+          source === 'camera'
+            ? 'Разреши доступ к камере, чтобы снять story.'
+            : 'Разреши доступ к фото и видео для публикации story.',
+        );
         return;
       }
 
-      const result = await ImagePicker.launchImageLibraryAsync({
+      const pickerOptions: ImagePicker.ImagePickerOptions = {
         mediaTypes: ImagePicker.MediaTypeOptions.All,
         quality: 0.82,
         allowsEditing: false,
-      });
+        videoMaxDuration: 30,
+      };
+      const result =
+        source === 'camera'
+          ? await ImagePicker.launchCameraAsync(pickerOptions)
+          : await ImagePicker.launchImageLibraryAsync(pickerOptions);
 
       if (result.canceled || !result.assets?.[0]) {
         return;
@@ -188,7 +202,7 @@ export default function StoriesScreen() {
 
   const publishMediaStory = async () => {
     if (!pendingMedia) {
-      await chooseMediaStory();
+      await chooseMediaStory('library');
       return;
     }
 
@@ -403,7 +417,7 @@ export default function StoriesScreen() {
               </View>
 
               <Pressable
-                onPress={() => void chooseMediaStory()}
+                onPress={() => void chooseMediaStory('library')}
                 disabled={creating}
                 style={[
                   styles.mediaPicker,
@@ -503,13 +517,23 @@ export default function StoriesScreen() {
 
               <View style={styles.createActions}>
                 <Pressable
-                  onPress={() => void chooseMediaStory()}
+                  onPress={() => void chooseMediaStory('library')}
                   disabled={creating}
                   style={[styles.secondaryCreateButton, { borderColor: theme.colors.borderStrong }]}
                 >
                   <Ionicons name="images-outline" size={18} color={theme.colors.text} />
                   <Text style={[styles.secondaryCreateButtonText, { color: theme.colors.text }]}>
-                    {pendingMedia ? 'Заменить' : 'Медиа'}
+                    {pendingMedia ? 'Заменить' : 'Галерея'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void chooseMediaStory('camera')}
+                  disabled={creating}
+                  style={[styles.secondaryCreateButton, { borderColor: theme.colors.borderStrong }]}
+                >
+                  <Ionicons name="camera-outline" size={18} color={theme.colors.text} />
+                  <Text style={[styles.secondaryCreateButtonText, { color: theme.colors.text }]}>
+                    Камера
                   </Text>
                 </Pressable>
                 <Pressable
@@ -816,9 +840,11 @@ const styles = StyleSheet.create({
   createActions: {
     flexDirection: 'row',
     gap: 10,
+    flexWrap: 'wrap',
   },
   secondaryCreateButton: {
-    minWidth: 112,
+    minWidth: 96,
+    flexGrow: 1,
     minHeight: 52,
     borderRadius: 16,
     borderWidth: 1,

@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/src/theme/ThemeProvider';
 
@@ -82,6 +83,7 @@ export function AuthErrorBanner({ message }: AuthErrorBannerProps) {
 
 export function AuthThemeToggle() {
   const { theme, setThemeName } = useTheme();
+  const insets = useSafeAreaInsets();
   const nextThemeName = theme.isDark ? 'lightGreen' : 'darkGreen';
 
   return (
@@ -90,6 +92,7 @@ export function AuthThemeToggle() {
       style={[
         styles.themeToggle,
         {
+          top: Math.max(insets.top + 12, 28),
           backgroundColor: theme.colors.card,
           borderColor: theme.colors.borderStrong,
         },
@@ -176,7 +179,6 @@ const styles = StyleSheet.create({
   },
   themeToggle: {
     position: 'absolute',
-    top: 16,
     right: 16,
     zIndex: 5,
     minHeight: 38,

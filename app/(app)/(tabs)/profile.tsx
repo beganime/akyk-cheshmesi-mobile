@@ -1,15 +1,18 @@
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
+import { resolveMediaUrl } from '@/src/lib/media/url';
 import { useAuthStore } from '@/src/state/auth';
 import { useTheme } from '@/src/theme/ThemeProvider';
 
 export default function ProfileScreen() {
   const { theme } = useTheme();
   const { user, logout } = useAuthStore();
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
   const name =
     [user?.first_name, user?.last_name].filter(Boolean).join(' ') ||
@@ -17,6 +20,11 @@ export default function ProfileScreen() {
     'Пользователь';
   const username = user?.username ? `@${user.username}` : 'username не указан';
   const email = user?.email || 'email не указан';
+  const avatarUrl = avatarFailed ? null : resolveMediaUrl(user?.avatar);
+
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [user?.avatar]);
 
   const onLogout = async () => {
     await logout();
@@ -37,12 +45,13 @@ export default function ProfileScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={[styles.profileBlock, { borderBottomColor: theme.colors.border }]}>
-          {user?.avatar ? (
+          {avatarUrl ? (
             <ExpoImage
-              source={{ uri: user.avatar }}
+              source={{ uri: avatarUrl }}
               style={styles.avatarImage}
               contentFit="cover"
               cachePolicy="memory-disk"
+              onError={() => setAvatarFailed(true)}
             />
           ) : (
             <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>

@@ -113,7 +113,16 @@ export default function CallScreen() {
   }, [engineState.socketConnected, phase, lastError]);
 
   const handleClose = async () => {
-    await clear();
+    if (phase === 'outgoing') {
+      await cancelOutgoing();
+    } else if (phase === 'incoming') {
+      await rejectCurrent();
+    } else if (phase === 'active') {
+      await endCurrent();
+    } else {
+      await clear();
+    }
+
     router.back();
   };
 

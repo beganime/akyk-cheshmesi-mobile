@@ -18,6 +18,8 @@ import {
   createChatCall,
   declineCall,
   endCall,
+  fetchCalls,
+  missedCall,
   rejectCall,
   sendCallSignal,
 } from '@/src/lib/api/calls';
@@ -63,6 +65,10 @@ export type CallEngineState = {
 type JoinSocketResponse = {
   peerId: string | null;
 };
+
+const OUTGOING_RING_TIMEOUT_MS = 60_000;
+const STALE_CALL_AGE_MS = 60_000;
+const STALE_CALL_STATUSES = ['requested', 'ringing', 'accepted'] as const;
 
 function appendToken(url: string, token: string) {
   const separator = url.includes('?') ? '&' : '?';
@@ -146,6 +152,7 @@ class CallEngine {
 
   private videoProfile: CallVideoProfile | null = null;
   private networkUnsubscribe: (() => void) | null = null;
+  private outgoingRingTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     try {
@@ -316,6 +323,7 @@ class CallEngine {
         this.setState({
           status: 'joined',
         });
+        this.clearOutgoingRingTimer();
       }
 
       if (state === 'failed' || state === 'disconnected') {
@@ -486,6 +494,128 @@ class CallEngine {
     }
   }
 
+  private clearOutgoingRingTimer() {
+    if (!this.outgoingRingTimer) return;
+    clearTimeout(this.outgoingRingTimer);
+    this.outgoingRingTimer = null;
+  }
+
+  private scheduleOutgoingRingTimeout(call: CallSession) {
+    this.clearOutgoingRingTimer();
+
+    this.outgoingRingTimer = setTimeout(() => {
+      void this.markOutgoingMissed(call.uuid);
+    }, OUTGOING_RING_TIMEOUT_MS);
+  }
+
+  private async markOutgoingMissed(callUuid: string) {
+    const currentCall = this.state.call;
+
+    if (!currentCall || currentCall.uuid !== callUuid) {
+      return;
+    }
+
+    if (!['starting', 'connecting', 'ringing'].includes(this.state.status)) {
+      return;
+    }
+
+    try {
+      await missedCall(callUuid, await buildCallActionPayload());
+    } catch {
+      try {
+        await cancelCall(callUuid, await buildCallActionPayload());
+      } catch {
+        // ignore: local cleanup still keeps the app from ringing forever
+      }
+    }
+
+    await this.cleanup(true);
+  }
+
+  private isStaleCall(call: CallSession) {
+    const createdAt = call.created_at ? new Date(call.created_at).getTime() : 0;
+
+    if (!createdAt || Number.isNaN(createdAt)) {
+      return true;
+    }
+
+    return Date.now() - createdAt > STALE_CALL_AGE_MS;
+  }
+
+  private async closeStaleCall(call: CallSession) {
+    if (!call.uuid || !this.isStaleCall(call)) {
+      return;
+    }
+
+    try {
+      if (call.status === 'accepted') {
+        await endCall(call.uuid, await buildCallActionPayload());
+        return;
+      }
+
+      await missedCall(call.uuid, await buildCallActionPayload());
+    } catch {
+      try {
+        await cancelCall(call.uuid, await buildCallActionPayload());
+      } catch {
+        // ignore stale cleanup failures; the next create will surface backend reason
+      }
+    }
+  }
+
+  private async closeStaleCallsForChat(chatUuid: string) {
+    const batches = await Promise.all(
+      STALE_CALL_STATUSES.map((status) =>
+        fetchCalls({ chatUuid, status, pageSize: 20 }).catch(() => []),
+      ),
+    );
+
+    const unique = new Map<string, CallSession>();
+    batches.flat().forEach((call) => {
+      if (call.uuid) {
+        unique.set(call.uuid, call);
+      }
+    });
+
+    await Promise.all([...unique.values()].map((call) => this.closeStaleCall(call)));
+  }
+
+  private isActiveCallConflict(error: any) {
+    const data = error?.response?.data;
+    const text =
+      typeof data === 'string'
+        ? data
+        : typeof data?.detail === 'string'
+          ? data.detail
+          : String(error?.message || '');
+
+    return text.toLowerCase().includes('active call');
+  }
+
+  private async createOutgoingCall(chatUuid: string, callType: CallType) {
+    const payload = {
+      call_type: callType,
+      metadata: {
+        ...(await buildCallActionPayload()),
+        notify_offline: true,
+        create_even_if_offline: true,
+      },
+    };
+
+    await this.closeStaleCallsForChat(chatUuid);
+
+    try {
+      return await createChatCall(chatUuid, payload);
+    } catch (error) {
+      if (!this.isActiveCallConflict(error)) {
+        throw error;
+      }
+
+      await this.closeStaleCallsForChat(chatUuid);
+      return await createChatCall(chatUuid, payload);
+    }
+  }
+
   private sendSignalMessage(payload: CallSignalPayload) {
     const sent = this.sendSocketMessage(payload);
 
@@ -571,6 +701,7 @@ class CallEngine {
         this.setState({
           status: 'joined',
         });
+        this.clearOutgoingRingTimer();
         return;
       }
 
@@ -611,6 +742,7 @@ class CallEngine {
         this.setState({
           status: 'joined',
         });
+        this.clearOutgoingRingTimer();
         return;
       }
 
@@ -673,37 +805,49 @@ class CallEngine {
       callType,
     });
 
-    const created = await createChatCall(chatUuid, {
-      call_type: callType,
-      metadata: {
-        ...(await buildCallActionPayload()),
-        notify_offline: true,
-        create_even_if_offline: true,
-      },
-    });
+    const created = await this.createOutgoingCall(chatUuid, callType);
 
     this.setState({
       call: created,
       status: 'ringing',
     });
 
+    this.scheduleOutgoingRingTimeout(created);
+    void this.bootstrapOutgoingSignaling(created, callType);
+
+    return created;
+  }
+
+  private async bootstrapOutgoingSignaling(call: CallSession, callType: CallType) {
     try {
       await this.createPeerConnection(callType);
 
+      if (this.state.call?.uuid !== call.uuid) {
+        return;
+      }
+
       const ws = await this.connectSocket();
-      await this.waitForJoin(ws, created);
+      await this.waitForJoin(ws, call);
+
+      if (this.state.call?.uuid !== call.uuid) {
+        return;
+      }
+
       await this.createAndSendOffer();
     } catch (error) {
       console.warn('Call signaling is not connected yet; call was created and will rely on push/history:', error);
+
+      if (this.state.call?.uuid !== call.uuid) {
+        return;
+      }
+
       this.setState({
-        call: created,
+        call,
         status: 'ringing',
         socketConnected: false,
         error: null,
       });
     }
-
-    return created;
   }
 
   async acceptIncoming(call: CallSession) {
@@ -831,6 +975,7 @@ class CallEngine {
   }
 
   async cleanup(markEnded: boolean) {
+    this.clearOutgoingRingTimer();
     this.stopNetworkAdaptation();
     this.videoProfile = null;
 

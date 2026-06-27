@@ -242,13 +242,17 @@ function normalizeMessagesForUi(items: MessageItem[]) {
   }));
 }
 
-function formatTime(dateString?: string | null) {
+function formatTime(dateString?: string | null, nowMs = Date.now()) {
   if (!dateString) return '';
 
   const date = new Date(dateString);
 
   if (Number.isNaN(date.getTime())) {
     return '';
+  }
+
+  if (nowMs - date.getTime() >= 0 && nowMs - date.getTime() < 60000) {
+    return 'Только что';
   }
 
   return date.toLocaleTimeString([], {
@@ -344,6 +348,8 @@ export default function ChatScreen() {
   const [presence, setPresence] = useState<PresenceDetail | null>(null);
   const [hiddenMessageMap, setHiddenMessageMap] = useState<HiddenMessageMap>({});
   const [nextUrl, setNextUrl] = useState<string | null>(null);
+  const [timeNowMs, setTimeNowMs] = useState(() => Date.now());
+  const [composerHeight, setComposerHeight] = useState(72);
 
   const [loadingChat, setLoadingChat] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(true);
@@ -417,6 +423,11 @@ export default function ChatScreen() {
 
   const canSend = draft.trim().length > 0;
   const textScale = getTextScale(appearance);
+
+  useEffect(() => {
+    const timer = setInterval(() => setTimeNowMs(Date.now()), 15000);
+    return () => clearInterval(timer);
+  }, []);
 
   const canEditSelectedMessage = useMemo(() => {
     if (!selectedMessage) return false;
@@ -2195,7 +2206,7 @@ export default function ChatScreen() {
             },
           ]}
         >
-          {formatTime(item.created_at)}
+          {formatTime(item.created_at, timeNowMs)}
         </Text>
 
         {isOwn ? <MessageStatusIcon message={item} color={metaColor} /> : null}
@@ -2395,7 +2406,10 @@ export default function ChatScreen() {
   };
   if (loadingChat || loadingMessages) {
     return (
-      <SafeAreaView style={[styles.container, buildChatBackgroundStyle(theme, appearance)]}>
+      <SafeAreaView
+        edges={['top', 'left', 'right']}
+        style={[styles.container, buildChatBackgroundStyle(theme, appearance)]}
+      >
         <View style={styles.centered}>
           <ActivityIndicator color={theme.colors.primary} />
         </View>
@@ -2404,10 +2418,13 @@ export default function ChatScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, buildChatBackgroundStyle(theme, appearance)]}>
+    <SafeAreaView
+      edges={['top', 'left', 'right']}
+      style={[styles.container, buildChatBackgroundStyle(theme, appearance)]}
+    >
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}
       >
         {appearance.backgroundImageUri ? (
@@ -2583,9 +2600,7 @@ export default function ChatScreen() {
           contentContainerStyle={[
             styles.listContent,
             {
-              paddingBottom:
-                Math.max(insets.bottom, 16) +
-                (composerPanelVisible ? 364 : 158),
+              paddingBottom: 18,
             },
           ]}
           ListHeaderComponent={
@@ -2631,9 +2646,7 @@ export default function ChatScreen() {
               styles.scrollToBottomButton,
               {
                 backgroundColor: theme.colors.primary,
-                bottom:
-                  Math.max(insets.bottom, 12) +
-                  (composerPanelVisible ? 368 : 158),
+                bottom: Math.max(insets.bottom, 12) + composerHeight + 12,
               },
             ]}
           >
@@ -2642,12 +2655,18 @@ export default function ChatScreen() {
         ) : null}
 
         <View
+          onLayout={(event) => {
+            const nextHeight = Math.ceil(event.nativeEvent.layout.height);
+            if (nextHeight > 0 && Math.abs(nextHeight - composerHeight) > 2) {
+              setComposerHeight(nextHeight);
+            }
+          }}
           style={[
             styles.composerShell,
             {
               borderTopColor: theme.colors.borderStrong,
               backgroundColor: theme.colors.background,
-              paddingBottom: Platform.OS === 'ios' ? insets.bottom : 8,
+              paddingBottom: Platform.OS === 'ios' ? insets.bottom : 0,
             },
           ]}
         >
@@ -3818,10 +3837,10 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingTop: 8,
-    paddingBottom: 10,
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 8,
     borderBottomWidth: 1,
   },
 
@@ -3848,9 +3867,9 @@ const styles = StyleSheet.create({
   },
 
   headerButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -3863,32 +3882,33 @@ const styles = StyleSheet.create({
   },
 
   headerCallButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   headerCenter: {
     flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
 
   headerAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 15,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   headerAvatarImage: {
-    width: 42,
-    height: 42,
-    borderRadius: 15,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#E5E7EB',
   },
 
@@ -3898,7 +3918,7 @@ const styles = StyleSheet.create({
   },
 
   headerTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
   },
 

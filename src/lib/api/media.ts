@@ -1,7 +1,9 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 
+import { ENV } from '@/src/config/env';
 import { apiClient } from '@/src/lib/api/client';
+import { getAccessToken } from '@/src/lib/storage/secure';
 import { optimizePickedMediaForUpload } from '@/src/lib/media/optimize';
 
 export type PickedMediaAsset = {
@@ -103,8 +105,24 @@ function buildSafeFilename(asset: PickedMediaAsset, fallbackPrefix: string) {
   return `${fallbackPrefix}-${Date.now()}${ext || ''}`;
 }
 
+function sanitizeFilename(name: string) {
+  const cleaned = name
+    .trim()
+    .replace(/[^\w.\-()]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  return cleaned || `upload-${Date.now()}`;
+}
+
 function buildContentType(asset: PickedMediaAsset, fallback: string) {
   return normalizeMimeType(asset.mimeType, fallback);
+}
+
+function buildApiUrl(path: string) {
+  const base = ENV.API_BASE_URL.replace(/\/+$/, '');
+  const suffix = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${suffix}`;
 }
 
 function normalizeDurationSeconds(raw?: number | null): number | undefined {
@@ -282,6 +300,131 @@ async function uploadFileUriToSignedUrl(
   reportProgress(onProgress, 1);
 }
 
+async function prepareNativeUploadUri(
+  asset: PickedMediaAsset,
+  options: UploadPickedMediaOptions,
+): Promise<{ uri: string; filename: string }> {
+  const contentType = buildContentType(asset, options.fallbackContentType);
+  const baseFilename = buildSafeFilename(
+    {
+      ...asset,
+      mimeType: asset.mimeType || contentType,
+    },
+    options.filenamePrefix,
+  );
+  const ext = getFileExtensionFromMime(contentType);
+  const filename = sanitizeFilename(
+    /\.[a-z0-9]{2,8}$/i.test(baseFilename) || !ext ? baseFilename : `${baseFilename}${ext}`,
+  );
+  const uploadDir = `${FileSystem.cacheDirectory || ''}akyl-uploads/`;
+
+  if (!FileSystem.cacheDirectory || asset.uri.endsWith(`/${filename}`)) {
+    return { uri: asset.uri, filename };
+  }
+
+  try {
+    await FileSystem.makeDirectoryAsync(uploadDir, { intermediates: true });
+    const targetUri = `${uploadDir}${filename}`;
+    await FileSystem.copyAsync({ from: asset.uri, to: targetUri });
+    return { uri: targetUri, filename };
+  } catch {
+    return { uri: asset.uri, filename };
+  }
+}
+
+function parseNativeUploadBody(body?: string | null): unknown {
+  if (!body) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(body);
+  } catch {
+    return body;
+  }
+}
+
+function createUploadError(status: number, body?: string | null) {
+  const error = new Error(`Upload failed with status ${status}`) as Error & {
+    response?: { status: number; data: unknown };
+  };
+
+  error.response = {
+    status,
+    data: parseNativeUploadBody(body),
+  };
+
+  return error;
+}
+
+async function uploadLocalNative(
+  asset: PickedMediaAsset,
+  options: UploadPickedMediaOptions,
+  durationSeconds?: number,
+): Promise<UploadedMedia> {
+  const token = await getAccessToken();
+  const contentType = buildContentType(asset, options.fallbackContentType);
+  const mediaKind = asset.mediaKind || options.mediaKind;
+  const prepared = await prepareNativeUploadUri(asset, options);
+  const parameters: Record<string, string> = {
+    is_public: String(Boolean(options.isPublic)),
+    mime_type: contentType || options.fallbackContentType,
+    content_type: contentType || options.fallbackContentType,
+    original_name: prepared.filename,
+  };
+
+  if (mediaKind) {
+    parameters.media_kind = String(mediaKind === 'video_note' ? 'video' : mediaKind);
+  }
+
+  if (durationSeconds) {
+    parameters.duration_seconds = String(durationSeconds);
+  }
+
+  if (asset.width) {
+    parameters.width = String(asset.width);
+  }
+
+  if (asset.height) {
+    parameters.height = String(asset.height);
+  }
+
+  if (Array.isArray(asset.waveformData) && asset.waveformData.length) {
+    parameters.waveform_data = JSON.stringify(asset.waveformData);
+  }
+
+  reportProgress(options.onProgress, 0.08);
+
+  const result = await FileSystem.uploadAsync(
+    buildApiUrl('/media/upload-local/'),
+    prepared.uri,
+    {
+      httpMethod: 'POST',
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: 'file',
+      mimeType: contentType || 'application/octet-stream',
+      parameters,
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    },
+  );
+
+  if (result.status < 200 || result.status >= 300) {
+    throw createUploadError(result.status, result.body);
+  }
+
+  const data = parseNativeUploadBody(result.body) as UploadedMedia | null;
+
+  if (!data || typeof data !== 'object' || !data.uuid) {
+    throw createUploadError(result.status, result.body || 'Invalid upload response');
+  }
+
+  reportProgress(options.onProgress, 1);
+  return data;
+}
+
 async function appendFileToFormData(
   formData: FormData,
   asset: PickedMediaAsset,
@@ -315,8 +458,13 @@ async function uploadLocal(
   asset: PickedMediaAsset,
   options: UploadPickedMediaOptions,
 ): Promise<UploadedMedia> {
-  const formData = new FormData();
   const durationSeconds = normalizeDurationSeconds(asset.duration);
+
+  if (Platform.OS !== 'web') {
+    return await uploadLocalNative(asset, options, durationSeconds);
+  }
+
+  const formData = new FormData();
 
   await appendFileToFormData(formData, asset, {
     filenamePrefix: options.filenamePrefix,
@@ -324,6 +472,14 @@ async function uploadLocal(
   });
 
   formData.append('is_public', String(Boolean(options.isPublic)));
+  formData.append('mime_type', buildContentType(asset, options.fallbackContentType));
+  formData.append('content_type', buildContentType(asset, options.fallbackContentType));
+  formData.append('original_name', buildSafeFilename(asset, options.filenamePrefix));
+
+  const mediaKind = asset.mediaKind || options.mediaKind;
+  if (mediaKind) {
+    formData.append('media_kind', String(mediaKind === 'video_note' ? 'video' : mediaKind));
+  }
 
   if (durationSeconds) {
     formData.append('duration_seconds', String(durationSeconds));
