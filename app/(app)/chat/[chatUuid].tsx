@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
   Modal,
@@ -118,7 +119,7 @@ const emojiGroups = [
 ];
 
 const VIDEO_MAX_DURATION_SECONDS = 30;
-const VIDEO_MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
+const VIDEO_MAX_FILE_SIZE_BYTES = 60 * 1024 * 1024;
 const VIDEO_BITRATE = 750_000;
 
 function formatMillis(ms: number) {
@@ -350,6 +351,7 @@ export default function ChatScreen() {
   const [nextUrl, setNextUrl] = useState<string | null>(null);
   const [timeNowMs, setTimeNowMs] = useState(() => Date.now());
   const [composerHeight, setComposerHeight] = useState(72);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const [loadingChat, setLoadingChat] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(true);
@@ -423,10 +425,33 @@ export default function ChatScreen() {
 
   const canSend = draft.trim().length > 0;
   const textScale = getTextScale(appearance);
+  const composerBottomPadding = useMemo(() => {
+    if (Platform.OS === 'web') {
+      return 10;
+    }
+
+    if (keyboardVisible) {
+      return Platform.OS === 'ios' ? Math.max(insets.bottom, 8) : 8;
+    }
+
+    return Math.max(insets.bottom, Platform.OS === 'android' ? 18 : 10);
+  }, [insets.bottom, keyboardVisible]);
 
   useEffect(() => {
     const timer = setInterval(() => setTimeNowMs(Date.now()), 15000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
   }, []);
 
   const canEditSelectedMessage = useMemo(() => {
@@ -1594,7 +1619,7 @@ export default function ChatScreen() {
 
       const result = await cameraRef.current.recordAsync?.({
         maxDuration: VIDEO_MAX_DURATION_SECONDS,
-        maxFileSize: VIDEO_MAX_FILE_SIZE_BYTES,
+        ...(Platform.OS === 'ios' ? { maxFileSize: VIDEO_MAX_FILE_SIZE_BYTES } : {}),
         videoBitrate: VIDEO_BITRATE,
         videoQuality: Platform.OS === 'android' ? '480p' : '4:3',
         codec: Platform.OS === 'ios' ? 'avc1' : undefined,
@@ -2646,7 +2671,7 @@ export default function ChatScreen() {
               styles.scrollToBottomButton,
               {
                 backgroundColor: theme.colors.primary,
-                bottom: Math.max(insets.bottom, 12) + composerHeight + 12,
+                bottom: composerBottomPadding + composerHeight + 12,
               },
             ]}
           >
@@ -2666,7 +2691,7 @@ export default function ChatScreen() {
             {
               borderTopColor: theme.colors.borderStrong,
               backgroundColor: theme.colors.background,
-              paddingBottom: Platform.OS === 'ios' ? insets.bottom : 0,
+              paddingBottom: composerBottomPadding,
             },
           ]}
         >

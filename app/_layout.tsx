@@ -20,6 +20,8 @@ import {
   registerNativePushToken,
   unregisterCurrentPushToken,
 } from '@/src/lib/push/register';
+import { notificationTriggerForChannel } from '@/src/lib/push/channels';
+import { parsePushTarget, PUSH_CHANNELS } from '@/src/lib/push/payload';
 import { getNotificationPrefs } from '@/src/lib/local/notificationPrefs';
 import {
   extractChatUuidFromRealtimeEvent,
@@ -70,43 +72,34 @@ export default function RootLayout() {
 
   const [appReady, setAppReady] = useState(false);
 
-  const extractNotificationTarget = (
-    response: Notifications.NotificationResponse,
+  const openNotificationTarget = useCallback((
+    payload: Notifications.Notification | Notifications.NotificationResponse,
+    source: 'tap' | 'foreground',
   ) => {
-    const data = response.notification.request.content.data as
-      | Record<string, unknown>
-      | undefined;
-    const type = typeof data?.type === 'string' ? data.type : 'message';
-    const chatUuid = typeof data?.chat_uuid === 'string' ? data.chat_uuid : null;
-    const messageUuid = typeof data?.message_uuid === 'string' ? data.message_uuid : null;
-    const callUuid = typeof data?.call_uuid === 'string' ? data.call_uuid : null;
-    const storyUuid = typeof data?.story_uuid === 'string' ? data.story_uuid : null;
+    const target = parsePushTarget(payload);
 
-    return {
-      type,
-      chatUuid: chatUuid?.trim() || null,
-      messageUuid: messageUuid?.trim() || null,
-      callUuid: callUuid?.trim() || null,
-      storyUuid: storyUuid?.trim() || null,
-    };
-  };
+    if (target.kind === 'call' && target.callUuid) {
+      const callUuid = target.callUuid;
 
-  const openNotificationTarget = useCallback((response: Notifications.NotificationResponse) => {
-    const target = extractNotificationTarget(response);
+      if (currentCallUuid === callUuid) {
+        return;
+      }
 
-    if (target.type === 'call' && target.callUuid) {
-      void loadCall(target.callUuid, 'incoming').then((call) => {
-        if (!call) return;
+      void loadCall(callUuid, 'incoming').finally(() => {
         router.push({
           pathname: '/(app)/call/[callUuid]',
-          params: { callUuid: call.uuid },
+          params: { callUuid },
         });
       });
       return;
     }
 
+    if (source === 'foreground') {
+      return;
+    }
+
     if (
-      (target.type === 'story_reply' || target.type === 'story_reaction') &&
+      target.kind === 'story' &&
       target.storyUuid &&
       !target.chatUuid
     ) {
@@ -126,7 +119,7 @@ export default function RootLayout() {
         },
       });
     }
-  }, [loadCall, router]);
+  }, [currentCallUuid, loadCall, router]);
 
   useEffect(() => {
     const unsubscribeExpired = subscribeSessionExpired(() => {
@@ -170,21 +163,30 @@ export default function RootLayout() {
   }, [bootstrap]);
 
   useEffect(() => {
-    const subscription = Notifications.addNotificationResponseReceivedListener(
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        openNotificationTarget(response);
+        openNotificationTarget(response, 'tap');
+      },
+    );
+    const receivedSubscription = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        const target = parsePushTarget(notification);
+        if (target.kind === 'call') {
+          openNotificationTarget(notification, 'foreground');
+        }
       },
     );
 
     Notifications.getLastNotificationResponseAsync()
       .then((response) => {
         if (!response) return;
-        openNotificationTarget(response);
+        openNotificationTarget(response, 'tap');
       })
       .catch(() => undefined);
 
     return () => {
-      subscription.remove();
+      responseSubscription.remove();
+      receivedSubscription.remove();
     };
   }, [openNotificationTarget]);
 
@@ -239,12 +241,15 @@ export default function RootLayout() {
           body,
           data: {
             type: 'message',
+            channel_id: PUSH_CHANNELS.messages,
             chat_uuid: chatUuid,
             message_uuid: message.uuid,
           },
           sound: true,
+          priority: Notifications.AndroidNotificationPriority.HIGH,
+          vibrate: [0, 200, 120, 200],
         },
-        trigger: null,
+        trigger: notificationTriggerForChannel(PUSH_CHANNELS.messages),
       });
     });
 

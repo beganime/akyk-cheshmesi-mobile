@@ -11,6 +11,8 @@ import {
   type PushPlatform,
   type PushProvider,
 } from '@/src/lib/api/push';
+import { ensureAndroidNotificationChannels } from '@/src/lib/push/channels';
+import { registerPushBackgroundTaskAsync } from '@/src/lib/push/background';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -33,20 +35,6 @@ type StoredPushRegistration = {
 
 let currentRegisteredToken: string | null = null;
 let pushTokenListenerSubscription: Notifications.EventSubscription | null = null;
-
-async function ensureAndroidNotificationChannel() {
-  if (Platform.OS !== 'android') {
-    return;
-  }
-
-  await Notifications.setNotificationChannelAsync('messages', {
-    name: 'Messages',
-    importance: Notifications.AndroidImportance.MAX,
-    vibrationPattern: [0, 200, 120, 200],
-    lightColor: '#1DB954',
-    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-  });
-}
 
 function mapTokenToProvider(type: string): PushProvider {
   return type === 'ios' ? 'apns' : 'fcm';
@@ -175,7 +163,8 @@ export async function registerNativePushToken() {
     return null;
   }
 
-  await ensureAndroidNotificationChannel();
+  await ensureAndroidNotificationChannels();
+  await registerPushBackgroundTaskAsync();
 
   const existingPermissions = await Notifications.getPermissionsAsync();
   let finalStatus = existingPermissions.status;

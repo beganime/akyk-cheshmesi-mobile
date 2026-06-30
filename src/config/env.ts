@@ -16,18 +16,28 @@ const DEFAULT_CALL_ICE_URLS = [
   'stun:stun.l.google.com:19302',
   'stun:stun1.l.google.com:19302',
 ];
+const publicEnv = {
+  EXPO_PUBLIC_API_BASE_URL: process.env.EXPO_PUBLIC_API_BASE_URL,
+  EXPO_PUBLIC_WS_BASE_URL: process.env.EXPO_PUBLIC_WS_BASE_URL,
+  EXPO_PUBLIC_CALL_WS_BASE_URL: process.env.EXPO_PUBLIC_CALL_WS_BASE_URL,
+  EXPO_PUBLIC_CALL_ICE_SERVERS: process.env.EXPO_PUBLIC_CALL_ICE_SERVERS,
+  EXPO_PUBLIC_CALL_TURN_USERNAME: process.env.EXPO_PUBLIC_CALL_TURN_USERNAME,
+  EXPO_PUBLIC_CALL_TURN_CREDENTIAL: process.env.EXPO_PUBLIC_CALL_TURN_CREDENTIAL,
+};
+
+type PublicEnvName = keyof typeof publicEnv;
 
 function cleanBaseUrl(value?: string | null) {
   const normalized = String(value || '').trim();
   return normalized ? normalized.replace(/\/+$/, '') : undefined;
 }
 
-function readPublicRaw(name: string) {
-  const value = process.env[name];
+function readPublicRaw(name: PublicEnvName) {
+  const value = publicEnv[name];
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
-function readPublicEnv(name: string) {
+function readPublicEnv(name: PublicEnvName) {
   return cleanBaseUrl(readPublicRaw(name));
 }
 

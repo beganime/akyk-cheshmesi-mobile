@@ -30,7 +30,7 @@ type ChatCaptureModalProps = {
 };
 
 const VIDEO_MAX_DURATION_SECONDS = 30;
-const VIDEO_MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
+const VIDEO_MAX_FILE_SIZE_BYTES = 60 * 1024 * 1024;
 const VIDEO_BITRATE = 750_000;
 
 function formatMillis(ms: number) {
@@ -242,7 +242,7 @@ export function ChatCaptureModal({
 
       const result = await cameraRef.current?.recordAsync?.({
         maxDuration: VIDEO_MAX_DURATION_SECONDS,
-        maxFileSize: VIDEO_MAX_FILE_SIZE_BYTES,
+        ...(Platform.OS === 'ios' ? { maxFileSize: VIDEO_MAX_FILE_SIZE_BYTES } : {}),
         videoBitrate: VIDEO_BITRATE,
         videoQuality: Platform.OS === 'android' ? '480p' : '4:3',
         codec: Platform.OS === 'ios' ? 'avc1' : undefined,
