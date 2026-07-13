@@ -4,11 +4,9 @@ export type ThemeName =
   | 'lightOrange'
   | 'darkOrange'
   | 'lightBlue'
-  | 'darkBlue'
-  | 'lightRed'
-  | 'darkRed';
+  | 'darkBlue';
 
-export type ThemeFamily = 'green' | 'orange' | 'blue' | 'red';
+export type ThemeFamily = 'green' | 'orange' | 'blue';
 
 export type AppTheme = {
   blurTint: 'light' | 'dark';
@@ -44,27 +42,25 @@ export type AppTheme = {
 };
 
 type PaletteInput = {
-  name: ThemeName;
   label: string;
   family: ThemeFamily;
   isDark: boolean;
   background: string;
-  backgroundSecondary: string;
-  backgroundTertiary: string;
-  card: string;
-  cardStrong: string;
+  surface: string;
+  surfaceRaised: string;
   border: string;
   borderStrong: string;
   text: string;
   muted: string;
   primary: string;
   primarySoft: string;
-  inputBackground: string;
+  accent: string;
   heroGradient: [string, string, string];
-  bubbleIncoming?: string;
 };
 
 function makeTheme(input: PaletteInput): AppTheme {
+  const outgoing = input.isDark ? input.primary : input.primary;
+
   return {
     blurTint: input.isDark ? 'dark' : 'light',
     isDark: input.isDark,
@@ -72,12 +68,12 @@ function makeTheme(input: PaletteInput): AppTheme {
     label: input.label,
     colors: {
       background: input.background,
-      backgroundSecondary: input.backgroundSecondary,
-      backgroundTertiary: input.backgroundTertiary,
-      card: input.card,
-      cardStrong: input.cardStrong,
-      cardSolid: input.isDark ? input.backgroundSecondary : '#FFFFFF',
-      tabBar: input.isDark ? 'rgba(8,14,20,0.96)' : 'rgba(255,255,255,0.96)',
+      backgroundSecondary: input.surface,
+      backgroundTertiary: input.surfaceRaised,
+      card: input.surface,
+      cardStrong: input.surfaceRaised,
+      cardSolid: input.surface,
+      tabBar: input.surface,
       tabItemActive: input.primarySoft,
       border: input.border,
       borderStrong: input.borderStrong,
@@ -85,189 +81,122 @@ function makeTheme(input: PaletteInput): AppTheme {
       muted: input.muted,
       primary: input.primary,
       primarySoft: input.primarySoft,
-      danger: input.isDark ? '#F87171' : '#DC2626',
-      success: '#22C55E',
-      inputBackground: input.inputBackground,
+      danger: input.isDark ? '#ff8f8f' : '#a8333a',
+      success: input.accent,
+      inputBackground: input.surfaceRaised,
       fab: input.primary,
-      fabText: '#FFFFFF',
-      shadow: input.isDark ? '#000000' : '#0F172A',
+      fabText: '#ffffff',
+      shadow: input.isDark ? '#000000' : '#292827',
       heroGradient: input.heroGradient,
-      bubbleOutgoing: input.primary,
-      bubbleIncoming: input.bubbleIncoming || input.cardStrong,
-      composerBackground: input.isDark ? input.backgroundSecondary : '#FFFFFF',
+      bubbleOutgoing: outgoing,
+      bubbleIncoming: input.surfaceRaised,
+      composerBackground: input.surface,
     },
   };
 }
 
 export const themes: Record<ThemeName, AppTheme> = {
   lightGreen: makeTheme({
-    name: 'lightGreen',
-    label: 'Светлая зелёная',
+    label: 'Editorial светлая',
     family: 'green',
     isDark: false,
-    background: '#FFFFFF',
-    backgroundSecondary: '#F6FFF9',
-    backgroundTertiary: '#E9FFF3',
-    card: '#FFFFFF',
-    cardStrong: '#F2FFF7',
-    border: '#DCF7E7',
-    borderStrong: '#BEEFD4',
-    text: '#0B1F16',
-    muted: '#5C7768',
-    primary: '#0F9D58',
-    primarySoft: 'rgba(52,199,89,0.14)',
-    inputBackground: '#F1FFF6',
-    heroGradient: ['#E9FFF3', '#D7FBE8', '#FFFFFF'],
-    bubbleIncoming: '#FFFFFF',
+    background: '#f2f0eb',
+    surface: '#ffffff',
+    surfaceRaised: '#f8f7f3',
+    border: '#e3e3e2',
+    borderStrong: '#d2d0cc',
+    text: '#292827',
+    muted: '#66635f',
+    primary: '#421d24',
+    primarySoft: '#eee6e8',
+    accent: '#0c4243',
+    heroGradient: ['#f2f0eb', '#ebe7df', '#ffffff'],
   }),
   darkGreen: makeTheme({
-    name: 'darkGreen',
-    label: 'Тёмная зелёная',
+    label: 'Editorial тёмная',
     family: 'green',
     isDark: true,
-    background: '#061A12',
-    backgroundSecondary: '#0B2A1A',
-    backgroundTertiary: '#0F5132',
-    card: '#0B2A1A',
-    cardStrong: '#0E3020',
-    border: 'rgba(233,255,243,0.10)',
-    borderStrong: 'rgba(233,255,243,0.16)',
-    text: '#E9FFF3',
-    muted: '#A7C7B5',
-    primary: '#1DB954',
-    primarySoft: 'rgba(29,185,84,0.20)',
-    inputBackground: '#0B2A1A',
-    heroGradient: ['#0F5132', '#0B2A1A', '#061A12'],
+    background: '#181716',
+    surface: '#23211f',
+    surfaceRaised: '#2d2a27',
+    border: '#383532',
+    borderStrong: '#4a4641',
+    text: '#f2f0eb',
+    muted: '#b2ada5',
+    primary: '#d4c7ff',
+    primarySoft: '#3a334c',
+    accent: '#72b4aa',
+    heroGradient: ['#181716', '#201b1d', '#0c4243'],
   }),
   lightOrange: makeTheme({
-    name: 'lightOrange',
-    label: 'Светлая оранжевая',
+    label: 'Янтарная светлая',
     family: 'orange',
     isDark: false,
-    background: '#FFFFFF',
-    backgroundSecondary: '#FFF8F1',
-    backgroundTertiary: '#FFEBD5',
-    card: '#FFFFFF',
-    cardStrong: '#FFF5EA',
-    border: '#FAD7B5',
-    borderStrong: '#FDBA74',
-    text: '#26170A',
-    muted: '#80634A',
-    primary: '#F97316',
-    primarySoft: 'rgba(249,115,22,0.15)',
-    inputBackground: '#FFF7ED',
-    heroGradient: ['#FFF7ED', '#FFEDD5', '#FFFFFF'],
-    bubbleIncoming: '#FFFFFF',
+    background: '#f5f1e8',
+    surface: '#ffffff',
+    surfaceRaised: '#fbf6ea',
+    border: '#e7dcc7',
+    borderStrong: '#d8c49f',
+    text: '#30291f',
+    muted: '#756b5e',
+    primary: '#8a4b16',
+    primarySoft: '#f4e2cf',
+    accent: '#596b3d',
+    heroGradient: ['#f5f1e8', '#f3e3cf', '#ffffff'],
   }),
   darkOrange: makeTheme({
-    name: 'darkOrange',
-    label: 'Тёмная оранжевая',
+    label: 'Янтарная тёмная',
     family: 'orange',
     isDark: true,
-    background: '#1B1008',
-    backgroundSecondary: '#2A170B',
-    backgroundTertiary: '#5A2A0C',
-    card: '#2A170B',
-    cardStrong: '#331D0E',
-    border: 'rgba(255,237,213,0.10)',
-    borderStrong: 'rgba(255,237,213,0.17)',
-    text: '#FFF7ED',
-    muted: '#E5B98D',
-    primary: '#FB923C',
-    primarySoft: 'rgba(251,146,60,0.20)',
-    inputBackground: '#2A170B',
-    heroGradient: ['#5A2A0C', '#2A170B', '#1B1008'],
+    background: '#1c1813',
+    surface: '#29231c',
+    surfaceRaised: '#342b21',
+    border: '#43382a',
+    borderStrong: '#5b4934',
+    text: '#f7efe3',
+    muted: '#c4b39d',
+    primary: '#e2a467',
+    primarySoft: '#493321',
+    accent: '#a9b987',
+    heroGradient: ['#1c1813', '#2b2118', '#4e2d18'],
   }),
   lightBlue: makeTheme({
-    name: 'lightBlue',
-    label: 'Светлая синяя',
+    label: 'Лагуна светлая',
     family: 'blue',
     isDark: false,
-    background: '#FFFFFF',
-    backgroundSecondary: '#F4F9FF',
-    backgroundTertiary: '#E4F1FF',
-    card: '#FFFFFF',
-    cardStrong: '#EFF6FF',
-    border: '#D6E8FF',
-    borderStrong: '#93C5FD',
-    text: '#071A2F',
-    muted: '#526D8A',
-    primary: '#2AABEE',
-    primarySoft: 'rgba(42,171,238,0.15)',
-    inputBackground: '#EFF6FF',
-    heroGradient: ['#EFF6FF', '#DBEAFE', '#FFFFFF'],
-    bubbleIncoming: '#FFFFFF',
+    background: '#eef2f1',
+    surface: '#ffffff',
+    surfaceRaised: '#f2f7f6',
+    border: '#d9e3e1',
+    borderStrong: '#bfd1ce',
+    text: '#202b2b',
+    muted: '#607170',
+    primary: '#0c4243',
+    primarySoft: '#dcebea',
+    accent: '#714cb6',
+    heroGradient: ['#eef2f1', '#dcebea', '#ffffff'],
   }),
   darkBlue: makeTheme({
-    name: 'darkBlue',
-    label: 'Тёмная синяя',
+    label: 'Лагуна тёмная',
     family: 'blue',
     isDark: true,
-    background: '#07111F',
-    backgroundSecondary: '#0E1B2D',
-    backgroundTertiary: '#12385A',
-    card: '#0E1B2D',
-    cardStrong: '#13243A',
-    border: 'rgba(219,234,254,0.10)',
-    borderStrong: 'rgba(219,234,254,0.17)',
-    text: '#EAF4FF',
-    muted: '#9DB8D6',
-    primary: '#38BDF8',
-    primarySoft: 'rgba(56,189,248,0.20)',
-    inputBackground: '#0E1B2D',
-    heroGradient: ['#12385A', '#0E1B2D', '#07111F'],
-  }),
-  lightRed: makeTheme({
-    name: 'lightRed',
-    label: 'Светлая красная',
-    family: 'red',
-    isDark: false,
-    background: '#FFFFFF',
-    backgroundSecondary: '#FFF5F5',
-    backgroundTertiary: '#FFE4E6',
-    card: '#FFFFFF',
-    cardStrong: '#FFF1F2',
-    border: '#FAD1D8',
-    borderStrong: '#FDA4AF',
-    text: '#2A0B13',
-    muted: '#81515D',
-    primary: '#E11D48',
-    primarySoft: 'rgba(225,29,72,0.14)',
-    inputBackground: '#FFF1F2',
-    heroGradient: ['#FFF1F2', '#FFE4E6', '#FFFFFF'],
-    bubbleIncoming: '#FFFFFF',
-  }),
-  darkRed: makeTheme({
-    name: 'darkRed',
-    label: 'Тёмная красная',
-    family: 'red',
-    isDark: true,
-    background: '#1C070D',
-    backgroundSecondary: '#2A0D15',
-    backgroundTertiary: '#5F1125',
-    card: '#2A0D15',
-    cardStrong: '#35111B',
-    border: 'rgba(255,228,230,0.10)',
-    borderStrong: 'rgba(255,228,230,0.17)',
-    text: '#FFF1F2',
-    muted: '#E6A3AF',
-    primary: '#FB7185',
-    primarySoft: 'rgba(251,113,133,0.20)',
-    inputBackground: '#2A0D15',
-    heroGradient: ['#5F1125', '#2A0D15', '#1C070D'],
+    background: '#0e1919',
+    surface: '#152524',
+    surfaceRaised: '#1b302f',
+    border: '#28413f',
+    borderStrong: '#365653',
+    text: '#edf5f3',
+    muted: '#a8bfbb',
+    primary: '#75bbb2',
+    primarySoft: '#203f3d',
+    accent: '#d4c7ff',
+    heroGradient: ['#0e1919', '#12302f', '#1e1830'],
   }),
 };
 
-export const themeOptions: { name: ThemeName; label: string }[] = [
-  { name: 'lightGreen', label: themes.lightGreen.label },
-  { name: 'darkGreen', label: themes.darkGreen.label },
-  { name: 'lightOrange', label: themes.lightOrange.label },
-  { name: 'darkOrange', label: themes.darkOrange.label },
-  { name: 'lightBlue', label: themes.lightBlue.label },
-  { name: 'darkBlue', label: themes.darkBlue.label },
-  { name: 'lightRed', label: themes.lightRed.label },
-  { name: 'darkRed', label: themes.darkRed.label },
-];
+export const themeOptions: { name: ThemeName; label: string }[] = (
+  Object.keys(themes) as ThemeName[]
+).map((name) => ({ name, label: themes[name].label }));
 
 export function isThemeName(value: string | null | undefined): value is ThemeName {
   return Boolean(value && value in themes);

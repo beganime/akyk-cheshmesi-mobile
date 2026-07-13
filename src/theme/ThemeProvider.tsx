@@ -45,6 +45,8 @@ function isThemeMode(value: string | null): value is ThemeMode {
 
 function normalizeLegacyThemeName(value: string | null): ThemeName | null {
   if (isThemeName(value)) return value;
+  if (value === 'lightRed') return 'lightGreen';
+  if (value === 'darkRed') return 'darkGreen';
   if (value === 'lightGradient') return 'lightGreen';
   if (value === 'darkGradient') return 'darkGreen';
   if (value === 'lightOrange') return 'lightOrange';

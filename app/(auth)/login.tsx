@@ -87,8 +87,8 @@ export default function LoginScreen() {
         >
           <AuthHeader
             icon="paper-plane"
-            title="Akyl Çeşmesi Messenger"
-            subtitle="Безопасное общение для своих"
+            title="Akyl Çeşmesi"
+            subtitle="Личное пространство для общения"
           />
 
           <GlassCard>
@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 24,
-    fontWeight: '800',
+    fontWeight: '600',
     marginBottom: 6,
   },
   cardSubtitle: {
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
   inputWrap: {
     minHeight: 54,
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 12,
     paddingHorizontal: 14,
     marginBottom: 12,
     flexDirection: 'row',

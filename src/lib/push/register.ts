@@ -167,14 +167,14 @@ export async function registerNativePushToken() {
   await registerPushBackgroundTaskAsync();
 
   const existingPermissions = await Notifications.getPermissionsAsync();
-  let finalStatus = existingPermissions.status;
+  let permissionGranted = existingPermissions.granted;
 
-  if (finalStatus !== 'granted') {
+  if (!permissionGranted) {
     const requestedPermissions = await Notifications.requestPermissionsAsync();
-    finalStatus = requestedPermissions.status;
+    permissionGranted = requestedPermissions.granted;
   }
 
-  if (finalStatus !== 'granted') {
+  if (!permissionGranted) {
     return null;
   }
 

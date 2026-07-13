@@ -5,6 +5,7 @@ export type UserProfile = {
   first_name: string;
   last_name: string;
   date_of_birth: string | null;
+  phone_number?: string | null;
   avatar: string | null;
   bio: string | null;
   is_email_verified: boolean;

@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { BlurView as ExpoBlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/src/theme/ThemeProvider';
@@ -27,27 +26,16 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const bottom = useMemo(() => Math.max(insets.bottom, 10), [insets.bottom]);
-
-  const Container = Platform.OS === 'web' ? View : ExpoBlurView;
-  const containerProps =
-    Platform.OS === 'web'
-      ? {}
-      : {
-          intensity: 44,
-          tint: theme.blurTint,
-        };
+  const bottom = useMemo(() => Math.max(insets.bottom, 0), [insets.bottom]);
 
   return (
     <View pointerEvents="box-none" style={[styles.outerWrap, { bottom }]}> 
-      <Container
-        {...containerProps}
+      <View
         style={[
           styles.bar,
           {
             backgroundColor: theme.colors.tabBar,
             borderColor: theme.colors.borderStrong,
-            shadowColor: theme.colors.shadow,
           },
         ]}
       >
@@ -117,7 +105,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
             </Pressable>
           );
         })}
-      </Container>
+      </View>
     </View>
   );
 }
@@ -125,37 +113,28 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
 const styles = StyleSheet.create({
   outerWrap: {
     position: 'absolute',
-    left: 14,
-    right: 14,
+    left: 0,
+    right: 0,
   },
   bar: {
     minHeight: 62,
-    borderRadius: 26,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 6,
+    paddingTop: 6,
+    paddingBottom: 4,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowOpacity: 0.16,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 12,
-    overflow: 'hidden',
   },
   item: {
     flex: 1,
     minHeight: 46,
-    borderRadius: 18,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
-    borderWidth: 1,
-    borderColor: 'transparent',
   },
-  itemActive: {
-    transform: [{ scale: 1 }],
-  },
+  itemActive: {},
   label: {
     fontSize: 11,
     fontWeight: '700',

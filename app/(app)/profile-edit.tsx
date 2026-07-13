@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -19,6 +19,7 @@ import { useTheme } from '@/src/theme/ThemeProvider';
 import { useAuthStore } from '@/src/state/auth';
 import { updateMe, type UpdateMePayload } from '@/src/lib/api/users';
 import type { PickedMediaAsset } from '@/src/lib/api/media';
+import { resolveMediaUrl } from '@/src/lib/media/url';
 
 type FormState = {
   first_name: string;
@@ -96,10 +97,19 @@ export default function ProfileEditScreen() {
 
   const [form, setForm] = useState<FormState>(initial);
   const [selectedAvatar, setSelectedAvatar] = useState<PickedMediaAsset | null>(null);
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorText, setErrorText] = useState('');
 
-  const avatarPreviewUri = selectedAvatar?.uri || user?.avatar || '';
+  const avatarPreviewUri = selectedAvatar?.uri || (avatarFailed ? '' : resolveMediaUrl(user?.avatar)) || '';
+
+  useEffect(() => {
+    setForm(initial);
+  }, [initial]);
+
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [user?.avatar, selectedAvatar?.uri]);
 
   const setField = (key: keyof FormState, value: string) => {
     setErrorText('');
@@ -143,6 +153,13 @@ export default function ProfileEditScreen() {
   const handlePickAvatar = async () => {
     try {
       setErrorText('');
+      setAvatarFailed(false);
+
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        setErrorText('Нет доступа к фото. Разреши доступ к галерее в настройках телефона.');
+        return;
+      }
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -232,6 +249,7 @@ export default function ProfileEditScreen() {
                   style={styles.avatarImage}
                   contentFit="cover"
                   cachePolicy="memory-disk"
+                  onError={() => setAvatarFailed(true)}
                 />
               ) : (
                 <View

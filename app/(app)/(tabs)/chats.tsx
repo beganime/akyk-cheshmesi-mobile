@@ -266,7 +266,7 @@ function SearchBar({
   ui: ChatUi;
 }) {
   return (
-    <View style={[styles.searchBox, { backgroundColor: ui.bgSecondary }]}> 
+    <View style={[styles.searchBox, { backgroundColor: ui.bgSecondary, borderColor: ui.separator }]}>
       <Ionicons name="search" size={18} color={ui.textSecondary} />
       <TextInput
         value={value}
@@ -1117,7 +1117,7 @@ export default function ChatsScreen() {
         <Modal visible={mainMenuVisible} transparent animationType="fade" onRequestClose={() => setMainMenuVisible(false)}>
           <View style={styles.menuModalRoot}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setMainMenuVisible(false)} />
-            <View style={[styles.dropdownMenu, { backgroundColor: ui.bgSecondary, shadowColor: ui.shadow }]}> 
+            <View style={[styles.dropdownMenu, { backgroundColor: ui.bgSecondary, borderColor: ui.separator, shadowColor: ui.shadow }]}>
               <DropdownItem
                 icon="bookmark-outline"
                 label="Избранное"
@@ -1161,7 +1161,7 @@ export default function ChatsScreen() {
           <View style={[styles.bottomModalRoot, { backgroundColor: ui.overlay }]}> 
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuVisible(false)} />
             <View style={styles.bottomSheetWrap}>
-              <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, shadowColor: ui.shadow }]}> 
+              <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, borderColor: ui.separator, shadowColor: ui.shadow }]}>
                 <Text style={[styles.sheetTitle, { color: ui.textPrimary }]}> 
                   {selectedChat ? chatTitle(selectedChat) : 'Чат'}
                 </Text>
@@ -1264,7 +1264,7 @@ export default function ChatsScreen() {
           <View style={[styles.bottomModalRoot, { backgroundColor: ui.overlay }]}> 
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setGroupVisible(false)} />
             <View style={styles.bottomSheetWrap}>
-              <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, shadowColor: ui.shadow }]}> 
+              <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, borderColor: ui.separator, shadowColor: ui.shadow }]}>
                 <Text style={[styles.sheetTitle, { color: ui.textPrimary }]}>Создать группу</Text>
                 <TextInput
                   value={groupTitle}
@@ -1363,7 +1363,7 @@ export default function ChatsScreen() {
           <View style={[styles.bottomModalRoot, { backgroundColor: ui.overlay }]}> 
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setCallChooserChat(null)} />
             <View style={styles.bottomSheetWrap}>
-              <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, shadowColor: ui.shadow }]}> 
+              <View style={[styles.sheet, { backgroundColor: ui.bgSecondary, borderColor: ui.separator, shadowColor: ui.shadow }]}>
                 <Text style={[styles.sheetTitle, { color: ui.textPrimary }]}>Позвонить</Text>
                 <Text style={[styles.sheetSub, { color: ui.textSecondary }]}> 
                   {callChooserChat ? chatTitle(callChooserChat) : ''}
@@ -1429,7 +1429,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   header: {
-    minHeight: 64,
+    minHeight: 72,
     paddingHorizontal: 20,
     paddingVertical: 12,
     flexDirection: 'row',
@@ -1437,14 +1437,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    letterSpacing: -0.2,
+    fontSize: 29,
+    fontWeight: '500',
+    letterSpacing: 0,
   },
   menuTrigger: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1464,7 +1464,8 @@ const styles = StyleSheet.create({
   },
   searchBox: {
     minHeight: 42,
-    borderRadius: 22,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1513,7 +1514,7 @@ const styles = StyleSheet.create({
   hiddenCallButton: {
     width: 92,
     minHeight: 58,
-    borderRadius: 18,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
@@ -1595,7 +1596,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 8,
     minHeight: 40,
-    borderRadius: 20,
+    borderRadius: 10,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1639,7 +1640,7 @@ const styles = StyleSheet.create({
   smallActionBtn: {
     minWidth: 56,
     height: 32,
-    borderRadius: 16,
+    borderRadius: 8,
     paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1672,12 +1673,13 @@ const styles = StyleSheet.create({
     top: 64,
     right: 16,
     width: 240,
-    borderRadius: 16,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
     paddingVertical: 8,
-    shadowOpacity: 0.24,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 18,
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
   },
   dropdownItem: {
     minHeight: 46,
@@ -1706,16 +1708,17 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   sheet: {
-    borderRadius: 20,
+    borderRadius: 14,
     padding: 16,
-    shadowOpacity: 0.24,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
   },
   sheetTitle: {
     fontSize: 19,
-    fontWeight: '800',
+    fontWeight: '600',
     marginBottom: 12,
   },
   sheetSub: {
@@ -1725,7 +1728,7 @@ const styles = StyleSheet.create({
   },
   sheetItem: {
     minHeight: 50,
-    borderRadius: 16,
+    borderRadius: 10,
     borderWidth: 1,
     paddingHorizontal: 14,
     marginBottom: 10,
@@ -1745,7 +1748,7 @@ const styles = StyleSheet.create({
   },
   groupInput: {
     minHeight: 50,
-    borderRadius: 18,
+    borderRadius: 10,
     borderWidth: 1,
     paddingHorizontal: 14,
     fontSize: 15,
@@ -1761,7 +1764,7 @@ const styles = StyleSheet.create({
   },
   groupPersonRow: {
     minHeight: 58,
-    borderRadius: 18,
+    borderRadius: 10,
     paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1773,7 +1776,7 @@ const styles = StyleSheet.create({
   },
   createGroupButton: {
     minHeight: 52,
-    borderRadius: 18,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -1786,7 +1789,7 @@ const styles = StyleSheet.create({
   },
   callChoice: {
     minHeight: 54,
-    borderRadius: 18,
+    borderRadius: 10,
     paddingHorizontal: 16,
     marginBottom: 10,
     flexDirection: 'row',
@@ -1800,7 +1803,7 @@ const styles = StyleSheet.create({
   },
   cancelChoice: {
     minHeight: 50,
-    borderRadius: 18,
+    borderRadius: 10,
     paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',

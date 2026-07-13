@@ -427,15 +427,10 @@ export default function ChatScreen() {
   const textScale = getTextScale(appearance);
   const composerBottomPadding = useMemo(() => {
     if (Platform.OS === 'web') {
-      return 10;
+      return 8;
     }
-
-    if (keyboardVisible) {
-      return Platform.OS === 'ios' ? Math.max(insets.bottom, 8) : 8;
-    }
-
-    return Math.max(insets.bottom, Platform.OS === 'android' ? 18 : 10);
-  }, [insets.bottom, keyboardVisible]);
+    return keyboardVisible ? 6 : 6;
+  }, [keyboardVisible]);
 
   useEffect(() => {
     const timer = setInterval(() => setTimeNowMs(Date.now()), 15000);
@@ -1659,6 +1654,20 @@ export default function ChatScreen() {
   };
 
   const stopVideoRecording = () => {
+    const startedAt = videoStartedAtRef.current;
+    const elapsed = startedAt ? Date.now() - startedAt : 0;
+
+    if (startedAt && elapsed < 1200) {
+      setTimeout(() => {
+        try {
+          cameraRef.current?.stopRecording?.();
+        } catch (error) {
+          console.error('delayed stopVideoRecording error:', error);
+        }
+      }, 1200 - elapsed);
+      return;
+    }
+
     try {
       cameraRef.current?.stopRecording?.();
     } catch (error) {
@@ -2444,7 +2453,7 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView
-      edges={['top', 'left', 'right']}
+      edges={['top', 'left', 'right', 'bottom']}
       style={[styles.container, buildChatBackgroundStyle(theme, appearance)]}
     >
       <KeyboardAvoidingView
@@ -2491,10 +2500,6 @@ export default function ChatScreen() {
             onPress={() => router.back()}
             style={[
               styles.headerButton,
-              {
-                borderColor: theme.colors.borderStrong,
-                backgroundColor: theme.colors.cardStrong,
-              },
             ]}
           >
             <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
@@ -2575,10 +2580,6 @@ export default function ChatScreen() {
             onPress={() => setSettingsVisible(true)}
             style={[
               styles.headerButton,
-              {
-                borderColor: theme.colors.borderStrong,
-                backgroundColor: theme.colors.cardStrong,
-              },
             ]}
           >
             <Ionicons name="ellipsis-horizontal" size={18} color={theme.colors.text} />
@@ -2622,10 +2623,11 @@ export default function ChatScreen() {
           onScroll={handleScroll}
           scrollEventThrottle={16}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           contentContainerStyle={[
             styles.listContent,
             {
-              paddingBottom: 18,
+              paddingBottom: 8,
             },
           ]}
           ListHeaderComponent={
@@ -3036,6 +3038,7 @@ export default function ChatScreen() {
             <Pressable style={StyleSheet.absoluteFill} onPress={() => void closeCaptureSafely()} />
 
             <View
+              onStartShouldSetResponder={() => true}
               style={[
                 styles.audioSheet,
                 {
@@ -3157,6 +3160,7 @@ export default function ChatScreen() {
             <Pressable style={StyleSheet.absoluteFill} onPress={() => void closeCaptureSafely()} />
 
             <View
+              onStartShouldSetResponder={() => true}
               style={[
                 styles.videoSheet,
                 {
@@ -3864,9 +3868,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 10,
-    paddingTop: 6,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
+    minHeight: 58,
+    paddingTop: 5,
+    paddingBottom: 7,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
 
   quickActionsBar: {
@@ -3894,8 +3899,7 @@ const styles = StyleSheet.create({
   headerButton: {
     width: 38,
     height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3909,7 +3913,7 @@ const styles = StyleSheet.create({
   headerCallButton: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3944,7 +3948,7 @@ const styles = StyleSheet.create({
 
   headerTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 
   headerSub: {
@@ -3995,7 +3999,7 @@ const styles = StyleSheet.create({
   bubble: {
     maxWidth: '84%',
     minWidth: 78,
-    borderRadius: 22,
+    borderRadius: 16,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -4117,24 +4121,15 @@ const styles = StyleSheet.create({
     right: 16,
     width: 46,
     height: 46,
-    borderRadius: 16,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
   },
 
   composerShell: {
-    borderTopWidth: 1,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: -6 },
-    elevation: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
+    paddingTop: 6,
   },
 
   replyComposer: {
@@ -4171,13 +4166,13 @@ const styles = StyleSheet.create({
   composerRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 8,
+    gap: 6,
   },
 
   roundToolButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 18,
+    width: 42,
+    height: 42,
+    borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -4185,9 +4180,9 @@ const styles = StyleSheet.create({
   },
 
   toolButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 18,
+    width: 42,
+    height: 42,
+    borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -4197,7 +4192,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 50,
     maxHeight: 136,
-    borderRadius: 22,
+    borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 9,
@@ -4214,17 +4209,12 @@ const styles = StyleSheet.create({
   },
 
   primaryActionButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 19,
+    width: 44,
+    height: 44,
+    borderRadius: 11,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.10,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
   },
 
   captureHint: {

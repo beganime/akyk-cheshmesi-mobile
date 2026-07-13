@@ -179,7 +179,7 @@ export default function StoryViewerScreen() {
       setReply('');
       openStoryActionTarget(result);
     } catch (error) {
-      Alert.alert('Story reply', getApiErrorMessage(error, 'Could not send story reply'));
+      Alert.alert('Ответ на историю', getApiErrorMessage(error, 'Не удалось отправить ответ'));
     } finally {
       setSending(false);
     }
@@ -195,7 +195,7 @@ export default function StoryViewerScreen() {
       const result = await reactToStory(current.uuid, emoji);
       openStoryActionTarget(result);
     } catch (error) {
-      Alert.alert('Story', getApiErrorMessage(error, 'Could not send story reaction'));
+      Alert.alert('История', getApiErrorMessage(error, 'Не удалось отправить реакцию'));
     } finally {
       setSending(false);
     }
@@ -214,7 +214,7 @@ export default function StoryViewerScreen() {
     return (
       <SafeAreaView style={styles.root}>
         <View style={styles.centered}>
-          <Text style={styles.emptyText}>Story недоступна</Text>
+          <Text style={styles.emptyText}>История недоступна</Text>
           <Pressable onPress={() => router.back()} style={styles.closeTextButton}>
             <Text style={styles.closeText}>Закрыть</Text>
           </Pressable>
@@ -295,7 +295,7 @@ export default function StoryViewerScreen() {
           <Text style={styles.metaText}>
             {current.is_own && typeof current.viewers_count === 'number'
               ? `${current.viewers_count} просмотров`
-              : 'story'}
+              : 'история'}
           </Text>
         </View>
         <Pressable onPress={() => router.back()} style={styles.iconButton}>
@@ -331,7 +331,7 @@ export default function StoryViewerScreen() {
             value={reply}
             onChangeText={setReply}
             editable={!current.is_own && Boolean(author?.uuid)}
-            placeholder={current.is_own ? 'Это твоя story' : 'Ответить сообщением'}
+            placeholder={current.is_own ? 'Это ваша история' : 'Ответить сообщением'}
             placeholderTextColor="rgba(255,255,255,0.68)"
             style={styles.replyInput}
             returnKeyType="send"
@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
   },
   closeTextButton: {
     minHeight: 44,
-    borderRadius: 18,
+    borderRadius: 10,
     paddingHorizontal: 18,
     backgroundColor: 'rgba(255,255,255,0.14)',
     alignItems: 'center',
@@ -463,7 +463,7 @@ const styles = StyleSheet.create({
   authorName: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   metaText: {
     color: 'rgba(255,255,255,0.72)',
@@ -473,7 +473,7 @@ const styles = StyleSheet.create({
   iconButton: {
     width: 42,
     height: 42,
-    borderRadius: 21,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.26)',
@@ -521,7 +521,7 @@ const styles = StyleSheet.create({
   replyInput: {
     flex: 1,
     minHeight: 48,
-    borderRadius: 24,
+    borderRadius: 12,
     paddingHorizontal: 16,
     color: '#FFFFFF',
     backgroundColor: 'rgba(255,255,255,0.16)',
@@ -531,10 +531,10 @@ const styles = StyleSheet.create({
   sendButton: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2AABEE',
+    backgroundColor: '#421d24',
   },
   disabledButton: {
     opacity: 0.45,

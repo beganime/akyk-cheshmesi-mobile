@@ -1,13 +1,6 @@
 import { PropsWithChildren } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/src/theme/ThemeProvider';
@@ -29,49 +22,41 @@ export function AuthPrimaryButton({
 }: AuthPrimaryButtonProps) {
   const { theme } = useTheme();
   const isDisabled = Boolean(disabled || loading);
-  const colors: [string, string] = theme.isDark
-    ? ['#178A48', '#0F6A38']
-    : ['#31A866', '#55C983'];
+  const contrast = theme.isDark ? '#181716' : '#ffffff';
 
   return (
-    <Pressable onPress={onPress} disabled={isDisabled}>
-      <LinearGradient
-        colors={colors}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.primaryButton, isDisabled && styles.disabled]}
-      >
-        {loading ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <>
-            <Text style={styles.primaryButtonText}>{title}</Text>
-            <Ionicons name={icon} size={18} color="#FFFFFF" />
-          </>
-        )}
-      </LinearGradient>
+    <Pressable
+      onPress={onPress}
+      disabled={isDisabled}
+      style={[
+        styles.primaryButton,
+        { backgroundColor: theme.colors.primary },
+        isDisabled && styles.disabled,
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator color={contrast} />
+      ) : (
+        <>
+          <Text style={[styles.primaryButtonText, { color: contrast }]}>{title}</Text>
+          <Ionicons name={icon} size={18} color={contrast} />
+        </>
+      )}
     </Pressable>
   );
 }
 
-type AuthErrorBannerProps = {
-  message: string | null;
-};
-
-export function AuthErrorBanner({ message }: AuthErrorBannerProps) {
+export function AuthErrorBanner({ message }: { message: string | null }) {
   const { theme } = useTheme();
-
-  if (!message) {
-    return null;
-  }
+  if (!message) return null;
 
   return (
     <View
       style={[
         styles.errorBanner,
         {
-          backgroundColor: theme.isDark ? 'rgba(248,113,113,0.13)' : '#FEF2F2',
-          borderColor: theme.isDark ? 'rgba(248,113,113,0.32)' : '#FECACA',
+          backgroundColor: theme.isDark ? '#382224' : '#fff4f3',
+          borderColor: theme.isDark ? '#684044' : '#e8b9b5',
         },
       ]}
     >
@@ -124,8 +109,12 @@ export function AuthHeader({
 
   return (
     <View style={styles.hero}>
-      <View style={[styles.logoCircle, { backgroundColor: theme.colors.primary }]}>
-        <Ionicons name={icon} size={28} color="#FFFFFF" />
+      <View style={[styles.logoMark, { backgroundColor: theme.colors.primary }]}>
+        <Ionicons
+          name={icon}
+          size={26}
+          color={theme.isDark ? '#181716' : '#ffffff'}
+        />
       </View>
       <Text style={[styles.brandTitle, { color: theme.colors.text }]}>{title}</Text>
       <Text style={[styles.brandSubtitle, { color: theme.colors.muted }]}>{subtitle}</Text>
@@ -135,35 +124,25 @@ export function AuthHeader({
 
 export function AuthFieldError({ children }: PropsWithChildren) {
   const { theme } = useTheme();
-
-  if (!children) {
-    return null;
-  }
-
+  if (!children) return null;
   return <Text style={[styles.fieldError, { color: theme.colors.danger }]}>{children}</Text>;
 }
 
 const styles = StyleSheet.create({
   primaryButton: {
     minHeight: 54,
-    borderRadius: 16,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 8,
     marginTop: 4,
   },
-  disabled: {
-    opacity: 0.68,
-  },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
-  },
+  disabled: { opacity: 0.58 },
+  primaryButtonText: { fontSize: 16, fontWeight: '700' },
   errorBanner: {
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 12,
@@ -171,55 +150,30 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 8,
   },
-  errorText: {
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '700',
-  },
+  errorText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: '600' },
   themeToggle: {
     position: 'absolute',
     right: 16,
     zIndex: 5,
     minHeight: 38,
-    borderRadius: 19,
+    borderRadius: 10,
     borderWidth: 1,
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
   },
-  themeToggleText: {
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  hero: {
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  logoCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+  themeToggleText: { fontSize: 13, fontWeight: '700' },
+  hero: { alignItems: 'center', marginBottom: 6 },
+  logoMark: {
+    width: 64,
+    height: 64,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 16,
   },
-  brandTitle: {
-    fontSize: 30,
-    fontWeight: '800',
-    marginBottom: 6,
-    textAlign: 'center',
-  },
-  brandSubtitle: {
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 21,
-  },
-  fieldError: {
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: -6,
-    marginBottom: 10,
-  },
+  brandTitle: { fontSize: 31, fontWeight: '500', marginBottom: 7, textAlign: 'center' },
+  brandSubtitle: { fontSize: 15, textAlign: 'center', lineHeight: 21 },
+  fieldError: { fontSize: 12, fontWeight: '600', marginTop: -6, marginBottom: 10 },
 });

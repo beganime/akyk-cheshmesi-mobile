@@ -99,12 +99,8 @@ async function buildMultipartPayload(payload: UpdateMePayload): Promise<FormData
   appendString(formData, 'phone_number', payload.phone_number);
   appendBoolean(formData, 'show_online_status', payload.show_online_status);
 
-  if (
-    payload.date_of_birth !== undefined &&
-    payload.date_of_birth !== null &&
-    payload.date_of_birth.trim().length > 0
-  ) {
-    formData.append('date_of_birth', payload.date_of_birth.trim());
+  if (payload.date_of_birth !== undefined) {
+    formData.append('date_of_birth', payload.date_of_birth?.trim() || '');
   }
 
   if (payload.avatarAsset) {
@@ -115,18 +111,25 @@ async function buildMultipartPayload(payload: UpdateMePayload): Promise<FormData
 }
 
 export async function updateMe(payload: UpdateMePayload): Promise<UserProfile> {
+  const update = async (data: Record<string, unknown> | FormData) => {
+    try {
+      const response = await apiClient.patch<UserProfile>('/users/me/', data);
+      return response.data;
+    } catch (error: any) {
+      const status = Number(error?.response?.status || 0);
+      if (status !== 404 && status !== 405) {
+        throw error;
+      }
+
+      const response = await apiClient.put<UserProfile>('/users/me/', data);
+      return response.data;
+    }
+  };
+
   if (hasAvatarAsset(payload.avatarAsset)) {
     const formData = await buildMultipartPayload(payload);
-
-    const response = await apiClient.put<UserProfile>('/users/me/', formData);
-
-    return response.data;
+    return update(formData);
   }
 
-  const response = await apiClient.put<UserProfile>(
-    '/users/me/',
-    buildJsonPayload(payload)
-  );
-
-  return response.data;
+  return update(buildJsonPayload(payload));
 }

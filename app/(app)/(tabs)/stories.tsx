@@ -3,7 +3,9 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -279,7 +281,7 @@ export default function StoriesScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}> 
       <View style={styles.header}>
         <View style={styles.headerText}>
-          <Text style={[styles.title, { color: theme.colors.text }]}>Stories</Text>
+          <Text style={[styles.title, { color: theme.colors.text }]}>Истории</Text>
           <Text style={[styles.subtitle, { color: theme.colors.muted }]}> 
             Фото, видео и короткие обновления на 24 часа
           </Text>
@@ -392,7 +394,10 @@ export default function StoriesScreen() {
       <Modal visible={createVisible} transparent animationType="slide" onRequestClose={closeCreateSheet}>
         <View style={styles.modalOverlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={closeCreateSheet} />
-          <View style={styles.sheet}>
+          <KeyboardAvoidingView
+            style={styles.sheet}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
             <View
               style={[
                 styles.createPanel,
@@ -542,7 +547,7 @@ export default function StoriesScreen() {
                   style={[
                     styles.createButton,
                     {
-                      backgroundColor: '#10B981',
+                      backgroundColor: theme.colors.primary,
                       opacity: creating || (!pendingMedia && !caption.trim()) ? 0.55 : 1,
                     },
                   ]}
@@ -558,7 +563,7 @@ export default function StoriesScreen() {
                 </Pressable>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </SafeAreaView>
@@ -589,7 +594,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: '800',
+    fontWeight: '500',
   },
   subtitle: {
     fontSize: 13,
@@ -598,7 +603,7 @@ const styles = StyleSheet.create({
   headerButton: {
     width: 46,
     height: 46,
-    borderRadius: 23,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -617,6 +622,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 256,
     borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
     overflow: 'hidden',
     marginBottom: 10,
   },
@@ -647,7 +653,7 @@ const styles = StyleSheet.create({
   },
   storyTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 4,
   },
   storyMeta: {
@@ -689,7 +695,7 @@ const styles = StyleSheet.create({
   },
   createPanel: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 20,
+    borderRadius: 16,
     padding: 14,
   },
   createHeader: {
@@ -706,7 +712,7 @@ const styles = StyleSheet.create({
   },
   sheetTitle: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '600',
   },
   sheetSubtitle: {
     marginTop: 2,
@@ -716,14 +722,14 @@ const styles = StyleSheet.create({
   sheetCloseButton: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
   mediaPicker: {
     height: 214,
     borderWidth: 1,
-    borderRadius: 18,
+    borderRadius: 12,
     overflow: 'hidden',
     marginBottom: 12,
     alignItems: 'center',
@@ -778,7 +784,7 @@ const styles = StyleSheet.create({
   captionInput: {
     minHeight: 82,
     maxHeight: 120,
-    borderRadius: 16,
+    borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -846,7 +852,7 @@ const styles = StyleSheet.create({
     minWidth: 96,
     flexGrow: 1,
     minHeight: 52,
-    borderRadius: 16,
+    borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -860,7 +866,7 @@ const styles = StyleSheet.create({
   createButton: {
     flex: 1,
     minHeight: 52,
-    borderRadius: 16,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',

@@ -7,24 +7,28 @@
     "version": "1.0.7",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "icon": "./assets/images/icon.png",
-
+    "icon": "./assets/images/icon-square.png",
     "splash": {
       "image": "./assets/images/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#061A12"
+      "backgroundColor": "#f2f0eb"
     },
-
-    "assetBundlePatterns": ["**/*"],
-
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "experiments": {
       "typedRoutes": true
     },
-
     "plugins": [
       "expo-router",
       "expo-dev-client",
       "expo-notifications",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Разрешите Akyl Cheshmesi доступ к контактам, чтобы находить знакомых и приглашать их в мессенджер."
+        }
+      ],
       [
         "expo-sqlite",
         {
@@ -41,42 +45,43 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Разрешите Akyl Cheshmesi доступ к фото и видео, чтобы отправлять медиа в чат."
+          "photosPermission": "Разрешите Akyl Cheshmesi доступ к фото и видео для отправки медиа и создания историй."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Разрешите Akyl Cheshmesi использовать камеру для видео-звонков и видео-сообщений.",
-          "microphonePermission": "Разрешите Akyl Cheshmesi использовать микрофон для аудио-звонков, видео-звонков и голосовых сообщений.",
+          "cameraPermission": "Разрешите Akyl Cheshmesi использовать камеру для видеозвонков, видеосообщений и историй.",
+          "microphonePermission": "Разрешите Akyl Cheshmesi использовать микрофон для звонков и голосовых сообщений.",
           "recordAudioAndroid": true
         }
-      ]
+      ],
+      "expo-font"
     ],
-
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.akylchat.app",
       "buildNumber": "10",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"],
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "Разрешите Akyl Cheshmesi использовать камеру для видео-звонков.",
+        "NSCameraUsageDescription": "Разрешите Akyl Cheshmesi использовать камеру для видеозвонков, видеосообщений и историй.",
         "NSMicrophoneUsageDescription": "Разрешите Akyl Cheshmesi использовать микрофон для звонков и голосовых сообщений.",
-        "NSPhotoLibraryUsageDescription": "Разрешите Akyl Cheshmesi доступ к фото и видео, чтобы отправлять медиа в чат.",
-        "NSPhotoLibraryAddUsageDescription": "Разрешите Akyl Cheshmesi сохранять медиафайлы при необходимости."
+        "NSPhotoLibraryUsageDescription": "Разрешите Akyl Cheshmesi доступ к фото и видео для отправки медиа и создания историй.",
+        "NSPhotoLibraryAddUsageDescription": "Разрешите Akyl Cheshmesi сохранять выбранные медиафайлы."
       }
     },
-
     "android": {
       "package": "com.akylchat.app",
       "googleServicesFile": "./google-services.json",
-      "version": "1.0.6",
+      "version": "1.0.7",
       "versionCode": 10,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#061A12"
+        "foregroundImage": "./assets/images/icon-square.png",
+        "backgroundColor": "#f2f0eb"
       },
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
@@ -89,16 +94,16 @@
         "FOREGROUND_SERVICE",
         "READ_MEDIA_IMAGES",
         "READ_MEDIA_VIDEO",
-        "READ_EXTERNAL_STORAGE"
+        "READ_EXTERNAL_STORAGE",
+        "READ_CONTACTS",
+        "WRITE_CONTACTS"
       ]
     },
-
     "web": {
       "bundler": "metro",
       "output": "single",
       "favicon": "./assets/images/favicon.png"
     },
-
     "extra": {
       "apiBaseUrl": "https://akyl-cheshmesi.ru/api/v1",
       "wsBaseUrl": "wss://akyl-cheshmesi.ru/ws",
@@ -111,7 +116,6 @@
         "projectId": "1d056ce0-1890-4429-97f7-31e739a1e023"
       }
     },
-
     "runtimeVersion": "1.0.7"
   }
 }

@@ -21,6 +21,7 @@ import {
   AuthThemeToggle,
 } from '@/src/features/auth/AuthUi';
 import { setPasswordRequest } from '@/src/lib/api/auth';
+import { updateMe } from '@/src/lib/api/users';
 import { useAuthStore } from '@/src/state/auth';
 import { useTheme } from '@/src/theme/ThemeProvider';
 import { getApiErrorMessage } from '@/src/utils/apiErrors';
@@ -40,6 +41,7 @@ function isValidUsername(value: string) {
 export default function SetPasswordScreen() {
   const { theme } = useTheme();
   const setSession = useAuthStore((s) => s.setSession);
+  const refreshProfile = useAuthStore((s) => s.refreshProfile);
   const params = useLocalSearchParams<{
     email?: string | string[];
     verificationToken?: string | string[];
@@ -55,12 +57,16 @@ export default function SetPasswordScreen() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [passwordConfirmVisible, setPasswordConfirmVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [accountCreated, setAccountCreated] = useState(false);
+
+  const normalizedPhoneNumber = `+${phoneNumber.replace(/\D/g, '')}`;
 
   const clearError = () => {
     if (errorMessage) setErrorMessage(null);
@@ -71,6 +77,11 @@ export default function SetPasswordScreen() {
     const normalizedDateOfBirth = dateOfBirth.trim();
 
     setErrorMessage(null);
+
+    if (!/^\+\d{7,15}$/.test(normalizedPhoneNumber)) {
+      setErrorMessage('Введите номер телефона в международном формате, например +993 61 123456');
+      return;
+    }
 
     if (!verificationToken) {
       setErrorMessage('Не найден токен подтверждения. Повторите подтверждение email');
@@ -105,6 +116,13 @@ export default function SetPasswordScreen() {
     try {
       setLoading(true);
 
+      if (accountCreated) {
+        await updateMe({ phone_number: normalizedPhoneNumber });
+        await refreshProfile();
+        router.replace('/(app)/(tabs)/chats');
+        return;
+      }
+
       const data = await setPasswordRequest({
         verificationToken,
         username: normalizedUsername,
@@ -129,6 +147,21 @@ export default function SetPasswordScreen() {
         refreshToken,
         user,
       });
+
+      setAccountCreated(true);
+
+      try {
+        await updateMe({ phone_number: normalizedPhoneNumber });
+        await refreshProfile();
+      } catch (phoneError) {
+        setErrorMessage(
+          getApiErrorMessage(
+            phoneError,
+            'Аккаунт создан, но номер телефона не сохранился. Проверьте номер и повторите привязку.',
+          ),
+        );
+        return;
+      }
 
       router.replace('/(app)/(tabs)/chats');
     } catch (error: any) {
@@ -163,6 +196,32 @@ export default function SetPasswordScreen() {
             </Text>
 
             <AuthErrorBanner message={errorMessage} />
+
+            <View
+              style={[
+                styles.inputWrap,
+                {
+                  backgroundColor: theme.colors.inputBackground,
+                  borderColor: theme.colors.border,
+                },
+              ]}
+            >
+              <Ionicons name="call-outline" size={18} color={theme.colors.muted} />
+              <TextInput
+                value={phoneNumber}
+                onChangeText={(value) => {
+                  setPhoneNumber(value);
+                  clearError();
+                }}
+                placeholder="Телефон, например +993 61 123456"
+                placeholderTextColor={theme.colors.muted}
+                style={[styles.input, { color: theme.colors.text }]}
+                keyboardType="phone-pad"
+                autoComplete="tel"
+                textContentType="telephoneNumber"
+                editable={!loading}
+              />
+            </View>
 
             <View
               style={[
@@ -351,7 +410,7 @@ export default function SetPasswordScreen() {
             </View>
 
             <AuthPrimaryButton
-              title="Завершить регистрацию"
+              title={accountCreated ? 'Привязать телефон' : 'Завершить регистрацию'}
               icon="checkmark"
               loading={loading}
               disabled={loading}
@@ -380,7 +439,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 24,
-    fontWeight: '800',
+    fontWeight: '600',
     marginBottom: 6,
   },
   cardSubtitle: {
@@ -391,7 +450,7 @@ const styles = StyleSheet.create({
   inputWrap: {
     minHeight: 54,
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 12,
     paddingHorizontal: 14,
     marginBottom: 12,
     flexDirection: 'row',

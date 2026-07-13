@@ -29,6 +29,9 @@ Mobile behavior:
 
 - access and refresh tokens are stored locally;
 - 401 responses trigger refresh and retry;
+- registration verifies email first and requires a phone number before entering the app;
+- after `set-password`, mobile binds `phone_number` through authenticated
+  `PATCH /api/users/me/` because the signup endpoint does not accept phone fields;
 - logout unregisters the known push token before clearing the session.
 
 ## Push
@@ -197,9 +200,15 @@ Implemented locally in the mobile client:
 - settings are split into dedicated screens: language, bots, devices, storage,
   notifications, chat settings, appearance, privacy, security;
 - language screen shows Russian as the default language;
-- eight app themes are available: light/dark green, orange, blue, and red;
+- six app themes are available: Editorial light/dark, Amber light/dark, and
+  Lagoon light/dark;
+- the default visual system follows the warm editorial reference: parchment
+  background, paper surfaces, wine primary actions, violet links, and lagoon
+  secondary accents;
 - first-time chat senders are shown in chats only until the user adds them to
   contacts;
+- device contacts are loaded locally through `expo-contacts`; the address book
+  is not uploaded to the server;
 - local contact add/remove, muted chats, hidden chats, and hidden users are
   persisted in AsyncStorage;
 - chat list cache is shown first and refreshed from the server;
@@ -213,9 +222,17 @@ These flows are prepared in the mobile UI, but still need backend endpoints if
 they should sync across devices and survive reinstall:
 
 - contacts:
-  - `GET /api/contacts/`
-  - `POST /api/contacts/` with `user_uuid`
-  - `DELETE /api/contacts/{user_uuid}/`
+  - stop automatically creating `UserContact` records from every chat;
+  - `GET /api/users/contacts/` must return only explicitly saved contacts;
+  - `POST /api/users/contacts/` with `user_uuid`;
+  - `DELETE /api/users/contacts/{user_uuid}/`;
+  - `POST /api/users/contacts/discover/` accepting normalized phone hashes and
+    returning matched users without exposing non-matching phone numbers;
+- registration phone enforcement:
+  - optional preferred change: accept `phone_number` in
+    `POST /api/auth/set-password/` and validate uniqueness/format atomically;
+  - current mobile fallback uses `PATCH /api/users/me/` immediately after
+    signup, so the flow works but the backend does not enforce atomic binding;
 - real block/unblock users:
   - `POST /api/users/{user_uuid}/block/`
   - `DELETE /api/users/{user_uuid}/block/`
