@@ -48,6 +48,8 @@ export default function AppLayout() {
       <Stack.Screen name="chat-user/[userUuid]" />
       <Stack.Screen name="call/[callUuid]" />
       <Stack.Screen name="story-viewer" />
+      <Stack.Screen name="news/[identifier]" />
+      <Stack.Screen name="about" />
     </Stack>
   );
 }

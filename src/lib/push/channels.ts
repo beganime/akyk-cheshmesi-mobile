@@ -9,7 +9,7 @@ export async function ensureAndroidNotificationChannels() {
   }
 
   await Notifications.setNotificationChannelAsync(PUSH_CHANNELS.calls, {
-    name: 'Calls',
+    name: 'Звонки',
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 350, 120, 350, 120, 700],
     lightColor: '#1DB954',
@@ -22,7 +22,7 @@ export async function ensureAndroidNotificationChannels() {
   });
 
   await Notifications.setNotificationChannelAsync(PUSH_CHANNELS.messages, {
-    name: 'Messages',
+    name: 'Сообщения',
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 200, 120, 200],
     lightColor: '#1DB954',

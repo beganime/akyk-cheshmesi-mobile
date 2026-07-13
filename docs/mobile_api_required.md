@@ -216,6 +216,25 @@ Implemented locally in the mobile client:
   Expo image memory/disk cache;
 - storage settings can clear JSON cache, image cache, or all app cache.
 
+## External News API
+
+The news tab reads the public Student's Life API directly:
+
+- primary: `https://students-life.ru/api2/api/v1/news/`;
+- fallback: `https://stud-life.com/api/v1/news/`;
+- list filters: `search`, `category`, `category__slug`, `is_important`, and
+  `ordering`;
+- category and article detail routes support both numeric IDs and slugs.
+
+The mobile client falls back to the original host on network errors, `404`, or
+server errors from the proxy.
+
+Native Android/iOS requests are not subject to browser CORS. The external news
+hosts currently allow the local web origin `http://localhost:8081`, but do not
+return `Access-Control-Allow-Origin` for `https://akyl-cheshmesi.ru`. Before a
+production web deployment, that origin must be allowlisted by the news service
+or exposed through an Akyl Cheshmesi same-origin backend proxy.
+
 ## Backend APIs Still Needed
 
 These flows are prepared in the mobile UI, but still need backend endpoints if
@@ -257,6 +276,13 @@ they should sync across devices and survive reinstall:
 - optional storage/account stats:
   - media usage by type;
   - server-side cache/storage cleanup if backend stores user-owned media quotas.
+- story archive/history:
+  - `GET /api/v1/stories/mine/?include_expired=true` (or an equivalent route);
+  - return the authenticated user's active and expired stories with media,
+    viewer counts, creation time, and expiration time;
+  - the current `GET /api/v1/stories/` only supports the active 24-hour feed,
+    so the profile can currently show active own stories but not a permanent
+    archive.
 
 ## Still Needs Production Verification
 

@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -26,16 +25,18 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const bottom = useMemo(() => Math.max(insets.bottom, 0), [insets.bottom]);
+  const bottomInset = Math.max(insets.bottom, 4);
 
   return (
-    <View pointerEvents="box-none" style={[styles.outerWrap, { bottom }]}> 
+    <View pointerEvents="box-none" style={styles.outerWrap}>
       <View
         style={[
           styles.bar,
           {
             backgroundColor: theme.colors.tabBar,
             borderColor: theme.colors.borderStrong,
+            minHeight: 58 + bottomInset,
+            paddingBottom: bottomInset,
           },
         ]}
       >
@@ -115,13 +116,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    bottom: 0,
   },
   bar: {
     minHeight: 62,
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 6,
     paddingTop: 6,
-    paddingBottom: 4,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

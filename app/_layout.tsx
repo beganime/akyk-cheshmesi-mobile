@@ -1,12 +1,13 @@
 import 'expo-dev-client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ThemeProvider, useTheme } from '@/src/theme/ThemeProvider';
 import { initializeDatabase } from '@/src/lib/db';
@@ -71,6 +72,10 @@ export default function RootLayout() {
   const currentCallUuid = useCallStore((s) => s.currentCall?.uuid);
 
   const [appReady, setAppReady] = useState(false);
+  const recentMessagePushesRef = useRef(new Map<string, number>());
+  const pendingMessageNotificationsRef = useRef(
+    new Map<string, ReturnType<typeof setTimeout>>(),
+  );
 
   const openNotificationTarget = useCallback((
     payload: Notifications.Notification | Notifications.NotificationResponse,
@@ -171,6 +176,14 @@ export default function RootLayout() {
     const receivedSubscription = Notifications.addNotificationReceivedListener(
       (notification) => {
         const target = parsePushTarget(notification);
+        if (target.kind === 'message' && target.messageUuid) {
+          recentMessagePushesRef.current.set(target.messageUuid, Date.now());
+          const pending = pendingMessageNotificationsRef.current.get(target.messageUuid);
+          if (pending) {
+            clearTimeout(pending);
+            pendingMessageNotificationsRef.current.delete(target.messageUuid);
+          }
+        }
         if (target.kind === 'call') {
           openNotificationTarget(notification, 'foreground');
         }
@@ -216,6 +229,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (!accessToken) return;
+    const pendingNotifications = pendingMessageNotificationsRef.current;
 
     const unsubscribe = realtimeClient.subscribe((event) => {
       if (!isMessageEvent(event)) return;
@@ -229,32 +243,56 @@ export default function RootLayout() {
       const chatUuid = extractChatUuidFromRealtimeEvent(event);
       if (!chatUuid) return;
 
-      const title =
-        message.sender?.full_name ||
-        message.sender?.username ||
-        'Новое сообщение';
-      const body = message.text?.trim() || 'Медиа сообщение';
+      const messageUuid = message.uuid;
+      const receivedAt = recentMessagePushesRef.current.get(messageUuid);
+      if (receivedAt && Date.now() - receivedAt < 10_000) return;
 
-      void Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          data: {
-            type: 'message',
-            channel_id: PUSH_CHANNELS.messages,
-            chat_uuid: chatUuid,
-            message_uuid: message.uuid,
-          },
-          sound: true,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-          vibrate: [0, 200, 120, 200],
-        },
-        trigger: notificationTriggerForChannel(PUSH_CHANNELS.messages),
-      });
+      const pending = pendingMessageNotificationsRef.current.get(messageUuid);
+      if (pending) clearTimeout(pending);
+
+      const timer = setTimeout(() => {
+        pendingMessageNotificationsRef.current.delete(messageUuid);
+        const pushedAt = recentMessagePushesRef.current.get(messageUuid);
+        if (pushedAt && Date.now() - pushedAt < 10_000) return;
+
+        void getNotificationPrefs().then((prefs) => {
+          if (!prefs.pushEnabled) return;
+
+          const sender =
+            message.sender?.full_name ||
+            message.sender?.username ||
+            'Новое сообщение';
+          const title = prefs.previewEnabled ? sender : 'Новое сообщение';
+          const body = prefs.previewEnabled
+            ? message.text?.trim() || 'Медиа-сообщение'
+            : 'Откройте чат, чтобы прочитать';
+
+          void Notifications.scheduleNotificationAsync({
+            content: {
+              title,
+              body,
+              data: {
+                type: 'message',
+                channel_id: PUSH_CHANNELS.messages,
+                chat_uuid: chatUuid,
+                message_uuid: messageUuid,
+              },
+              sound: prefs.soundEnabled,
+              priority: Notifications.AndroidNotificationPriority.HIGH,
+              vibrate: prefs.vibrationEnabled ? [0, 200, 120, 200] : undefined,
+            },
+            trigger: notificationTriggerForChannel(PUSH_CHANNELS.messages),
+          });
+        });
+      }, 1_800);
+
+      pendingMessageNotificationsRef.current.set(messageUuid, timer);
     });
 
     return () => {
       unsubscribe();
+      pendingNotifications.forEach(clearTimeout);
+      pendingNotifications.clear();
     };
   }, [accessToken, userUuid]);
 
@@ -320,11 +358,13 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <RootNavigator />
-        </ThemeProvider>
-      </QueryClientProvider>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <RootNavigator />
+          </ThemeProvider>
+        </QueryClientProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
